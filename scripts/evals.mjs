@@ -8,6 +8,7 @@ const cliDirectory = resolve(root, "node_modules/@microsoft/vally-cli");
 const manifest = JSON.parse(await readFile(resolve(cliDirectory, "package.json"), "utf8"));
 const cli = resolve(cliDirectory, typeof manifest.bin === "string" ? manifest.bin : manifest.bin.vally);
 const runtime = resolve(root, "node_modules/@github/copilot/npm-loader.js");
+export const brainstormHost = resolve(root, "evals/support/brainstorm-host.mjs");
 
 export function runtimeEnvironment(base = process.env) {
   const env = { ...base };
@@ -31,7 +32,7 @@ async function main() {
     ? ["--workers", "1", "--max-retries", "1", "--junit", "--output-dir", "vally-results"]
     : command === "lint" ? ["plugins", "--eval-spec", "evals", "--strict"] : [];
   const child = spawn(process.execPath, [
-    cli, command, ...defaults, ...args,
+    cli, command, ...defaults, "--param", `BRAINSTORM_HOST=${brainstormHost}`, ...args,
   ], { cwd: root, stdio: "inherit", env: runtimeEnvironment() });
   child.on("error", (error) => { console.error(error); process.exitCode = 1; });
   child.on("exit", (code, signal) => {

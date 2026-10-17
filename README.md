@@ -231,11 +231,12 @@ rate limit. Valid failed behavioral verdicts are not retried to obtain a pass.
 |---|---|---|
 | Bug-report skill and templates | UI versus CLI template selection, supplied facts, missing reproduction details, example-credential redaction, non-trigger requests | Drafts stay in chat; no issue creation or command execution |
 | JSON formatter hook | A real compact agent edit triggers the packaged hook; malformed JSON remains unchanged with a diagnostic | The grader requires the actual hook receipt and file effects, not a model's claim that it formatted the file |
-| Team-brainstorm skill | Explain a missing canvas, continue with two chat ideas and one question, and avoid unrelated requests | This suite tests chat fallback, not canvas interaction |
+| Team-brainstorm skill | Preserve existing notes, add two ideas, move a note by its real ID across turns, and fall back to chat without a canvas | Canvas interaction uses the headless SDK contract below |
+| Brainstorm extension | Real registered actions and session state through an MCP test transport | The original HTTP, SSE, and lifecycle code executes; native UI rendering is not tested |
 
 The existing brainstorm extension, board, HTTP server, and page retain their
-model-free behavior, isolation, lifecycle, and DOM tests. MCP-based
-canvas-interaction evals are separate work, not a dependency of this setup.
+model-free behavior, isolation, lifecycle, and DOM tests. The additional
+MCP-based interaction case uses the same source assets without modifying them.
 
 The specs live in [evals/](evals/) and are grouped by plugin. The
 [grader programs](evals/graders/) use Node built-ins and are staged only for
@@ -291,9 +292,20 @@ mounts `format-json` explicitly for hook cases with the documented `--plugin-dir
 option. It doesn't depend on an interactive folder-trust prompt or a global
 plugin installation. Other cases don't mount that plugin.
 
-No MCP server is installed or mounted by the eval suite. The brainstorm eval
-checks the skill's honest chat fallback. Its existing model-free contract tests
-do not certify native Copilot App or VS Code canvas presentation.
+### MCP-based canvas evaluation
+
+The [brainstorm fixture](evals/support/brainstorm-host.mjs) uses MCP only as an
+evaluation transport. It follows the existing SDK contract-test approach:
+three transport exports stand in for the host, while the actual extension,
+board logic, HTTP server, and lifecycle callbacks run unchanged. It starts with
+one synthetic note, keeps state only for that eval session, and closes its
+servers on completion. It exposes no native window and returns no localhost URL
+to the model. It is not a new installable MCP plugin or a vendored runtime SDK.
+
+The launcher supplies the fixture's absolute path through `BRAINSTORM_HOST`.
+Only the canvas-interaction case connects to it. The separate no-canvas case
+still checks the skill's honest chat fallback. Neither the headless fixture nor
+the model-free contract tests certify native Copilot App or VS Code rendering.
 
 ### Results and CI
 

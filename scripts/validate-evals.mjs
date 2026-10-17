@@ -109,15 +109,16 @@ export function checkCoverage(assets, specs) {
           assert.equal(env.env?.STARTER_ENABLE_FORMAT_HOOK, "1", `${id}: mount the real formatter plugin.`);
           assert.ok(graders.some((grader) => grader.type === "program" && list(grader.config?.args).includes(".grading/format-json.mjs")));
         } else {
-          throw new Error(`${id}: canvas-interaction evals belong to the separate extension-eval work.`);
+          assert.equal(stimulus.tags.boundary, "headless-sdk-contract", `${id}: label the host boundary honestly.`);
+          assert.ok(env.mcpServers?.["brainstorm-host"], `${id}: configure the actual extension contract transport.`);
+          assert.ok(graders.some((grader) => grader.type === "program" && list(grader.config?.args).includes(".grading/brainstorm.mjs")));
         }
         covered.add(id);
         if (list(stimulus.tags.suite).includes("smoke")) smoke.add(id);
       }
     }
   }
-  for (const [id, asset] of byId) {
-    if (asset.kind === "extension") continue;
+  for (const id of byId.keys()) {
     assert.ok(covered.has(id), `${id}: missing positive behavioral coverage.`);
     assert.ok(smoke.has(id), `${id}: missing smoke coverage.`);
   }
@@ -128,6 +129,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const assets = await discoverAssets();
   const specs = await readEvals();
   const count = checkCoverage(assets, specs);
-  console.log(`Validated ${specs.length} eval specs and ${count} cases covering ${assets.filter((asset) => asset.kind !== "extension").length} local skills, agents, and hooks.`);
-  console.log("Canvas extensions retain their existing model-free tests and manual host checks; no MCP-based canvas eval is included.");
+  console.log(`Validated ${specs.length} eval specs and ${count} cases covering ${assets.length} local plugin assets.`);
+  console.log("Canvas interaction is evaluated through a headless MCP/SDK contract, not native UI rendering.");
 }

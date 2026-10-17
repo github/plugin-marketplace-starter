@@ -8,16 +8,17 @@ import { runtimeArguments } from "../scripts/eval-runtime.js";
 import { runtimeEnvironment } from "../scripts/evals.mjs";
 import { render, summarize } from "../scripts/eval-report.mjs";
 
-test("local skills and hooks have positive smoke coverage; native canvas checks stay separate", async () => {
+test("all local assets have positive smoke coverage with explicit headless canvas boundaries", async () => {
   const assets = await discoverAssets();
   const specs = await readEvals();
   assert.deepEqual(assets.map((asset) => asset.id).sort(), [
     "extension:team-brainstorm/brainstorm", "hook:format-json/postToolUse",
     "skill:bug-report/bug-report", "skill:team-brainstorm/team-brainstorm",
   ]);
-  assert.equal(checkCoverage(assets, specs), 9);
-  assert.ok(specs.every(({ spec }) => !spec.agent_environment?.mcpServers
-    && spec.stimuli.every((stimulus) => !stimulus.agent_environment?.mcpServers)));
+  assert.equal(checkCoverage(assets, specs), 10);
+  const canvasCases = specs.flatMap(({ spec }) => spec.stimuli).filter((stimulus) => stimulus.agent_environment?.mcpServers);
+  assert.equal(canvasCases.length, 1);
+  assert.equal(canvasCases[0].tags.boundary, "headless-sdk-contract");
   const missing = specs.filter((item) => item.spec.name !== "format-json-integration");
   assert.throws(() => checkCoverage(assets, missing), /missing positive/);
   const unloaded = structuredClone(specs);
@@ -25,9 +26,9 @@ test("local skills and hooks have positive smoke coverage; native canvas checks 
   assert.throws(() => checkCoverage(assets, unloaded), /load the actual skill/);
 });
 
-test("the base eval branch has no MCP fixture dependency and preserves opt-in remote installation", async () => {
+test("the MCP fixture uses only a development dependency and keeps remote installation opt-in", async () => {
   const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
-  assert.equal(manifest.devDependencies["@modelcontextprotocol/sdk"], undefined);
+  assert.equal(manifest.devDependencies["@modelcontextprotocol/sdk"], "1.32.1");
   const settings = JSON.parse(await readFile(resolve(root, ".github/copilot/settings.json"), "utf8"));
   assert.equal(Object.keys(settings.enabledPlugins).length, 3);
   assert.equal(settings.enabledPlugins["evals@plugin-marketplace-starter"], undefined);

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assessReport } from "../evals/graders/bug-report.mjs";
 import { assessFormatting } from "../evals/graders/format-json.mjs";
-import { assessFallback } from "../evals/graders/brainstorm.mjs";
+import { assessCollaboration, assessFallback } from "../evals/graders/brainstorm.mjs";
 import { score } from "../evals/graders/common.mjs";
 
 const passes = (checks) => checks.every((item) => item.passed);
@@ -94,6 +94,40 @@ test("formatter invalid-input grade rejects silent repairs and missing diagnosti
   assert.ok(passes(assessFormatting(result, dir, "invalid")));
   writeFileSync(join(dir, "input.json"), '{"enabled":null}\n');
   assert.ok(!passes(assessFormatting(result, dir, "invalid")));
+});
+
+function boardRun() {
+  const id = "marketplace-starter-brainstorm";
+  const seed = { id: "seed", text: "Keep onboarding simple", column: "ideas" };
+  const one = { id: "one", text: "Write a short checklist", column: "ideas" };
+  const two = { id: "two", text: "Pair with a buddy", column: "ideas" };
+  const invoke = (actionName, notes, turn = 0) => tool("brainstorm-host-invoke_canvas_action",
+    { instanceId: "onboarding", actionName }, { canvasId: id, instanceId: "onboarding", actionName, board: { notes } }, turn);
+  return trajectory("Moved the original note.", [
+    ...tool("brainstorm-host-list_canvas_capabilities", { canvasId: id }, { canvasId: id, transport: "headless-sdk-contract" }),
+    ...tool("brainstorm-host-open_canvas", { canvasId: id, instanceId: "onboarding" }, { canvasId: id, headless: true }),
+    ...invoke("get_board", [seed]),
+    ...invoke("save_note", [seed, one]),
+    ...invoke("save_note", [seed, one, two]),
+    ...invoke("get_board", [seed, one, two]),
+    { type: "assistant_message", turn: 0, data: { content: "Two ideas added. Which should we prioritize?" } },
+    ...invoke("save_note", [{ ...seed, column: "next" }, one, two], 1),
+    ...invoke("get_board", [{ ...seed, column: "next" }, one, two], 1),
+  ]);
+}
+
+test("canvas grader verifies real state and rejects lost IDs, excessive notes, and writes before reads", () => {
+  const good = boardRun();
+  assert.ok(passes(assessCollaboration(good)));
+  const lost = structuredClone(good);
+  lost.events.at(-1).data.result.structuredContent.board.notes[0].id = "replacement";
+  assert.ok(!passes(assessCollaboration(lost)));
+  const early = structuredClone(good);
+  early.events.splice(4, 2);
+  assert.ok(!passes(assessCollaboration(early)));
+  const noQuestion = structuredClone(good);
+  noQuestion.events.find((event) => event.type === "assistant_message").data.content = "Here is the complete plan.";
+  assert.ok(!passes(assessCollaboration(noQuestion)));
 });
 
 test("fallback accepts natural punctuation but rejects fabricated UI or an oversized plan", () => {

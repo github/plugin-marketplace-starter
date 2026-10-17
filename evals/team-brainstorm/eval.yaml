@@ -1,5 +1,5 @@
 name: team-brainstorm-behavior
-description: Honest chat fallback when a canvas host is unavailable, and non-trigger behavior.
+description: Model collaboration through the real extension's headless SDK contract, plus honest chat fallback.
 type: capability
 defaults:
   executor: copilot-sdk
@@ -14,6 +14,43 @@ grading_environment:
     - src: ../graders
       dest: .grading
 stimuli:
+  - name: brainstorm-preserves-and-moves-session-notes
+    turns:
+      - >-
+        Use team-brainstorm and the provided brainstorm-host tools to brainstorm
+        a small onboarding plan. This is a headless SDK-contract board; no native
+        UI window is requested. Keep the existing note. Add exactly two short
+        ideas in the ideas column, then read the board and ask one focused question
+        in chat for me to answer next. Don't create a complete plan or implement
+        anything. Use a stable instance handle.
+      - >-
+        Keep the two ideas. Move the original note "Keep onboarding simple" to
+        the next column using its existing ID, without changing its text. Don't
+        add or delete notes. Read the board again and summarize the current state.
+        Don't implement anything or save files.
+    agent_environment:
+      mcpServers:
+        brainstorm-host:
+          type: stdio
+          command: node
+          args: ['${BRAINSTORM_HOST}']
+    tags:
+      assets:
+        - skill:team-brainstorm/team-brainstorm
+        - extension:team-brainstorm/brainstorm
+      suite: smoke
+      control: positive
+      boundary: headless-sdk-contract
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required: [team-brainstorm]
+      - type: program
+        config:
+          program: node
+          args: [.grading/brainstorm.mjs, board]
+      - type: diff-empty
   - name: brainstorm-falls-back-to-chat
     prompt: >-
       Use team-brainstorm to explore improving team onboarding. If this host

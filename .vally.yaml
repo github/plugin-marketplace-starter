@@ -7,12 +7,14 @@ paths:
   evalFilenames:
     - eval.yaml
   results: vally-results
+params:
+  BRAINSTORM_HOST: evals/support/brainstorm-host.mjs
 suites:
   smoke:
     description: Representative model-backed coverage for all three example plugins
     filter:
       suite: smoke
   full:
-    description: Template routing, clarification, chat fallback, and formatting behavior
+    description: Template routing, clarification, board collaboration, chat fallback, and formatting behavior
     evals:
       - evals/**/eval.yaml
