@@ -1,0 +1,53 @@
+name: team-brainstorm-behavior
+description: Honest chat fallback when a canvas host is unavailable, and non-trigger behavior.
+type: capability
+defaults:
+  executor: copilot-sdk
+  model: gpt-5.4-mini
+  timeout: 3m
+  runs: 1
+agent_environment:
+  skills:
+    - ../../plugins/team-brainstorm/skills/team-brainstorm
+grading_environment:
+  files:
+    - src: ../graders
+      dest: .grading
+stimuli:
+  - name: brainstorm-falls-back-to-chat
+    prompt: >-
+      Use team-brainstorm to explore improving team onboarding. If this host
+      cannot present the board, explain the limitation and continue in chat.
+      Give two short bullet ideas and finish with one question I can answer
+      later. Don't implement, save files, or wait for an interactive answer.
+    tags:
+      assets: skill:team-brainstorm/team-brainstorm
+      suite: smoke
+      control: positive
+      boundary: no-canvas
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required: [team-brainstorm]
+      - type: program
+        config:
+          program: node
+          args: [.grading/brainstorm.mjs, fallback]
+      - type: diff-empty
+  - name: brainstorm-does-not-trigger-for-arithmetic
+    prompt: What is two plus two? Reply with only the digit, without planning or using a board.
+    tags:
+      assets: skill:team-brainstorm/team-brainstorm
+      control: negative
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          disallowed: [team-brainstorm]
+      - type: output-matches
+        config:
+          pattern: '^\s*4\s*$'
+      - type: diff-empty
+scoring:
+  threshold: 1

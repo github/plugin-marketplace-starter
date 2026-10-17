@@ -1,0 +1,18 @@
+paths:
+  skills:
+    - plugins/bug-report/skills
+    - plugins/team-brainstorm/skills
+  evals:
+    - evals
+  evalFilenames:
+    - eval.yaml
+  results: vally-results
+suites:
+  smoke:
+    description: Representative model-backed coverage for all three example plugins
+    filter:
+      suite: smoke
+  full:
+    description: Template routing, clarification, chat fallback, and formatting behavior
+    evals:
+      - evals/**/eval.yaml

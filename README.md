@@ -1,7 +1,14 @@
 # Plugin marketplace starter
 
-A small GitHub template for teams distributing Agent Plugins 1.0 packages.
-Three example plugins, two skills, no runtime dependency installation.
+A GitHub template for teams that want to build, evaluate, and distribute AI
+customizations as an Agent Plugins 1.0 marketplace. Start with the example
+workflows, replace them with your team's skills or agents, and keep their evals
+alongside the source.
+
+The starter contains three self-contained example plugins, two skills, and an
+optional remote reference to GitHub Copilot Evals. Installed examples need no
+dependency installation. Contributor-only tooling provides model-free checks,
+behavioral evals, and a manual GitHub Actions evaluation workflow.
 
 | Plugin | Try it | Teaches |
 |---|---|---|
@@ -16,8 +23,10 @@ Three example plugins, two skills, no runtime dependency installation.
    Replace the repository reference in the install commands below with your own
    `OWNER/REPO`. Keep the marketplace name unique. Update the same marketplace
    name and plugin keys in [.github/copilot/settings.json](.github/copilot/settings.json).
-3. Keep, rename, or delete the examples. Update each plugin's manifest, catalog
+3. Keep, rename, or delete the local examples. Update each plugin's manifest, catalog
    entry, any skill metadata, README, changelog, and repository settings together.
+   Review the optional remote plugin separately; remove its catalog entry if your
+   team doesn't have upstream access. It is not enabled by the repository overlay.
 4. If you rename the canvas, update both its ID in the extension and the
    companion skill's reference to it.
 5. Run `npm ci` and `npm run verify`, then push your changes.
@@ -26,15 +35,23 @@ Three example plugins, two skills, no runtime dependency installation.
 For agent-assisted setup and maintenance, see [AGENTS.md](AGENTS.md). It links
 the plugin and marketplace specifications and adds agent-specific rules.
 
-Only marketplace contributors need `npm ci`. Installed examples use Node.js
-22.12 or newer and the SDK supplied by Copilot. Review plugins before trusting
+Only marketplace contributors need `npm ci` and Node.js 22.14 or newer for the
+evaluation development tools. Installed examples still use Node.js 22.12 or newer
+and the SDK supplied by Copilot. Review plugins before trusting
 them. The formatter rewrites JSON files after agent edits.
 
 ## Install the examples
 
 Use a current Copilot CLI or a VS Code Copilot host using the shared runtime.
+VS Code users do not need a separate global Copilot CLI installation merely to
+consume the plugins. The eval tooling uses its own pinned development dependency.
 The canvas additionally needs a host that presents SDK canvases. Do not assume
 every VS Code chat provider or CLI version supports that UI.
+
+The portable skills can be used by other clients that support Agent Plugins and
+Agent Skills. Copilot-specific hooks and canvas extensions still require those
+host capabilities; plugin portability doesn't imply every component runs in
+every harness.
 
 ### Copilot CLI
 
@@ -58,10 +75,40 @@ it after installation.
 If the canvas is unavailable, the brainstorm skill explains the limitation and
 continues in chat. The CLI-compatible hook has no separate VS Code variant.
 
+### Optional GitHub Copilot Evals plugin
+
+The root [marketplace.json](marketplace.json) includes an `evals` entry with this
+remote source:
+
+```json
+{
+  "source": "github",
+  "repo": "github/evals",
+  "path": "packages/plugin"
+}
+```
+
+After adding this marketplace, install it explicitly:
+
+```sh
+copilot plugin install evals@plugin-marketplace-starter
+```
+
+[GitHub Copilot Evals](https://github.com/github/evals) provides create, review,
+improve, and run skills. Its source repository is currently private, so each
+installer needs a GitHub account with access. This catalog reference doesn't
+grant access or copy upstream code. Repository installs provide the source
+skills; use upstream release instructions for the prebuilt extension, canvas,
+or MCP tooling.
+
+The local Vally workflow below works without this optional plugin. Catalog
+validation checks remote metadata only; normal checks and eval runs don't
+download or execute `github/evals`, and don't claim to evaluate its assets.
+
 ## Develop without publishing
 
 Opening this checkout in a trusted shared-runtime Copilot session makes all three
-plugins available from the working files. The repository-scoped
+local examples available from the working files. The repository-scoped
 [settings overlay](.github/copilot/settings.json) declares this directory as a
 marketplace and enables each example. No global plugin installation is needed.
 Start a new session after adding the overlay or changing plugin registrations.
@@ -131,8 +178,10 @@ plugins/
       format.mjs
 scripts/                   # Catalog, schema, metadata, and syntax validation
 test/                      # No-model behavior and extension contract tests
+evals/                     # Model-backed specs, synthetic fixtures, and graders
+.vally.yaml                # Smoke/full evaluation suites
 .github/copilot/           # Enables this checkout's marketplace in Copilot
-.github/workflows/         # Validation on Linux, Windows, and macOS
+.github/workflows/         # Automatic validation and manual behavioral evals
 ```
 
 Each plugin also has a README and changelog. Agent Plugins 1.0 discovers portable
@@ -147,11 +196,136 @@ root; it is deliberately not included in this starter.
 3. Add a relative source entry to the catalog and enable it in the repository settings.
 4. Keep the plugin self-contained. Never import a sibling plugin or root
    development dependency at runtime.
-5. Add focused tests and a short README explaining prerequisites and risks.
+5. Add focused tests, behavioral evals, and a short README explaining prerequisites
+   and risks. Keep each plugin grouped around a workflow, not an asset type.
 6. Change its version in the manifest, catalog, and changelog for every release.
 
-The root catalog is the source of installable examples. Deleting an example
-also means removing its catalog entry, repository enablement, and associated tests.
+The root catalog lists both local examples and optional remote references.
+Deleting a local example also means removing its catalog entry, repository
+enablement, tests, and evals. Remote references stay opt-in and aren't subject to
+local asset coverage checks.
+
+## Evaluate the plugin assets
+
+The development-only [Vally](https://microsoft.github.io/vally/) setup adds
+model-backed evals without changing the three shipped plugins, adding skills,
+installing runtime dependencies into plugins, or introducing a build step.
+
+```sh
+npm ci
+npm run verify
+npm run eval:smoke
+npm run eval
+npm run eval:report -- --suite full
+```
+
+`verify` remains model-free: source checks, tests, eval coverage checks, and
+strict Vally linting. `eval:smoke` and `eval` run real Copilot sessions and consume
+inference credits. Authenticate using the
+[Vally runtime setup](https://microsoft.github.io/vally/get-started/runtime-setup/).
+The baseline is `gpt-5.4-mini`; override it with `--model MODEL_ID`.
+Runs use one worker, per-case timeouts, and one bounded retry for a timeout or
+rate limit. Valid failed behavioral verdicts are not retried to obtain a pass.
+
+| Asset | Model-backed coverage | Boundary |
+|---|---|---|
+| Bug-report skill and templates | UI versus CLI template selection, supplied facts, missing reproduction details, example-credential redaction, non-trigger requests | Drafts stay in chat; no issue creation or command execution |
+| JSON formatter hook | A real compact agent edit triggers the packaged hook; malformed JSON remains unchanged with a diagnostic | The grader requires the actual hook receipt and file effects, not a model's claim that it formatted the file |
+| Team-brainstorm skill | Explain a missing canvas, continue with two chat ideas and one question, and avoid unrelated requests | This suite tests chat fallback, not canvas interaction |
+
+The existing brainstorm extension, board, HTTP server, and page retain their
+model-free behavior, isolation, lifecycle, and DOM tests. MCP-based
+canvas-interaction evals are separate work, not a dependency of this setup.
+
+The specs live in [evals/](evals/) and are grouped by plugin. The
+[grader programs](evals/graders/) use Node built-ins and are staged only for
+grading, outside agent-visible inputs. They include counterexamples so a missing
+template, fabricated hook result, or missing output cannot pass.
+The source validator ignores generated `vally-results/` files.
+
+### Add evals for your team's skills and agents
+
+1. Create `evals/<workflow>/eval.yaml` with realistic tasks, expected outcomes,
+   and at least one negative or non-trigger case. Keep private production data
+   out of fixtures and expected answers out of agent-visible inputs.
+2. Load the actual asset, rather than pasting its instructions into the task.
+   Skill paths in `agent_environment.skills` are relative to the eval file.
+   Stage a custom agent with `agent_environment.files`, copying its real
+   `.agent.md` file to `.github/agents/<name>.agent.md` in the disposable workspace.
+3. Assert both invocation and outcome. Skills use `skill-invocation`; agents
+   require a `tool-calls` assertion for `^task$` and the exact `agent_type`, then
+   a subagent-scoped outcome assertion. The default agent's answer isn't proof
+   that the intended custom agent ran.
+4. Tag each positive case with its asset identity and select a representative
+   case with `suite: smoke`. Run `npm run verify`, then run the relevant eval,
+   inspect its trajectory, and confirm a wrong outcome would fail the graders.
+
+| Asset | `tags.assets` identity | Source layout |
+|---|---|---|
+| Skill | `skill:<plugin>/<skill-name>` | `plugins/<plugin>/skills/<skill-name>/SKILL.md` |
+| Custom agent | `agent:<plugin>/<agent-name>` | `plugins/<plugin>/com.github.copilot/agents/<file>.agent.md` |
+| Hook | `hook:<plugin>/<event-name>` | `plugins/<plugin>/com.github.copilot/hooks/hooks.json` |
+
+Use `tags.control: positive` or `negative` to identify control cases. The
+coverage checker requires positive outcome and smoke coverage for every local
+skill, custom agent, and hook it discovers. The starter doesn't bundle a custom
+agent yet; these conventions support adding one to an existing workflow.
+
+Run one spec without launching the full suite:
+
+```sh
+node scripts/evals.mjs eval --eval-spec evals/bug-report/eval.yaml
+```
+
+Use the [Vally eval schema](https://microsoft.github.io/vally/reference/eval-spec/)
+for fields and [grader catalog](https://microsoft.github.io/vally/reference/graders/)
+for assertions. Existing specs show template routing, output checks, hook
+effects, and negative controls. Catalog, asset, and suite identities must stay
+consistent when you rename or remove examples.
+
+### How the harness loads assets
+
+The [launcher](scripts/evals.mjs) uses the pinned full Copilot CLI through
+Vally's `copilot-sdk` executor. Its small [runtime bridge](scripts/eval-runtime.js)
+mounts `format-json` explicitly for hook cases with the documented `--plugin-dir`
+option. It doesn't depend on an interactive folder-trust prompt or a global
+plugin installation. Other cases don't mount that plugin.
+
+No MCP server is installed or mounted by the eval suite. The brainstorm eval
+checks the skill's honest chat fallback. Its existing model-free contract tests
+do not certify native Copilot App or VS Code canvas presentation.
+
+### Results and CI
+
+Each run writes JSONL results, a Markdown report, JUnit, and session evidence
+under a timestamped `vally-results/` directory. Use
+`npm run eval:report -- --suite smoke` for a smoke run, or `--suite full` for the
+full suite. `--run-dir PATH` selects a saved run explicitly. An incomplete run,
+unexpected skip, runtime error, or grader infrastructure error fails reporting.
+Valid failed behavioral verdicts remain visible but don't fail the command by
+default. Add `--require-pass` when you want those verdicts to fail too.
+
+Use `npm run eval:grade -- --help` to see Vally's saved-evidence grading options.
+Re-grading these code-based assertions does not require another model run.
+Passing these fixtures establishes their specific contracts, not universal
+bug-report quality or brainstorming creativity.
+
+The existing automatic validation workflow stays credential-free and never
+invokes a model. The optional [manual behavioral workflow](.github/workflows/evals.yml)
+runs only when explicitly dispatched after publication. It uses `GITHUB_TOKEN`
+with `copilot-requests: write`; usage is billed to the repository owner or
+organization. Organization-owned copies need the corresponding Copilot CLI
+policy enabled. Review [GitHub's setup guidance](https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli-in-actions)
+before enabling it. It has no PR or `pull_request_target` trigger and does not
+expose inference credentials to fork checks.
+
+Teams wanting automatic behavioral runs can opt into same-repository PR or
+default-branch push triggers after reviewing cost and trust requirements. Keep
+fork PRs on model-free validation and never execute their code through
+`pull_request_target` with credentials. See
+[Vally's CI guide](https://microsoft.github.io/vally/get-started/add-to-ci/)
+for the supported trigger guard and token setup. This starter does not silently
+enable paid runs for every contribution.
 
 ## Validation and compatibility
 
@@ -162,11 +336,12 @@ behavior, the loopback HTTP server, extension lifecycle through an SDK contract
 harness, page focus behavior through a minimal DOM harness, and the actual
 formatter hook process with runtime-shaped edit events.
 CI runs these checks on Node.js 22 and 24 on all three desktop operating systems.
-CI does not invoke a model or require a GitHub token.
+The automatic validation workflow does not invoke a model or require a GitHub
+token. The manual behavioral workflow described above is a separate opt-in.
 
-The [bug-report smoke checks](plugins/bug-report/README.md#smoke-checks) cover
-skill activation, template selection, and clarification behavior. They use
-model-backed sessions and are separate from offline verification and CI.
+The [bug-report smoke checks](plugins/bug-report/README.md#smoke-checks) are also
+encoded in the model-backed evals. Real model execution remains separate from
+offline verification and automatic CI.
 
 Before a release, smoke-test **both hosts**:
 

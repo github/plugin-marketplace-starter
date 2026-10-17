@@ -19,6 +19,16 @@
       "source": "./plugins/format-json",
       "version": "1.0.0",
       "description": "Format affected JSON files after successful agent edits."
+    },
+    {
+      "name": "evals",
+      "source": {
+        "source": "github",
+        "repo": "github/evals",
+        "path": "packages/plugin"
+      },
+      "description": "GitHub Copilot Evals skills for creating, reviewing, improving, and running evals.",
+      "homepage": "https://github.com/github/evals"
     }
   ]
 }

@@ -5,25 +5,23 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import Ajv from "ajv/dist/2020.js";
 import { parse } from "yaml";
+import { readCatalog } from "./catalog.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const json = async (path) => JSON.parse(await readFile(path, "utf8"));
 const schema = await json(resolve(root, "scripts/plugin.schema.json"));
 const validate = new Ajv({ allErrors: true }).compile(schema);
-const catalog = await json(resolve(root, "marketplace.json"));
-assert.match(catalog.name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
-assert.ok(catalog.owner?.name);
-assert.ok(catalog.plugins?.length > 0);
+const { catalog, localPlugins, remotePlugins } = await readCatalog(root);
 const names = new Set();
 let skillCount = 0;
 
 async function files(path) {
   const entries = await readdir(path, { withFileTypes: true });
-  return (await Promise.all(entries.filter((entry) => ![".git", "node_modules"].includes(entry.name))
+  return (await Promise.all(entries.filter((entry) => ![".git", "node_modules", "vally-results", ".vally"].includes(entry.name))
     .map((entry) => entry.isDirectory() ? files(resolve(path, entry.name)) : resolve(path, entry.name)))).flat();
 }
 
-for (const entry of catalog.plugins) {
+for (const entry of localPlugins) {
   assert.ok(!names.has(entry.name), `Duplicate plugin: ${entry.name}`);
   names.add(entry.name);
   assert.equal(typeof entry.source, "string");
@@ -36,7 +34,7 @@ for (const entry of catalog.plugins) {
   assert.equal(manifest.version, entry.version);
   assert.equal(manifest.description, entry.description);
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
-  assert.ok((await readFile(resolve(directory, "CHANGELOG.md"), "utf8")).includes(`## ${manifest.version}\n`));
+  assert.ok((await readFile(resolve(directory, "CHANGELOG.md"), "utf8")).replaceAll("\r\n", "\n").includes(`## ${manifest.version}\n`));
   await stat(resolve(directory, "README.md"));
   for (const file of await files(directory)) {
     assert.ok(![".plugin", ".claude-plugin"].some((name) => file.includes(`${sep}${name}${sep}`)), "Use Agent Plugins 1.0 layout.");
@@ -82,9 +80,9 @@ assert.deepEqual(settings.extraKnownMarketplaces, {
 }, "The repository marketplace must point at this checkout.");
 assert.deepEqual(settings.enabledPlugins, Object.fromEntries(
   [...names].map((name) => [`${name}@${catalog.name}`, true]),
-), "Enable every catalog plugin in the repository overlay.");
+), "Enable every local example, but no remote plugins, in the repository overlay.");
 for (const file of await files(root)) {
-  if (file.endsWith(".mjs")) {
+  if (/\.(?:mjs|js)$/.test(file)) {
     const check = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
     assert.equal(check.status, 0, check.stderr || check.error?.message);
   }
@@ -96,4 +94,5 @@ for (const file of await files(root)) {
     }
   }
 }
-console.log(`Validated ${names.size} plugins and ${skillCount} skills.`);
+console.log(`Validated ${names.size} local plugins and ${skillCount} skills.`);
+console.log(`Validated ${remotePlugins.length} remote references as metadata only; no upstream code was fetched or run.`);

@@ -1,0 +1,49 @@
+name: Behavioral evals (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Evaluation suite to run
+        type: choice
+        options: [smoke, full]
+        default: smoke
+permissions:
+  contents: read
+concurrency:
+  group: starter-evals-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      copilot-requests: write
+    env:
+      VALLY_TELEMETRY_OPTOUT: "1"
+      EVAL_SUITE: ${{ inputs.suite }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - name: Run selected behavioral suite
+        id: evaluate
+        run: node scripts/evals.mjs eval --suite "$EVAL_SUITE"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Report scores and require complete evidence
+        if: always() && steps.evaluate.outcome != 'skipped'
+        run: npm run eval:report -- --suite "$EVAL_SUITE"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: starter-behavioral-evals
+          path: vally-results/
+          retention-days: 14
+          if-no-files-found: warn

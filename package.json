@@ -3,13 +3,21 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "engines": { "node": ">=22.12" },
+  "engines": { "node": ">=22.14.0" },
   "scripts": {
     "test": "node --test",
     "check": "node scripts/validate.mjs",
-    "verify": "npm run check && npm test"
+    "verify": "npm run check && npm test && npm run eval:check && npm run eval:lint",
+    "eval:check": "node scripts/validate-evals.mjs",
+    "eval:lint": "node scripts/evals.mjs lint",
+    "eval:smoke": "node scripts/evals.mjs eval --suite smoke",
+    "eval": "node scripts/evals.mjs eval --suite full",
+    "eval:grade": "node scripts/evals.mjs grade",
+    "eval:report": "node scripts/eval-report.mjs"
   },
   "devDependencies": {
+    "@github/copilot": "1.0.98",
+    "@microsoft/vally-cli": "0.19.0",
     "ajv": "^8.17.1",
     "yaml": "^2.8.1"
   }

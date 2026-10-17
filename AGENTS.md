@@ -6,7 +6,8 @@ do not duplicate them here.
 
 ## Agent-specific rules
 
-- Keep the starter to three example plugins and at most two skills. Do not add a
+- Keep the starter to three local example plugins and at most two bundled skills. Remote
+  catalog references are separate from these examples. Do not add a
   UI framework, database, or build step. Never vendor the runtime SDK.
 - Do not adopt legacy `.plugin/` or `.claude-plugin/` layouts from documentation.
 - Skill descriptions explain when to invoke them. Put detailed instructions
@@ -15,6 +16,11 @@ do not duplicate them here.
   and never describe the hook as a security boundary or replacement for CI.
 - Preserve coverage when replacing an example; do not delete tests just to
   make validation pass.
+- Update the corresponding evals when changing plugin behavior. Keep eval-only
+  transports and development dependencies outside `plugins/`. Headless contract
+  results are not proof of native canvas rendering.
+- Keep remote plugins opt-in. Validate their catalog metadata without fetching
+  or executing upstream code in checks, and document private-repository access.
 - Keep secrets and token-bearing URLs out of files. Use host authentication
   for private repositories, not embedded credentials.
 - Do not commit, push, or publish unless the user requests it.
