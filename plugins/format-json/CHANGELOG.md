@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2
+
+- Run the hook when its install path goes through a symlink, such as macOS
+  temporary folders or a linked plugin directory.
+
 ## 1.1.1
 
 - Add a Host checks section to the README for the manual release checks.

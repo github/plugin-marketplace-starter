@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { readCatalog } from "./catalog.mjs";
 import { runCli } from "./problems.mjs";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 const usage = `Usage: npm run check-remotes [-- <name>...]
@@ -139,7 +140,7 @@ export async function checkRemote(entry, api) {
   return { name: entry.name, errors, notes };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   await runCli(async () => {
     const { values, positionals } = parseArgs({ allowPositionals: true, options: { help: { type: "boolean", short: "h" } } });
     if (values.help) return console.log(usage);

@@ -1,8 +1,9 @@
+import { isEntrypoint } from "./entrypoint.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve, relative, sep } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { contained, effectiveTags, evalFilenameMatcher, evalFilenames, expectedCases, frontmatter, parseYaml, readCatalog, readVallyConfig } from "./catalog.mjs";
@@ -294,7 +295,7 @@ export function checkCoverage(assets, specs, { directory = root, suites = new Se
   return names.size;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   await runCli(async () => {
     const config = await readVallyConfig(root);
     const assets = await discoverAssets();

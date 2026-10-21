@@ -1,6 +1,7 @@
 import { readFile, access } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { resolve, dirname, isAbsolute } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { parseDocument } from 'yaml';
 
@@ -62,7 +63,9 @@ export async function gradeAuthoring(workspace, validator) {
   return verdict(issues);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+// Compare real paths: Node resolves import.meta.url through symlinks but not argv.
+const realOrResolved = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
+if (process.argv[1] && realOrResolved(resolve(process.argv[1])) === realOrResolved(fileURLToPath(import.meta.url))) {
   try {
     if (!process.env.EVALUATE_WORKSPACE) throw new Error('EVALUATE_WORKSPACE is required');
     console.log(JSON.stringify(await gradeAuthoring(process.env.EVALUATE_WORKSPACE, process.argv[2])));

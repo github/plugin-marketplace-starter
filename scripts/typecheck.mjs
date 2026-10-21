@@ -1,8 +1,9 @@
+import { isEntrypoint } from "./entrypoint.mjs";
 import { spawnSync } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createRequire } from "node:module";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 
@@ -43,4 +44,4 @@ async function main() {
   process.exitCode = result.status ?? 1;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main();
+if (isEntrypoint(import.meta.url)) await main();

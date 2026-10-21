@@ -1,13 +1,13 @@
 import { appendFile, readFile, readdir } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
-import { pathToFileURL } from "node:url";
 import { expectedCases, readVallyConfig } from "./catalog.mjs";
 
 export { expectedCases };
 import { root, readEvals } from "./validate-evals.mjs";
 import { specsForPlugins } from "./evals.mjs";
 import { runCli } from "./problems.mjs";
+import { isEntrypoint } from "./entrypoint.mjs";
 
 const hasGraderError = (grade) => grade?.status === "error" || (grade?.details ?? []).some(hasGraderError);
 const escape = (text) => String(text).replaceAll("|", "\\|").replaceAll("\n", " ").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -125,4 +125,4 @@ async function main() {
   if (summary.errors.length) process.exitCode = 1;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await runCli(main);
+if (isEntrypoint(import.meta.url)) await runCli(main);

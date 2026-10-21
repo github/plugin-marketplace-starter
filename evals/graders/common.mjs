@@ -1,9 +1,11 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
+const real = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
 export const check = (label, passed) => ({ label, passed: Boolean(passed) });
-export const isMain = (url) => process.argv[1] && url === pathToFileURL(resolve(process.argv[1])).href;
+// Real paths, because Node resolves import.meta.url through symlinks but not argv.
+export const isMain = (url) => Boolean(process.argv[1]) && real(resolve(process.argv[1])) === real(fileURLToPath(url));
 export const normalize = (text) => text.replaceAll("\r\n", "\n");
 export const matchesTool = (name, suffix) => typeof name === "string"
   && (name === suffix || [".", "-", "_", "/"].some((separator) => name.endsWith(`${separator}${suffix}`)));

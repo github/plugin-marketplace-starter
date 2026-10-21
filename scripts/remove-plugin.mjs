@@ -1,7 +1,8 @@
+import { isEntrypoint } from "./entrypoint.mjs";
 import { existsSync } from "node:fs";
 import { readFile, readdir, rm, rmdir, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { parseDocument } from "yaml";
 import { namePattern } from "./catalog.mjs";
@@ -228,7 +229,7 @@ export async function removePlugins(names, { directory = root, examplesOnly = fa
   return changes;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   await runCli(async () => {
     const { values, positionals } = parseArgs({ allowPositionals: true, options: {
       example: { type: "boolean" },

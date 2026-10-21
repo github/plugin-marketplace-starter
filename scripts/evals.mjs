@@ -1,8 +1,9 @@
+import { isEntrypoint } from "./entrypoint.mjs";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, readdir, writeFile, access } from "node:fs/promises";
 import { resolve, delimiter, relative, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { stringify } from "yaml";
 import { evalFilenameMatcher, evalFilenames, expectedCases, paramsFileName, parseTagSelectors, readVallyConfig, specsInSuite } from "./catalog.mjs";
 import { runCli } from "./problems.mjs";
@@ -326,4 +327,4 @@ async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await runCli(main);
+if (isEntrypoint(import.meta.url)) await runCli(main);

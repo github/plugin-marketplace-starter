@@ -1,7 +1,8 @@
+import { isEntrypoint } from "./entrypoint.mjs";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 // The SDK launches .js entry points with Node; this forwards to the pinned full Copilot runtime.
 // Defaults resolve from this checkout so hosted runners only need COPILOT_CLI_PATH pointing here.
@@ -46,7 +47,7 @@ export function runtimeProcessEnvironment(env = process.env) {
   return { ...env, COPILOT_AUTO_UPDATE: env.COPILOT_AUTO_UPDATE ?? "false" };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   const args = process.argv.slice(2);
   // A version check reports both the pinned package and what actually runs.
   if (args.length === 1 && args[0] === "--version") console.log(`Pinned @github/copilot package: ${packageVersion()}`);

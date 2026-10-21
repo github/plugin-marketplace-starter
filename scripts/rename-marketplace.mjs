@@ -1,7 +1,8 @@
+import { isEntrypoint } from "./entrypoint.mjs";
 import { existsSync } from "node:fs";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { namePattern } from "./catalog.mjs";
 import { repositoryName } from "./new-plugin.mjs";
@@ -130,7 +131,7 @@ export async function renameMarketplace({ name, owner, repo, directory = root, d
   return { from, to, changed };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   await runCli(async () => {
     let parsed;
     try {

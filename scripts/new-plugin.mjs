@@ -1,8 +1,9 @@
+import { isEntrypoint } from "./entrypoint.mjs";
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { parseDocument } from "yaml";
 import { namePattern, readCatalog } from "./catalog.mjs";
@@ -119,9 +120,9 @@ if (entrypoint && relative(realPath(entrypoint), realPath(fileURLToPath(import.m
 }
 
 function hookFile(name) {
-  return `import { readFileSync } from "node:fs";
+  return `import { readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 // A postToolUse hook. Copilot passes the event as JSON on stdin and reads a JSON
 // result from stdout. docs/hooks.md describes the event fields.
@@ -135,7 +136,9 @@ export function handle(event) {
   return { additionalContext: \`${name}: saw a successful \${event.toolName} edit.\` };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+// Compare real paths: Node resolves import.meta.url through symlinks but not argv.
+const real = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
+if (process.argv[1] && real(resolve(process.argv[1])) === real(fileURLToPath(import.meta.url))) {
   let result;
   try {
     result = handle(JSON.parse(readFileSync(0, "utf8")));
@@ -677,7 +680,7 @@ export async function newPlugin(name, { components: requested = [], skill = true
   return { created, updated, plugin, options };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   await runCli(async () => {
     let parsed;
     try {

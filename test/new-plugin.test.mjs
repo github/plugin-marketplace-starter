@@ -229,6 +229,7 @@ test("npm run verify explains missing dependencies instead of crashing", () => {
     const dir = mkdtempSync(join(tmpdir(), "starter-nodeps-"));
     mkdirSync(join(dir, "scripts"));
     cpSync(${JSON.stringify(join(root, "scripts/typecheck.mjs"))}, join(dir, "scripts/typecheck.mjs"));
+    cpSync(${JSON.stringify(join(root, "scripts/entrypoint.mjs"))}, join(dir, "scripts/entrypoint.mjs"));
     const result = spawnSync(process.execPath, [join(dir, "scripts/typecheck.mjs")], { cwd: dir, encoding: "utf8" });
     process.stdout.write(JSON.stringify({ status: result.status, stderr: result.stderr }));
   `], { encoding: "utf8" });

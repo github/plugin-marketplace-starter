@@ -1,6 +1,6 @@
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const pathFields = {
@@ -119,7 +119,9 @@ export function format(event, diagnostic = console.error, { indent = 2 } = {}) {
   return messages.length ? { additionalContext: messages.join("\n") } : {};
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Compare real paths: Node resolves import.meta.url through symlinks but not argv.
+const realOrResolved = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
+if (process.argv[1] && realOrResolved(resolve(process.argv[1])) === realOrResolved(fileURLToPath(import.meta.url))) {
   let result;
   try {
     const settings = options(process.argv.slice(2));

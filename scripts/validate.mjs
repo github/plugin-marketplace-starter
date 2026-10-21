@@ -1,7 +1,8 @@
+import { isEntrypoint } from "./entrypoint.mjs";
 import assert from "node:assert/strict";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { resolve, relative, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import Ajv from "ajv/dist/2020.js";
 import { contained, frontmatter, parseYaml, readCatalog, readVallyConfig, remoteWarnings } from "./catalog.mjs";
@@ -391,7 +392,7 @@ export async function validateRepository(directory = root) {
   return { ...counts, remotePlugins: remotePlugins.length, warnings };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isEntrypoint(import.meta.url)) {
   await runCli(async () => {
     const counts = await validateRepository();
     const parts = [plural(counts.skills, "skill"), plural(counts.agents, "agent"), plural(counts.hooks, "hook event"), plural(counts.mcpServers, "MCP server")];

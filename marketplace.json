@@ -17,7 +17,7 @@
     {
       "name": "format-json",
       "source": "./plugins/format-json",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "description": "Format affected JSON files after successful agent edits."
     },
     {

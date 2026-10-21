@@ -1,7 +1,8 @@
+import { isEntrypoint } from "./entrypoint.mjs";
 import { build } from 'esbuild';
 import { readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { basename, dirname, relative, resolve, sep } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { runCli } from './problems.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -164,4 +165,4 @@ async function main() {
   console.log(`Built ${count} generated artifacts.`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await runCli(main);
+if (isEntrypoint(import.meta.url)) await runCli(main);

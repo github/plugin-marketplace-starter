@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { register } from "node:module";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -284,6 +285,8 @@ export async function runStdio(factory = () => createCanvasFixture(hostOptions(p
   return done;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Compare real paths: Node resolves import.meta.url through symlinks but not argv.
+const realOrResolved = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
+if (process.argv[1] && realOrResolved(resolve(process.argv[1])) === realOrResolved(fileURLToPath(import.meta.url))) {
   await runStdio();
 }
