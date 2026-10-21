@@ -115,9 +115,10 @@ anyone else's project.
 `npm run new-plugin` does all of this for skills, agents, MCP servers, hooks,
 and canvas extensions. To add another type, or to understand what it did:
 
-1. Create `plugins/<name>/` with `plugin.json`, `README.md`, `CHANGELOG.md` (with
-   a `## <version>` heading), and `LICENSE`. The name is lowercase and
-   hyphenated, and unique in the catalog.
+1. Create `plugins/<name>/` with `plugin.json`, `README.md`, and `CHANGELOG.md`
+   (with a `## <version>` heading). The root [LICENSE](../LICENSE) covers the
+   plugin, so it doesn't need its own. The name is lowercase and hyphenated, and
+   unique in the catalog.
 2. Add assets in the locations above. A skill's `name` matches its directory; an
    agent's `name` matches its file name. MCP servers go in a root `mcp.json` as
    local stdio servers using `${PLUGIN_ROOT}` paths. Hooks run as

@@ -23,8 +23,9 @@ that meets the coverage rules, so you only replace the scaffolded content. See
 Change these together in one pull request:
 
 1. **Plugin files** under `plugins/<name>/`: `plugin.json`, its skills, agents,
-   hooks, MCP server, commands, rules, or extensions, plus `README.md`,
-   `CHANGELOG.md`, and `LICENSE`. Keep it self-contained; never import a sibling
+   hooks, MCP server, commands, rules, or extensions, plus `README.md` and
+   `CHANGELOG.md`. The root [LICENSE](LICENSE) covers every plugin, so a plugin
+   doesn't need its own. Keep it self-contained; never import a sibling
    plugin or this repository's `node_modules` at runtime.
 2. **Version**: bump `version` in `plugin.json` and the matching
    [marketplace.json](marketplace.json) entry, and add a `## <version>` heading

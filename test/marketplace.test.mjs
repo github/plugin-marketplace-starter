@@ -118,29 +118,27 @@ test("verify warns about template names and prose that mentions missing plugins"
   }
 });
 
-test("license warnings keep the notices MIT requires and ask only for your own line", async () => {
+test("the license warning keeps the template's MIT notice and asks only for your own line", async () => {
   const directory = await mkdtemp(join(tmpdir(), "starter-license-"));
   const write = async (path, text) => { await mkdir(join(directory, path, ".."), { recursive: true }); await writeFile(join(directory, path), text); return join(directory, path); };
   const license = (...holders) => `MIT License\n\n${holders.map((holder) => `Copyright (c) 2026 ${holder}`).join("\n")}\n\nPermission is hereby granted.\n`;
-  const catalog = { name: "ours", owner: { name: "Acme" } };
-  const warn = async (files) => (await staleReferenceWarnings(directory, catalog, files)).join("\n");
+  const warn = async (catalog = { name: "ours", owner: { name: "Acme" } }) => (await staleReferenceWarnings(directory, catalog, [])).join("\n");
   try {
     await write("README.md", "# Ours\n");
-    await write("LICENSE", license("Harald Kirschner"));
-    assert.match(await warn([]), /LICENSE: names only the template's authors \(Harald Kirschner\)\. Keep their line/);
+    await write("LICENSE", license("GitHub, Inc."));
+    assert.match(await warn(), /LICENSE: names only GitHub, Inc\., the template's holder\. Keep that line/);
+    // Before the rename, the template's own line is expected.
+    assert.doesNotMatch(await warn({ name: "plugin-marketplace-starter", owner: { name: "GitHub" } }), /LICENSE/);
+    // A GitHub team that keeps GitHub as the catalog owner already holds it.
+    assert.doesNotMatch(await warn({ name: "ours", owner: { name: "GitHub" } }), /LICENSE/);
     // The template's line stays, with yours beside it: no warning.
-    await write("LICENSE", license("Harald Kirschner", "Acme"));
-    assert.doesNotMatch(await warn([]), /LICENSE/);
-    // A kept example keeps its authors' notice, so it never warns.
-    const example = await write("plugins/bug-report/LICENSE", license("Harald Kirschner"));
-    assert.doesNotMatch(await warn([example]), /bug-report/);
-    // A plugin you wrote should name you; a copied example keeps its line and adds yours.
-    const mine = await write("plugins/mine/LICENSE", license("Ronnie Geraghty"));
-    assert.match(await warn([mine]), /plugins\/mine\/LICENSE: names only Ronnie Geraghty, not you/);
-    await write("plugins/mine/LICENSE", license("Ronnie Geraghty", "Acme"));
-    assert.doesNotMatch(await warn([mine]), /plugins\/mine/);
-    await write("plugins/mine/LICENSE", license("GitHub"));
-    assert.match(await warn([mine]), /plugins\/mine\/LICENSE: names only GitHub/);
+    await write("LICENSE", license("GitHub, Inc.", "Acme"));
+    assert.doesNotMatch(await warn(), /LICENSE/);
+    // A different holder entirely, or no LICENSE at all, isn't the template's leftover.
+    await write("LICENSE", license("Acme"));
+    assert.doesNotMatch(await warn(), /LICENSE/);
+    await rm(join(directory, "LICENSE"));
+    assert.doesNotMatch(await warn(), /LICENSE/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -325,7 +323,6 @@ test("agents and skills must live in their Agent Plugins locations with valid fr
       name: "review", version: "1.0.0", description: "Review fixture.",
     }));
     await writeFile(join(plugin, "README.md"), "# Review\n");
-    await writeFile(join(plugin, "LICENSE"), "MIT License\n\nCopyright (c) 2026 Test\n");
     await writeFile(join(plugin, "CHANGELOG.md"), "# Changelog\n\n## 1.0.0\n");
     await writeFile(join(plugin, "com.github.copilot/agents/reviewer.agent.md"), agent);
     assert.equal((await validateRepository(directory)).agents, 1);
@@ -372,10 +369,10 @@ test("agents and skills must live in their Agent Plugins locations with valid fr
     await writeFile(join(plugin, "com.github.copilot/agents/notes.md"), "Not an agent.\n");
     await assert.rejects(validateRepository(directory), /com\.github\.copilot\/agents\/ holds only <name>\.agent\.md files/);
     await rm(join(plugin, "com.github.copilot"), { recursive: true });
-    // Every plugin carries its own LICENSE.
+    // The root LICENSE covers every plugin, so none needs its own, though one may carry it.
+    await writeFile(join(plugin, "LICENSE"), "Apache License\n");
+    await validateRepository(directory);
     await rm(join(plugin, "LICENSE"));
-    await assert.rejects(validateRepository(directory), /plugins\/review\/LICENSE: every plugin needs its own LICENSE/);
-    await writeFile(join(plugin, "LICENSE"), "MIT License\n\nCopyright (c) 2026 Test\n");
     await rm(join(directory, ".vally.yaml"));
     await assert.rejects(validateRepository(directory), /\.vally\.yaml is required/);
   } finally {
@@ -421,7 +418,6 @@ test("hooks may use any documented event and pass arguments to their plugin scri
       $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "guard", version: "1.0.0", description: "Guard fixture.",
     }));
     await writeFile(join(plugin, "README.md"), "# Guard\n");
-    await writeFile(join(plugin, "LICENSE"), "MIT License\n\nCopyright (c) 2026 Test\n");
     await writeFile(join(plugin, "CHANGELOG.md"), "# Changelog\n\n## 1.0.0\n");
     await writeFile(join(directory, "marketplace.json"), JSON.stringify({ name: "hooks-fixture", owner: { name: "Test" },
       plugins: [{ name: "guard", source: "./plugins/guard", version: "1.0.0", description: "Guard fixture." }] }));
@@ -458,7 +454,6 @@ test("plugins can ship only Copilot slash commands, rules, or LSP servers", asyn
       $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "standards", version: "1.0.0", description: "Standards fixture.",
     }));
     await writeFile(join(plugin, "README.md"), "# Standards\n");
-    await writeFile(join(plugin, "LICENSE"), "MIT License\n\nCopyright (c) 2026 Test\n");
     await writeFile(join(plugin, "CHANGELOG.md"), "# Changelog\n\n## 1.0.0\n");
     await writeFile(join(directory, "marketplace.json"), JSON.stringify({ name: "components-fixture", owner: { name: "Test" },
       plugins: [{ name: "standards", source: "./plugins/standards", version: "1.0.0", description: "Standards fixture." }] }));

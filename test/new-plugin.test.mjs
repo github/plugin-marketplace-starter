@@ -193,6 +193,9 @@ test("a long plugin name with an agent is refused before anything is written, an
   assert.deepEqual(JSON.parse(await readFile(join(directory, "marketplace.json"), "utf8")), catalog);
   const name = "b".repeat(53);
   const { options } = await newPlugin(name, { components: ["agent"], directory });
+  // The root LICENSE covers every plugin, so new-plugin doesn't scaffold one.
+  assert.ok(!existsSync(join(directory, "plugins", name, "LICENSE")));
+  assert.ok(existsSync(join(directory, "plugins", name, "CHANGELOG.md")));
   const profile = await readFile(join(directory, "plugins", name, "com.github.copilot/agents", `${options.agent}.agent.md`), "utf8");
   assert.equal(frontmatter(profile, "agent").name, `${name}-specialist`);
   assert.equal(frontmatter(await readFile(join(directory, "plugins", name, "skills", name, "SKILL.md"), "utf8"), "skill").name, name);

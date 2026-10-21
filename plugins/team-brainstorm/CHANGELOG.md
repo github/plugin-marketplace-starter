@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2
+
+- Remove the plugin's own `LICENSE`. The plugin is still MIT licensed, under
+  the repository's root `LICENSE`.
+
 ## 1.1.1
 
 - Add a Host checks section to the README for the manual release checks.

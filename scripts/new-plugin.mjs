@@ -13,7 +13,7 @@ export const root = fileURLToPath(new URL("../", import.meta.url));
 const components = ["agent", "mcp", "hook", "extension"];
 const usage = `Usage: npm run new-plugin -- <name> [--with <type>]... [--no-skill] [--description "What it does."]
 
-Scaffolds plugins/<name>/ with a skill, README, CHANGELOG, and LICENSE, plus
+Scaffolds plugins/<name>/ with a skill, README, and CHANGELOG, plus
 evals/<name>/eval.yaml, and registers the plugin in marketplace.json,
 .github/copilot/settings.json, .vally.yaml, and the README's plugin table and
 install commands. npm run verify passes right away.
@@ -517,31 +517,6 @@ function evalFile(name, { skill, agent, mcp, hook, extension }) {
   return lines.join("\n");
 }
 
-function licenseFile(owner) {
-  return `MIT License
-
-Copyright (c) ${new Date().getFullYear()} ${owner}
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-`;
-}
-
 // Adds the plugin to the README's plugin table (marked with <!-- plugin-table -->)
 // and its install commands, when the README still has them. Returns whether it
 // changed anything.
@@ -609,7 +584,6 @@ export async function newPlugin(name, { components: requested = [], skill = true
   }, null, 2)}\n`);
   await add(`plugins/${name}/README.md`, readmeFile(name, description, catalog.name, repo, options));
   await add(`plugins/${name}/CHANGELOG.md`, "# Changelog\n\n## 0.1.0\n\n- Initial release.\n");
-  await add(`plugins/${name}/LICENSE`, licenseFile(catalog.owner.name));
   if (options.skill) await add(`plugins/${name}/skills/${name}/SKILL.md`, skillFile(name, description, options));
   if (options.agent) await add(`plugins/${name}/com.github.copilot/agents/${options.agent}.agent.md`, agentFile(options.agent, name));
   if (options.mcp) {

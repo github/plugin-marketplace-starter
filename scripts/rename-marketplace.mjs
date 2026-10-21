@@ -29,7 +29,7 @@ Renames the marketplace everywhere it appears:
   --repo <OWNER/REPO>  The GitHub repository that hosts it, such as my-org/plugins.
   --dry-run            List the files that would change without changing them.
 
-It doesn't change LICENSE files; decide on the copyright holder yourself.
+It doesn't change LICENSE; decide on the copyright holder yourself.
 npm run verify warns about anything left over.`;
 
 const skipped = new Set([".git", "node_modules", "vally-results", ".vally", ".copilot-home", "dist"]);
@@ -152,6 +152,6 @@ if (isEntrypoint(import.meta.url)) {
     console.log(`${values["dry-run"] ? "Would rename" : "Renamed"} ${result.from.name} to ${result.to.name}${values["dry-run"] ? ", changing" : ". Changed"}:`);
     for (const path of result.changed) console.log(`  ${path}`);
     if (values["dry-run"]) return;
-    console.log("\nNext: rewrite the README's introduction for your marketplace, add your own copyright line to LICENSE (keep the template's line), and put your holder in the LICENSE of each plugin you wrote. Then run npm run verify. It warns about anything left over.");
+    console.log("\nNext: rewrite the README's introduction for your marketplace, and add your own copyright line to the root LICENSE (keep the template's line). That one LICENSE covers every plugin. Then run npm run verify. It warns about anything left over.");
   });
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4
+
+- Remove the plugin's own `LICENSE`. The plugin is still MIT licensed, under
+  the repository's root `LICENSE`.
+
 ## 1.0.3
 
 - Rename the README's Smoke checks section to Host checks, to match the other plugins and the release checklist.

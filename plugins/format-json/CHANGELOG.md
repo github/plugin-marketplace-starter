@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.3
+
+- Remove the plugin's own `LICENSE`. The plugin is still MIT licensed, under
+  the repository's root `LICENSE`.
+
 ## 1.1.2
 
 - Run the hook when its install path goes through a symlink, such as macOS

@@ -247,8 +247,10 @@ test("rename-marketplace renames the catalog, overlay, package, and install comm
     // rename-marketplace changes the title, but the introduction is still the template's.
     assert.match(validated, /README\.md: the title or introduction is still the template's/);
   }
-  if (/Harald Kirschner|Ronnie Geraghty/.test(await readFile(join(directory, "LICENSE"), "utf8"))) {
-    assert.match(validated, /LICENSE: names only the template's authors/);
+  const holders = [...(await readFile(join(directory, "LICENSE"), "utf8")).matchAll(/^Copyright \(c\) \d{4} (.+?)\s*$/gm)].map((match) => match[1]);
+  if (holders.length && holders.every((holder) => holder === "GitHub, Inc.")) {
+    // rename-marketplace leaves LICENSE alone, so the template's holder is still the only one.
+    assert.match(validated, /LICENSE: names only GitHub, Inc\., the template's holder/);
   }
 
   // A new plugin's README uses the real repository, and a second rename works too.

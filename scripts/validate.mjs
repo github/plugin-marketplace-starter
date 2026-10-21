@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import Ajv from "ajv/dist/2020.js";
 import { contained, frontmatter, parseYaml, readCatalog, readVallyConfig, remoteWarnings } from "./catalog.mjs";
-import { examples } from "./examples.mjs";
 import { Problems, runCli } from "./problems.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
@@ -177,9 +176,10 @@ export const scaffoldText = Object.freeze([
   "Replace the actions and the page with your own",
   "Scaffolded checks for the",
 ]);
-// The people who wrote the template's tooling and examples. Their MIT notices
-// stay in anything you keep; see Licensing in README.md.
-export const templateLicenseHolders = Object.freeze(["Harald Kirschner", "Ronnie Geraghty"]);
+// The holder named in the template's root LICENSE, which covers the whole
+// repository, plugins included. Its MIT notice stays in anything you keep; see
+// Licensing in README.md.
+export const templateLicenseHolder = "GitHub, Inc.";
 const read = async (path) => { try { return await readFile(path, "utf8"); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; } };
 
 // Every holder named on a "Copyright" line in a license file.
@@ -221,22 +221,12 @@ async function adoptionWarnings(directory, catalog, allFiles) {
   if (readme?.startsWith("# Plugin marketplace starter") || readme?.replace(/\s+/g, " ").includes(templateIntroduction)) {
     warnings.push("README.md: the title or introduction is still the template's. Rewrite them for your marketplace.");
   }
-  // MIT asks you to keep the original notice in copies, so a kept example and
-  // the template's tooling keep their authors' lines. These warn only while no
-  // one else is named: the root LICENSE needs your line beside the template's,
-  // and a plugin you wrote needs your own holder.
-  const templateOnly = (holders, plugin) => holders.length > 0 && holders.every((holder) => templateLicenseHolders.includes(holder)
-    || (plugin && holder === templateDefaults.owner && catalog.owner?.name !== templateDefaults.owner));
+  // MIT asks you to keep the original notice in copies, so the template's line
+  // stays. This warns only while no one else is named in the root LICENSE, which
+  // covers your plugins too, and not when the catalog owner is GitHub itself.
   const rootHolders = copyrightHolders(await read(resolve(directory, "LICENSE")));
-  if (templateOnly(rootHolders, false)) {
-    warnings.push(`LICENSE: names only the template's authors (${rootHolders.join(", ")}). Keep their line, since you kept their code, and add a line for your own copyright. See Licensing in README.md.`);
-  }
-  for (const path of allFiles.map((file) => relative(directory, file).split(sep).join("/")).filter((item) => /^plugins\/[^/]+\/LICENSE$/.test(item))) {
-    if (examples[path.split("/")[1]]) continue;
-    const holders = copyrightHolders(await read(resolve(directory, path)));
-    if (templateOnly(holders, true)) {
-      warnings.push(`${path}: names only ${holders.join(", ")}, not you. Put your own holder in it. If the plugin started as a copy of an example, keep that line and add yours. See Licensing in README.md.`);
-    }
+  if (catalog.owner?.name !== templateDefaults.owner && rootHolders.length > 0 && rootHolders.every((holder) => holder === templateLicenseHolder)) {
+    warnings.push(`LICENSE: names only ${templateLicenseHolder}, the template's holder. Keep that line, since you kept the template's code, and add a line for your own copyright. It covers every plugin in the repository. See Licensing in README.md.`);
   }
   if ((await read(resolve(directory, "SECURITY.md")))?.includes("Replace this section with your team's reporting channel")) {
     warnings.push("SECURITY.md: replace the placeholder reporting section with your real security contact.");
@@ -266,10 +256,6 @@ async function validatePlugin(directory, entry, problems, counts) {
       `needs a "## ${manifest.version}" heading for the current version.`));
   }
   await problems.check(`${label}/README.md`, () => stat(resolve(source, "README.md")));
-  await problems.check(`${label}/LICENSE`, async () => {
-    try { await stat(resolve(source, "LICENSE")); }
-    catch { assert.fail("every plugin needs its own LICENSE, so it stays licensed when it's installed or copied on its own."); }
-  });
   let assets = 0;
   const agents = new Set();
   for (const file of await files(source)) {

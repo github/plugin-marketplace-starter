@@ -80,8 +80,8 @@ You need Node.js 22.14 or newer.
    `npm run remove-plugin -- github-copilot`.
    <!-- /plugin:github-copilot -->
 6. Replace what's meant for you before you ship:
-   - Your own copyright line in [LICENSE](LICENSE), beside the template's, and
-     your holder in the `LICENSE` of each plugin you write. See
+   - Your own copyright line in [LICENSE](LICENSE), beside the template's. That
+     one file covers the whole repository, including every plugin. See
      [Licensing](#licensing).
    - The title and introduction of this README.
    - Real owners in [.github/CODEOWNERS](.github/CODEOWNERS). On a personal
@@ -158,7 +158,7 @@ npm run verify
 ```
 
 `new-plugin` creates `plugins/<name>/` with `plugin.json`, a skill, a README
-with Install and Host checks sections, a CHANGELOG, and a LICENSE, plus
+with Install and Host checks sections, and a CHANGELOG, plus
 `evals/<name>/eval.yaml` with cases that already meet the coverage rules. It
 adds the plugin to the catalog, the repository overlay, `.vally.yaml`, and this
 README's plugin table and install commands.
@@ -247,7 +247,7 @@ setup, personal accounts, billing, cost, and security.
 ```text
 marketplace.json           # The catalog: marketplace name, owner, and plugins
 plugins/<name>/            # One self-contained plugin per workflow
-  plugin.json, README.md, CHANGELOG.md, LICENSE
+  plugin.json, README.md, CHANGELOG.md
   skills/<skill>/SKILL.md
   com.github.copilot/      # Copilot-only parts: agents, hooks, extensions, and more
   mcp.json, src/, dist/    # A local MCP server, its source, and its bundle
@@ -264,30 +264,29 @@ docs/                      # Reference guides
 
 ## Licensing
 
-The template is [MIT licensed](LICENSE), and so is each plugin, which carries
-its own `LICENSE` so it stays licensed when installed or copied on its own.
-`npm run verify` fails if a plugin has no `LICENSE`.
+The repository is [MIT licensed](LICENSE). That one root `LICENSE`, held by
+GitHub, Inc., covers everything here: the scripts, tests, docs, and every
+plugin. Plugins don't carry their own `LICENSE`; each one declares
+`"license": "MIT"` in its `plugin.json`.
 
 Two different names show up, and they mean different things.
 `owner.name` in [marketplace.json](marketplace.json), `GitHub` in the template,
 says who publishes the catalog. `npm run rename-marketplace` sets it to you.
-The `Copyright` lines in each `LICENSE` say who wrote the code. The template's
-tooling and examples were written by the people named in their `LICENSE`
-files, so those lines name them rather than GitHub.
+The `Copyright` line in `LICENSE` says who holds the copyright in the code.
 
 - MIT asks that its copyright and permission notice stay with every copy, so
-  keep the existing lines in what you keep: the root `LICENSE`, which covers
-  the scripts, tests, and docs, and the `LICENSE` of any example you keep or
-  copy. Add your own `Copyright` line below them for your changes.
-- Put your own holder in the `LICENSE` of each plugin you write.
-  `new-plugin` uses the catalog owner for new plugins.
-- `npm run verify` warns while the root `LICENSE` names only the template's
-  authors, and while a plugin you added names only them or `GitHub`. It
-  doesn't warn about a kept example's notice, which should stay.
+  keep the `Copyright (c) 2026 GitHub, Inc.` line for the code you kept from
+  the template. Add your own `Copyright` line below it. It covers your changes
+  and the plugins you write.
+- `npm run verify` warns, once you've renamed the marketplace, while the root
+  `LICENSE` names only GitHub, Inc. It doesn't warn when the catalog owner is
+  `GitHub`.
 - To use a different license, change the root `LICENSE`, `license` in
-  `package.json`, and each plugin's `LICENSE` and `plugin.json` `license`.
-  `verify` doesn't check that they agree. Code you kept from the template stays
-  under MIT, with its notice.
+  `package.json`, and each plugin's `plugin.json` `license`. `verify` doesn't
+  check that they agree. Code you kept from the template stays under MIT, with
+  its notice.
+- If one plugin needs a different license from the rest, give it its own
+  `LICENSE` and set its `plugin.json` `license` to match.
 - Keep the vendored Agent Plugins schemas' Apache-2.0
   [license](schemas/LICENSE-APACHE-2.0.txt) and [notice](schemas/NOTICE), and
   the third-party notices beside each generated bundle.
