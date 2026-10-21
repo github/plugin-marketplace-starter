@@ -36,7 +36,8 @@ function run(directory, ...args) {
 async function ok(directory, ...args) {
   const result = await run(directory, ...args);
   assert.equal(result.status, 0, `${args.join(" ")} failed in ${directory}:\n${result.stdout}\n${result.stderr}`);
-  return result.stdout;
+  // Warnings go to stderr, so return both.
+  return `${result.stdout}${result.stderr}`;
 }
 
 // Copies the repository one entry at a time, so it also works when the scratch
@@ -96,8 +97,9 @@ test("a team can rename the marketplace, drop examples and the remote entry, and
   const fixture = `adoption-${randomBytes(3).toString("hex")}`;
   if (!existsSync(join(directory, "plugins/release-notes"))) {
     await newPlugin(directory, "release-notes");
-    // The README's minimal chat-skill eval must pass the coverage check and strict lint as written.
-    const example = (await readFile(join(directory, "README.md"), "utf8")).match(/```yaml\r?\n(name: release-notes\r?\n[\s\S]*?)```/)?.[1];
+    // The guide's chat-skill eval must pass the coverage check and strict lint as written.
+    const example = (await readFile(join(directory, "docs/eval-authoring.md"), "utf8")).match(/```yaml\r?\n(name: release-notes\r?\n[\s\S]*?)```/)?.[1];
+    assert.ok(example, "docs/eval-authoring.md should keep its release-notes example.");
     if (example) await writeFile(join(directory, "evals/release-notes/eval.yaml"), example);
   }
   await newPlugin(directory, `${fixture}-tools`, "--with", "mcp", "--with", "agent", "--description", "Fixture tools for the adoption test.");
@@ -147,11 +149,13 @@ test("a team can rename the marketplace, drop examples and the remote entry, and
   assert.doesNotMatch(stale.stderr, /\n\s+at /);
 });
 
-test("removing every example leaves checks and tests that pass for a team's own plugin", { timeout: 600_000, skip: !present.length && "no examples left" }, async (t) => {
+// The order a solo developer or a remote-only curator might take: strip every
+// example and remote entry first, then scaffold into what's left. In the
+// template that's an empty catalog; in your marketplace, your own plugins stay.
+test("an empty or remote-only marketplace passes verify, and new plugins scaffold into it", { timeout: 900_000 }, async (t) => {
   const directory = await scratchRepository(t);
-  const name = `adoption-${randomBytes(3).toString("hex")}`;
-  await newPlugin(directory, name);
-  await removeExamples(directory, ...present);
+  const prefix = `adoption-${randomBytes(3).toString("hex")}`;
+  if (present.length) await ok(directory, "scripts/remove-plugin.mjs", "--example", "--all");
   for (const example of present) {
     for (const path of [`plugins/${example}`, `evals/${example}`, ...examples[example].paths]) {
       assert.ok(!existsSync(join(directory, path)), `${path} should be removed with ${example}.`);
@@ -159,9 +163,94 @@ test("removing every example leaves checks and tests that pass for a team's own 
   }
   const vally = parse(await readFile(join(directory, ".vally.yaml"), "utf8"));
   for (const example of present) for (const param of examples[example].params) assert.equal(vally.params?.[param], undefined);
-  const { validated, coverage } = await verify(directory);
-  assert.doesNotMatch(validated, new RegExp(`mentions plugins/(${present.join("|")})`));
-  assert.match(coverage, new RegExp(`skill:${name}/${name}`));
+  const before = await json(join(directory, "marketplace.json"));
+  const ownPlugins = before.plugins.filter((entry) => typeof entry.source === "string");
+  const readme = await readFile(join(directory, "README.md"), "utf8");
+  if (present.length) {
+    assert.ok(!existsSync(join(directory, "docs/examples.md")), "The examples guide goes with the last example.");
+    assert.doesNotMatch(readme, /Six small example plugins|authoring reference/);
+    if (!ownPlugins.length && readme.includes("<!-- plugin-table -->")) {
+      assert.match(readme, /<!-- plugin-table -->\n\| Plugin \| Try it \| Teaches \|\n\|---\|---\|---\|\n\| _None yet\._ \| \| \|\n/);
+    }
+  }
+
+  // Only remote entries (and your own plugins) left: everything still passes, including the tests.
+  const remote = await verify(directory);
+  if (!ownPlugins.length) assert.match(remote.validated, /There are no local plugins yet/);
+
+  for (const entry of before.plugins.filter((item) => typeof item.source !== "string")) {
+    await ok(directory, "scripts/remove-plugin.mjs", entry.name);
+  }
+  assert.ok((await json(join(directory, "marketplace.json"))).plugins.every((entry) => typeof entry.source === "string"));
+  const empty = await verify(directory, { tests: false });
+  if (!ownPlugins.length) assert.match(empty.coverage, /nothing to cover/);
+
+  const [hook, canvas, skill] = ["lint", "standup", "notes"].map((name) => `${prefix}-${name}`);
+  await newPlugin(directory, hook, "--no-skill", "--with", "hook");
+  await newPlugin(directory, canvas, "--with", "extension");
+  await newPlugin(directory, skill);
+  const scaffolded = await verify(directory);
+  for (const id of [`hook:${hook}/postToolUse`, `extension:${canvas}/${canvas}`, `skill:${canvas}/${canvas}`, `skill:${skill}/${skill}`]) {
+    assert.match(scaffolded.coverage, new RegExp(id));
+  }
+  const listed = await readFile(join(directory, "README.md"), "utf8");
+  if (listed.includes("<!-- plugin-table -->")) {
+    assert.doesNotMatch(listed, /_None yet\._/);
+    for (const name of [hook, canvas, skill]) assert.match(listed, new RegExp(`\\| \\[${name}\\]\\(plugins/${name}/\\) \\|`));
+  }
+  assert.match(scaffolded.validated, /still has scaffolded text/);
+
+  // Removing a scaffolded plugin takes the support files named after it.
+  await ok(directory, "scripts/remove-plugin.mjs", canvas, hook);
+  for (const path of [`evals/graders/${canvas}.mjs`, `test/${hook}-hook.test.mjs`]) assert.ok(!existsSync(join(directory, path)), path);
+  assert.ok(!Object.values(parse(await readFile(join(directory, ".vally.yaml"), "utf8")).params ?? {}).some((value) => String(value).includes(canvas)));
+  await verify(directory, { tests: false });
+});
+
+test("rename-marketplace renames the catalog, overlay, package, and install commands together", { timeout: 600_000 }, async (t) => {
+  const directory = await scratchRepository(t);
+  const before = await json(join(directory, "marketplace.json"));
+  const templateTitle = (await readFile(join(directory, "README.md"), "utf8")).startsWith("# Plugin marketplace starter\n");
+  await ok(directory, "scripts/rename-marketplace.mjs", "--name", "jdoe-skills", "--owner", "jdoe", "--repo", "jdoe/my-skills");
+  const catalog = await json(join(directory, "marketplace.json"));
+  assert.equal(catalog.name, "jdoe-skills");
+  assert.equal(catalog.owner.name, "jdoe");
+  assert.equal(catalog.plugins.length, before.plugins.length);
+  const settings = await json(join(directory, ".github/copilot/settings.json"));
+  assert.deepEqual(Object.keys(settings.extraKnownMarketplaces), ["jdoe-skills"]);
+  assert.ok(Object.keys(settings.enabledPlugins).every((key) => key.endsWith("@jdoe-skills")));
+  const manifest = await json(join(directory, "package.json"));
+  assert.equal(manifest.name, "jdoe-skills");
+  assert.equal(manifest.repository.url, "https://github.com/jdoe/my-skills");
+  const lock = await json(join(directory, "package-lock.json"));
+  assert.equal(lock.name, "jdoe-skills");
+  assert.equal(lock.packages[""].name, "jdoe-skills");
+  const readme = await readFile(join(directory, "README.md"), "utf8");
+  if (templateTitle) assert.match(readme, /^# Jdoe Skills\n/);
+  assert.doesNotMatch(readme, /plugin-marketplace-starter|currently private/);
+  if (catalog.plugins.some((entry) => typeof entry.source === "string")) assert.match(readme, /copilot plugin marketplace add jdoe\/my-skills/);
+  for (const name of present) {
+    const pluginReadme = await readFile(join(directory, "plugins", name, "README.md"), "utf8");
+    assert.match(pluginReadme, new RegExp(`copilot plugin install ${name}@jdoe-skills`));
+    assert.doesNotMatch(pluginReadme, /OWNER\/REPO|MARKETPLACE/);
+  }
+  const { validated } = await verify(directory, { tests: false });
+  assert.doesNotMatch(validated, /name is still the template's|still names the template's marketplace|OWNER\/REPO/);
+  if (/Harald Kirschner|Ronnie Geraghty/.test(await readFile(join(directory, "LICENSE"), "utf8"))) {
+    assert.match(validated, /LICENSE: the copyright holder is still the template's/);
+  }
+
+  // A new plugin's README uses the real repository, and a second rename works too.
+  await newPlugin(directory, "regex-explainer");
+  assert.match(await readFile(join(directory, "plugins/regex-explainer/README.md"), "utf8"), /copilot plugin marketplace add jdoe\/my-skills\ncopilot plugin install regex-explainer@jdoe-skills/);
+  await ok(directory, "scripts/rename-marketplace.mjs", "--name", "jdoe-tools", "--owner", "jdoe", "--repo", "jdoe/tools");
+  assert.match(await readFile(join(directory, "plugins/regex-explainer/README.md"), "utf8"), /marketplace add jdoe\/tools\ncopilot plugin install regex-explainer@jdoe-tools/);
+  await ok(directory, "scripts/validate.mjs");
+  for (const args of [["--name", "Bad Name", "--owner", "x", "--repo", "a/b"], ["--name", "ok", "--owner", "x", "--repo", "https://github.com/a/b"]]) {
+    const refused = await run(directory, "scripts/rename-marketplace.mjs", ...args);
+    assert.notEqual(refused.status, 0);
+    assert.doesNotMatch(refused.stderr, /\n\s+at /);
+  }
 });
 
 test("each example can be removed on its own", { timeout: 600_000, skip: !present.length && "no examples left" }, async (t) => {
@@ -177,6 +266,8 @@ test("each example can be removed on its own", { timeout: 600_000, skip: !presen
 });
 
 test("removal prunes install commands, marked sections, example table rows, and links to removed files", () => {
+  assert.equal(pruneMarkdown(["| Plugin | Notes |", "|---|---|", "| [gone](plugins/gone/) | row |", "", "<!-- examples -->", "Six examples.", "<!-- /examples -->", "after"].join("\n"),
+    ["gone"], (link) => link.startsWith("plugins/gone"), ["examples"]), ["| Plugin | Notes |", "|---|---|", "| _None yet._ | |", "", "after"].join("\n"));
   const removed = (link) => link.startsWith("plugins/gone") || link.startsWith("../plugins/gone");
   const text = [
     "| [gone](plugins/gone/) | row |",

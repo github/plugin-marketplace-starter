@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readFile, readdir, writeFile, access } from "node:fs/promises";
-import { resolve, delimiter, relative } from "node:path";
+import { resolve, delimiter, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { stringify } from "yaml";
-import { evalFilenameMatcher, evalFilenames, paramsFileName, readVallyConfig } from "./catalog.mjs";
+import { evalFilenameMatcher, evalFilenames, expectedCases, paramsFileName, readVallyConfig } from "./catalog.mjs";
+import { runCli } from "./problems.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 const cliDirectory = resolve(root, "node_modules/@microsoft/vally-cli");
@@ -75,18 +77,138 @@ export async function writeActionParams(directory = resolve(root, "evals"), para
   return written;
 }
 
+export const usage = `Usage: node scripts/evals.mjs <command> [options] [Vally options]
+
+Commands:
+  eval            Run evals with real Copilot sessions. Costs AI credits.
+  lint            Check skills and eval specs without a model (npm run eval:lint).
+  grade           Re-grade saved evidence (npm run eval:grade).
+  action-params   Write eval params files for the Evals Action in CI.
+
+Launcher options for eval and lint:
+  --plugin <name>   Select every eval spec for a plugin: the specs under
+                    evals/<name>/, including nested ones such as
+                    evals/<name>/agent/eval.yaml, and any spec whose cases tag one
+                    of its assets. Repeat it for several plugins.
+  --list            With eval, print the specs and cases that would run, and the
+                    command, without starting a session. It's free.
+
+Any other options go to Vally unchanged, for example --suite smoke,
+--eval-spec <path>, --model <id>, or --require-pass. Run
+node scripts/evals.mjs eval --help to also see Vally's own options.
+
+Examples:
+  node scripts/evals.mjs eval --plugin code-review --list
+  node scripts/evals.mjs eval --plugin code-review
+  npm run eval:report -- --plugin code-review`;
+
+const slash = (path) => path.split(sep).join("/");
+
+// Every spec that belongs to a plugin: anything under evals/<name>/, plus any
+// other spec with a case that tags one of the plugin's assets.
+export function specsForPlugins(names, specs, directory = root) {
+  const selected = [];
+  for (const name of names) {
+    const owned = specs.filter(({ path, spec }) => {
+      const where = slash(relative(resolve(directory, "evals"), path));
+      return where.startsWith(`${name}/`) || (spec?.stimuli ?? []).some((stimulus) =>
+        [stimulus?.tags?.assets].flat().some((id) => typeof id === "string" && id.split(":")[1]?.startsWith(`${name}/`)));
+    });
+    if (!owned.length) throw new Error(`No eval specs found for plugin ${name}. Expected one under evals/${name}/, or a case tagged with one of its assets.`);
+    for (const item of owned) if (!selected.includes(item)) selected.push(item);
+  }
+  return selected;
+}
+
+// Splits launcher options from the arguments that go to Vally.
+export function launcherOptions(args) {
+  const plugins = [];
+  const rest = [];
+  let list = false;
+  let help = false;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === "--list") list = true;
+    else if (arg === "--help" || arg === "-h") { help = true; rest.push(arg); }
+    else if (arg === "--plugin" || arg.startsWith("--plugin=")) {
+      const value = arg.includes("=") ? arg.slice("--plugin=".length) : args[++index];
+      if (!value || value.startsWith("-")) throw new Error("--plugin needs a plugin name, such as --plugin code-review.");
+      plugins.push(value);
+    } else rest.push(arg);
+  }
+  return { plugins, list, help, rest };
+}
+
+const optionValues = (args, name) => args.flatMap((arg, index) => arg === name ? [args[index + 1]] : arg.startsWith(`${name}=`) ? [arg.slice(name.length + 1)] : [])
+  .filter((value) => value !== undefined);
+
+// What a paid run would select, using the same rules as the report.
+export async function describeSelection(args, directory = root) {
+  const { readEvals } = await import("./validate-evals.mjs");
+  const config = await readVallyConfig(directory);
+  const specs = await readEvals(directory, config);
+  const suite = optionValues(args, "--suite").at(-1);
+  const evalSpecs = optionValues(args, "--eval-spec");
+  if (!specs.length) return [];
+  const cases = expectedCases(specs, config, { suite, evalSpecs, directory });
+  const chosen = specs.filter(({ spec }) => (spec?.stimuli ?? []).some((stimulus) => cases.has(stimulus.name)));
+  return chosen.map(({ path, spec }) => ({
+    path: slash(relative(directory, path)),
+    cases: spec.stimuli.filter((stimulus) => cases.has(stimulus.name)).map((stimulus) => stimulus.name),
+  }));
+}
+
 async function main() {
-  const [command = "eval", ...args] = process.argv.slice(2);
+  const [command, ...raw] = process.argv.slice(2);
+  if (!command || ["--help", "-h", "help"].includes(command)) {
+    console.log(usage);
+    if (!command) process.exitCode = 1;
+    return;
+  }
   if (command === "action-params") {
     for (const file of await writeActionParams()) console.log(`Wrote ${file}`);
     return;
   }
+  if (!["eval", "lint", "grade"].includes(command)) throw new Error(`Unknown command ${command}.\n\n${usage}`);
+  const options = launcherOptions(raw);
+  if (options.help) console.log(`${usage}\n\nVally's options for ${command}:\n`);
+  let args = options.rest;
+  if (options.plugins.length) {
+    if (command === "grade") throw new Error("--plugin works with eval and lint. For grade, pass Vally's own options.");
+    const { readEvals } = await import("./validate-evals.mjs");
+    const specs = specsForPlugins(options.plugins, await readEvals(root));
+    args = [...specs.flatMap(({ path }) => ["--eval-spec", slash(relative(root, path))]), ...args];
+  }
+  if (options.list) {
+    if (command !== "eval") throw new Error("--list works with eval.");
+    const selection = await describeSelection(args);
+    const total = selection.reduce((sum, item) => sum + item.cases.length, 0);
+    if (!total) return console.log("There are no eval specs yet, so nothing would run.");
+    console.log(`Would run ${total} case${total === 1 ? "" : "s"} from ${selection.length} spec${selection.length === 1 ? "" : "s"}. Each case runs at least one Copilot session.`);
+    for (const item of selection) {
+      console.log(`  ${item.path}`);
+      for (const name of item.cases) console.log(`    ${name}`);
+    }
+    console.log(`\nTo run them (costs AI credits):\n  node scripts/evals.mjs eval ${args.join(" ")}`);
+    console.log(`Then report on the same selection:\n  npm run eval:report -- ${args.filter((arg) => !["--require-pass"].includes(arg)).join(" ")}`);
+    return;
+  }
+  if (command === "lint" && !args.length && !existsSync(resolve(root, "plugins"))) {
+    const { readEvals } = await import("./validate-evals.mjs");
+    if (!(await readEvals(root)).length) {
+      console.log("No plugins or eval specs to lint yet. Add a plugin with npm run new-plugin -- <name>.");
+      return;
+    }
+    throw new Error("plugins/ doesn't exist, but evals/ has eval specs. Add the plugins they cover, or remove the specs.");
+  }
+  if (command === "lint" && options.plugins.length) args = [...args, "--strict"];
   await access(resolve(root, "node_modules/@github/copilot/npm-loader.js"));
   for (const [name, path] of Object.entries(evalParams)) {
     try { await access(path); }
     catch { throw new Error(`.vally.yaml param ${name} points to a missing path: ${path}. Run npm run build or update .vally.yaml.`); }
   }
-  const child = spawn(process.execPath, vallyArguments(command, args), { cwd: root, stdio: "inherit", env: runtimeEnvironment() });
+  const vally = command === "lint" && options.plugins.length ? [vallyCliPath, "lint", ...Object.entries(evalParams).flatMap(([name, value]) => ["--param", `${name}=${value}`]), ...args] : vallyArguments(command, args);
+  const child = spawn(process.execPath, vally, { cwd: root, stdio: "inherit", env: runtimeEnvironment() });
   child.on("error", (error) => { console.error(error); process.exitCode = 1; });
   child.on("exit", (code, signal) => {
     if (signal) console.error(`Vally terminated by ${signal}.`);
@@ -96,4 +218,4 @@ async function main() {
   process.on("SIGTERM", () => child.kill("SIGTERM"));
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await runCli(main);

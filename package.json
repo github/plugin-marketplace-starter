@@ -17,9 +17,12 @@
     "eval": "node scripts/evals.mjs eval --suite full",
     "eval:grade": "node scripts/evals.mjs grade",
     "eval:report": "node scripts/eval-report.mjs",
+    "eval:list": "node scripts/evals.mjs eval --list",
     "new-plugin": "node scripts/new-plugin.mjs",
     "remove-plugin": "node scripts/remove-plugin.mjs",
-    "remove-example": "node scripts/remove-plugin.mjs --example"
+    "remove-example": "node scripts/remove-plugin.mjs --example",
+    "rename-marketplace": "node scripts/rename-marketplace.mjs",
+    "check-remotes": "node scripts/check-remotes.mjs"
   },
   "devDependencies": {
     "@github/copilot": "1.0.98",

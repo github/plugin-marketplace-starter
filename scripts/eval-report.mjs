@@ -6,6 +6,8 @@ import { expectedCases, readVallyConfig } from "./catalog.mjs";
 
 export { expectedCases };
 import { root, readEvals } from "./validate-evals.mjs";
+import { specsForPlugins } from "./evals.mjs";
+import { runCli } from "./problems.mjs";
 
 const hasGraderError = (grade) => grade?.status === "error" || (grade?.details ?? []).some(hasGraderError);
 const escape = (text) => String(text).replaceAll("|", "\\|").replaceAll("\n", " ").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -57,20 +59,61 @@ export function render(summary, path) {
   ].join("\n");
 }
 
+export const usage = `Usage: npm run eval:report -- [--suite <name> | --eval-spec <path>... | --plugin <name>...] [--run-dir <path>]
+
+Reads a saved eval run and prints a Markdown report. It doesn't run a model.
+Select the same cases you ran, or the report treats the missing ones as errors:
+
+  --suite <name>      A suite from .vally.yaml, such as smoke or full.
+  --eval-spec <path>  One eval spec. Repeat it for several specs.
+  --plugin <name>     Every spec for a plugin, as in node scripts/evals.mjs eval --plugin.
+  --run-dir <path>    The saved run to read. Defaults to the newest directory
+                      under vally-results/.
+
+With no selection, it expects the full suite. It exits nonzero for an incomplete
+run, a runtime or grader error, or a missing result. Valid failed verdicts are
+reported but don't fail it.
+
+Example:
+  npm run eval:report -- --plugin code-review --run-dir vally-results/<run>`;
+
 async function main() {
-  const { values } = parseArgs({ options: {
-    suite: { type: "string" }, "eval-spec": { type: "string", multiple: true }, "run-dir": { type: "string" },
-  } });
+  let parsed;
+  try {
+    parsed = parseArgs({ options: {
+      suite: { type: "string" }, "eval-spec": { type: "string", multiple: true }, "run-dir": { type: "string" },
+      plugin: { type: "string", multiple: true }, help: { type: "boolean", short: "h" },
+    } });
+  } catch (error) {
+    throw new Error(`${error.message}. Run npm run eval:report -- --help for the options.`);
+  }
+  const { values } = parsed;
+  if (values.help) {
+    console.log(usage);
+    return;
+  }
+  const config = await readVallyConfig(root);
+  const specs = await readEvals(root, config);
+  const evalSpecs = [...(values["eval-spec"] ?? [])];
+  if (values.plugin?.length) {
+    for (const { path } of specsForPlugins(values.plugin, specs)) evalSpecs.push(relative(root, path));
+  }
   let directory = values["run-dir"];
   if (!directory) {
     const base = resolve(root, "vally-results");
-    const runs = (await readdir(base, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
-    if (!runs.length) throw new Error("No saved eval runs.");
+    let runs = [];
+    try { runs = (await readdir(base, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (!runs.length) throw new Error("No saved eval runs under vally-results/. Run evals first, or pass --run-dir with a saved run.");
     directory = resolve(base, runs.at(-1));
   }
-  const config = await readVallyConfig(root);
-  const expected = expectedCases(await readEvals(root, config), config, { suite: values.suite, evalSpecs: values["eval-spec"] });
-  const text = await readFile(resolve(directory, "results.jsonl"), "utf8");
+  let text;
+  try { text = await readFile(resolve(directory, "results.jsonl"), "utf8"); }
+  catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    throw new Error(`${relative(root, resolve(directory, "results.jsonl")).split(sep).join("/")} doesn't exist. Pass --run-dir with a directory under vally-results/ that a finished run wrote.`);
+  }
+  const expected = expectedCases(specs, config, { suite: values.suite, evalSpecs });
   const records = text.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line));
   const summary = summarize(records, expected);
   const markdown = render(summary, directory);
@@ -79,4 +122,4 @@ async function main() {
   if (summary.errors.length) process.exitCode = 1;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await runCli(main);
