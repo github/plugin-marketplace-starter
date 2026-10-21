@@ -7,8 +7,10 @@ Don't report security problems in public issues, discussions, or pull requests.
 <!-- Replace this section with your team's reporting channel before you ship. -->
 Use this repository's **Security** tab to
 [report a vulnerability privately](https://docs.github.com/en/code-security/security-advisories/working-with-repository-security-advisories/configuring-private-vulnerability-reporting-for-a-repository),
-if private vulnerability reporting is turned on. Otherwise contact the
-maintainers listed in [.github/CODEOWNERS](.github/CODEOWNERS) privately.
+if private vulnerability reporting is turned on. Otherwise contact this
+marketplace's maintainers privately. After you set up
+[.github/CODEOWNERS](.github/CODEOWNERS), list them there so reporters know who
+to contact.
 
 Include the affected plugin and version, the host and version you used, steps
 to reproduce, and the impact you observed. Leave out real secrets and private
