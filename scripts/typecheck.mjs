@@ -19,13 +19,23 @@ export async function typeScriptSources(directory = root) {
 
 // Type-checks plugin TypeScript. tsc fails when there are no inputs, which
 // happens once you remove the only MCP server example, so skip it then.
+// As the first step of npm run verify, it also checks that dependencies are installed.
 async function main() {
+  const require = createRequire(import.meta.url);
+  let manifestPath;
+  try {
+    for (const name of ["ajv", "yaml", "@microsoft/vally-cli"]) require.resolve(`${name}/package.json`);
+    manifestPath = require.resolve("typescript/package.json");
+  } catch (error) {
+    if (error.code !== "MODULE_NOT_FOUND") throw error;
+    console.error("Dependencies aren't installed. Run npm ci first, then try again.");
+    process.exitCode = 1;
+    return;
+  }
   if (!(await typeScriptSources()).length) {
     console.log("No plugin TypeScript sources to type-check.");
     return;
   }
-  const require = createRequire(import.meta.url);
-  const manifestPath = require.resolve("typescript/package.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin.tsc;
   const result = spawnSync(process.execPath, [resolve(dirname(manifestPath), bin), "--noEmit"], { cwd: root, stdio: "inherit" });

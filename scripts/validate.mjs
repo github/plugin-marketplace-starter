@@ -14,6 +14,17 @@ const ajv = new Ajv({ allErrors: true });
 const validatePluginManifest = ajv.compile(await json(resolve(root, "schemas/plugin.schema.json")));
 const validateMcp = ajv.compile(await json(resolve(root, "schemas/mcp.schema.json")));
 
+// Plugin directories under plugins/. A marketplace with no local plugins may not
+// have that directory at all, because git doesn't keep empty directories.
+export async function pluginDirectories(directory) {
+  try {
+    return (await readdir(resolve(directory, "plugins"), { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
 async function files(path) {
   const entries = await readdir(path, { withFileTypes: true });
   return (await Promise.all(entries.filter((entry) => !ignored.includes(entry.name))
@@ -114,24 +125,71 @@ export function pluginMentions(text) {
 export async function staleReferenceWarnings(directory, catalog, allFiles) {
   const warnings = [];
   if (catalog?.name === templateDefaults.marketplace) {
-    warnings.push(`marketplace.json: name is still the template's "${templateDefaults.marketplace}". Rename it, then update .github/copilot/settings.json and the install commands in your docs.`);
+    warnings.push(`marketplace.json: name is still the template's "${templateDefaults.marketplace}". Run npm run rename-marketplace to rename it everywhere at once.`);
   }
   if (catalog?.owner?.name === templateDefaults.owner) {
-    warnings.push(`marketplace.json: owner.name is still the template's "${templateDefaults.owner}". Set it to your team or organization.`);
+    warnings.push(`marketplace.json: owner.name is still the template's "${templateDefaults.owner}". Set it to your team or organization, for example with npm run rename-marketplace.`);
   }
   try {
     if ((await json(resolve(directory, "package.json"))).name === templateDefaults.package) {
-      warnings.push(`package.json: name is still the template's "${templateDefaults.package}". Rename it to match your repository.`);
+      warnings.push(`package.json: name is still the template's "${templateDefaults.package}". Run npm run rename-marketplace, or rename it to match your repository.`);
     }
   } catch (error) { if (error.code !== "ENOENT") throw error; }
-  const existing = new Set((await readdir(resolve(directory, "plugins"), { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory()).map((entry) => entry.name));
+  const existing = new Set(await pluginDirectories(directory));
   for (const file of allFiles) {
     const path = relative(directory, file).split(sep).join("/");
     if (!(path.endsWith(".md") || path === ".github/CODEOWNERS" || /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path))) continue;
     for (const { line, name } of pluginMentions(await readFile(file, "utf8"))) {
       if (!existing.has(name)) warnings.push(`${path}:${line}: mentions plugins/${name}, which doesn't exist. Update or remove the reference.`);
     }
+  }
+  warnings.push(...await adoptionWarnings(directory, catalog, allFiles));
+  return warnings;
+}
+
+const scaffoldText = ["Replace this description with the real trigger", "Replace these instructions with your team's procedure", "Replace these instructions with the specialist's role"];
+export const templateLicenseHolders = Object.freeze(["Harald Kirschner", "Ronnie Geraghty"]);
+const read = async (path) => { try { return await readFile(path, "utf8"); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; } };
+
+// Leftovers that matter once a team has made the marketplace its own: scaffold
+// text always, and the template's name, title, license holder, and placeholder
+// contacts after the marketplace has been renamed.
+async function adoptionWarnings(directory, catalog, allFiles) {
+  const warnings = [];
+  for (const file of allFiles) {
+    const path = relative(directory, file).split(sep).join("/");
+    if (!/^plugins\/[^/]+\/(?:skills\/[^/]+\/SKILL\.md|com\.github\.copilot\/agents\/[^/]+\.agent\.md)$/.test(path)) continue;
+    const text = await readFile(file, "utf8");
+    if (scaffoldText.some((phrase) => text.includes(phrase))) warnings.push(`${path}: still has scaffolded text from npm run new-plugin. Write the real description and instructions.`);
+  }
+  if (!catalog || catalog.name === templateDefaults.marketplace) return warnings;
+  let repo;
+  try { repo = (await json(resolve(directory, "package.json"))).repository; } catch { repo = undefined; }
+  for (const file of allFiles) {
+    const path = relative(directory, file).split(sep).join("/");
+    if (!path.endsWith(".md") || path.endsWith("CHANGELOG.md")) continue;
+    const lines = (await readFile(file, "utf8")).split(/\r?\n/);
+    const found = lines.findIndex((line) => /github\/plugin-marketplace-starter|@plugin-marketplace-starter\b|browse plugin-marketplace-starter\b/.test(line));
+    if (found !== -1) warnings.push(`${path}:${found + 1}: still names the template's marketplace. Run npm run rename-marketplace, or update it by hand.`);
+    if (repo && /^plugins\/[^/]+\/README\.md$/.test(path)) {
+      const placeholder = lines.findIndex((line) => /\bOWNER\/REPO\b|@MARKETPLACE\b/.test(line));
+      if (placeholder !== -1) warnings.push(`${path}:${placeholder + 1}: still has the OWNER/REPO or MARKETPLACE placeholder. Run npm run rename-marketplace, or fill it in by hand.`);
+    }
+  }
+  if ((await read(resolve(directory, "README.md")))?.startsWith("# Plugin marketplace starter")) {
+    warnings.push("README.md: the title and introduction are still the template's. Rewrite them for your marketplace.");
+  }
+  const licenses = ["LICENSE", ...allFiles.map((file) => relative(directory, file).split(sep).join("/")).filter((path) => /^plugins\/[^/]+\/LICENSE$/.test(path))];
+  for (const path of licenses) {
+    const holder = (await read(resolve(directory, path)))?.match(/^Copyright \(c\)\s+(?:\d{4}(?:\s*-\s*\d{4})?\s+)?(.+?)\s*$/m)?.[1];
+    if (holder && templateLicenseHolders.includes(holder)) warnings.push(`${path}: the copyright holder is still the template's (${holder}). See Licensing in README.md.`);
+  }
+  if ((await read(resolve(directory, "SECURITY.md")))?.includes("Replace this section with your team's reporting channel")) {
+    warnings.push("SECURITY.md: replace the placeholder reporting section with your real security contact.");
+  }
+  const owners = await read(resolve(directory, ".github/CODEOWNERS"));
+  if (owners !== undefined && !owners.split(/\r?\n/).some((line) => line.trim() && !line.trim().startsWith("#"))) {
+    warnings.push(".github/CODEOWNERS: every rule is commented out. Name real owners, then require their review in a ruleset.");
   }
   return warnings;
 }
@@ -232,7 +290,7 @@ export async function validateRepository(directory = root) {
   const counts = { plugins: 0, skills: 0, agents: 0, hooks: 0, mcpServers: 0, commands: 0, rules: 0, lspServers: 0 };
   for (const entry of localPlugins) await validatePlugin(directory, entry, problems, counts);
   await problems.check("plugins/", async () => {
-    const actual = (await readdir(resolve(directory, "plugins"), { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    const actual = await pluginDirectories(directory);
     const unregistered = actual.filter((name) => !names.has(name)).sort();
     assert.ok(!unregistered.length, `Every plugin must be registered in marketplace.json. Not listed: ${unregistered.join(", ")}.`);
   });
@@ -274,6 +332,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const parts = [plural(counts.skills, "skill"), plural(counts.agents, "agent"), plural(counts.hooks, "hook event"), plural(counts.mcpServers, "MCP server")];
     for (const [key, noun] of [["commands", "command file"], ["rules", "rule file"], ["lspServers", "LSP server"]]) if (counts[key]) parts.push(plural(counts[key], noun));
     console.log(`Validated ${plural(counts.plugins, "local plugin")}: ${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}.`);
+    if (!counts.plugins) console.log("There are no local plugins yet. Add one with npm run new-plugin -- <name>.");
     console.log(`Validated ${plural(counts.remotePlugins, "remote reference")} as metadata only; no upstream code was fetched or run.`);
     for (const warning of counts.warnings) console.warn(`Warning: ${warning}`);
   });

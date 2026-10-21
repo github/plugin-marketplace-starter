@@ -8,7 +8,6 @@ import { discoverAssets, checkCoverage, root } from "../scripts/validate-evals.m
 
 test("the catalog separates local plugins from pinned, opt-in remote references", async () => {
   const { catalog, localPlugins, remotePlugins } = await readCatalog(root);
-  assert.ok(localPlugins.length > 0);
   assert.equal(localPlugins.length + remotePlugins.length, catalog.plugins.length);
   const evals = remotePlugins.find((entry) => entry.source.repo === "github/evals");
   if (evals) {
@@ -18,28 +17,45 @@ test("the catalog separates local plugins from pinned, opt-in remote references"
     assert.deepEqual(remoteWarnings(evals), []);
     assert.equal(evals.version, evals.source.ref.replace(/^copilot-evals-v/, ""));
   }
-  const local = localPlugins[0];
-  assert.throws(() => partitionCatalog({ ...catalog, plugins: [...catalog.plugins, local] }), /Duplicate/);
-  assert.throws(() => partitionCatalog({ ...catalog, plugins: [{ name: "escape", source: "./plugins/../outside" }] }), /Local source/);
-  assert.throws(() => partitionCatalog({ ...catalog, plugins: [{ name: "remote", source: { source: "github", repo: "o/r" }, version: "" }] }), /version/);
-  assert.deepEqual(remoteWarnings({ name: "loose", source: { source: "github", repo: "o/r" } }).length, 2);
+  const local = { name: "dup", source: "./plugins/dup" };
+  const sha = "a".repeat(40);
+  assert.throws(() => partitionCatalog({ ...catalog, plugins: [local, local] }), /Duplicate/);
+  assert.throws(() => partitionCatalog({ ...catalog, plugins: [{ name: "escape", source: "./plugins/../outside" }] }), /escape: Local source/);
+  assert.throws(() => partitionCatalog({ ...catalog, plugins: [{ name: "remote", source: { source: "github", repo: "o/r", sha }, version: "" }] }), /version/);
+  assert.deepEqual(remoteWarnings({ name: "loose", source: { source: "github", repo: "o/r", sha } }).length, 1);
 });
 
-test("remote references are structurally checked without requiring access to the upstream", () => {
+test("an empty catalog is valid, and catalog errors are plain sentences", () => {
+  const empty = partitionCatalog({ name: "empty", owner: { name: "Me" }, plugins: [] });
+  assert.deepEqual([empty.localPlugins, empty.remotePlugins], [[], []]);
+  assert.throws(() => partitionCatalog({ name: "Bad Name", owner: { name: "Me" }, plugins: [] }), /must be lowercase/);
+  assert.throws(() => partitionCatalog({ name: "ok", plugins: [] }), /owner\.name/);
+  assert.throws(() => partitionCatalog({ name: "ok", owner: { name: "Me" } }), /plugins must be a list/);
+  assert.throws(() => partitionCatalog({ name: "ok", owner: { name: "Me" }, plugins: [{ name: "Bad" }] }), /plugins\[0\]: name "Bad"/);
+});
+
+test("remote references must pin a full sha, and errors name the entry", () => {
+  const sha = "a".repeat(40);
   for (const source of [
-    { source: "github", repo: "github/evals", path: "packages/plugin" },
-    { source: "github", repo: "example/plugin", ref: "main" },
-    { source: "github", repo: "example/plugin", sha: "a".repeat(40) },
-  ]) assert.doesNotThrow(() => validateRemoteSource(source));
+    { source: "github", repo: "github/evals", path: "packages/plugin", sha },
+    { source: "github", repo: "example/plugin", ref: "v1.0.0", sha },
+    { source: "github", repo: "example/plugin", sha },
+  ]) assert.doesNotThrow(() => validateRemoteSource(source, "fixture"));
   for (const source of [
-    null, [], { source: "github" }, { source: "url", repo: "example/plugin" },
-    { source: "github", repo: "https://github.com/example/plugin" },
-    { source: "github", repo: "example/plugin", path: "../plugin" },
-    { source: "github", repo: "example/plugin", path: "C:\\plugin" },
-    { source: "github", repo: "example/plugin", ref: " " },
+    null, [], { source: "github", sha }, { source: "url", repo: "example/plugin", sha },
+    { source: "github", repo: "https://github.com/example/plugin", sha },
+    { source: "github", repo: "example/plugin", path: "../plugin", sha },
+    { source: "github", repo: "example/plugin", path: "./plugin", sha },
+    { source: "github", repo: "example/plugin", path: ".", sha },
+    { source: "github", repo: "example/plugin", path: "C:\\plugin", sha },
+    { source: "github", repo: "example/plugin", ref: " ", sha },
     { source: "github", repo: "example/plugin", sha: "main" },
-    { source: "github", repo: "example/plugin", token: "not-supported" },
-  ]) assert.throws(() => validateRemoteSource(source));
+    { source: "github", repo: "example/plugin", sha: "abc1234" },
+    { source: "github", repo: "example/plugin", ref: "main" },
+    { source: "github", repo: "example/plugin", token: "not-supported", sha },
+  ]) assert.throws(() => validateRemoteSource(source, "fixture"), /fixture: /);
+  assert.throws(() => validateRemoteSource({ source: "github", repo: "o/r", ref: "main" }, "anarlog"), /anarlog: pin "sha".*gh api repos\/OWNER\/REPO\/commits\/REF/);
+  assert.throws(() => validateRemoteSource({ source: "github", repo: "o/r", path: "./sub", sha }, "anarlog"), /anarlog: "path" must be.*Omit "path"/);
 });
 
 test("new custom agents require actual staged profiles, delegation, and subagent outcome assertions", async () => {
@@ -97,7 +113,7 @@ test("any new hook or extension gets generic coverage rules, not the examples' s
     const specs = [{ path: resolve(directory, "evals/custom/eval.yaml"), spec: { stimuli: [
       { name: "hook-runs", agent_environment: { env: { STARTER_PLUGIN_DIRS: "plugins/other, plugins/lint-on-save" } },
         tags: { assets: assets[0].id, control: "positive", suite: "smoke" },
-        graders: [{ type: "file-matches", config: { path: "a.js", pattern: "linted" } }] },
+        graders: [{ type: "tool-calls", config: { required: [{ name: "^apply_patch$", result: "lint-on-save: " }] } }] },
       { name: "hook-skips", tags: { assets: assets[0].id, control: "negative" }, graders: [{ type: "diff-empty" }, { type: "output-contains", config: { substring: "ok" } }] },
       { name: "panel-works", agent_environment: { mcpServers: { "panel-host": { type: "stdio", command: "node", args: ["host.mjs"] } } },
         tags: { assets: assets[1].id, control: "positive", suite: "smoke", boundary: "headless-sdk-contract" },
@@ -108,9 +124,27 @@ test("any new hook or extension gets generic coverage rules, not the examples' s
     const unmounted = structuredClone(specs);
     delete unmounted[0].spec.stimuli[0].agent_environment;
     assert.throws(() => checkCoverage(assets, unmounted, { directory }), /STARTER_PLUGIN_DIRS/);
-    const claimOnly = structuredClone(specs);
-    claimOnly[0].spec.stimuli[0].graders = [{ type: "output-contains", config: { substring: "linted" } }];
-    assert.throws(() => checkCoverage(assets, claimOnly, { directory }), /program or file grader/);
+    // Evidence must come from the hook itself: its "<plugin>:" diagnostic or a program grader.
+    for (const graders of [
+      [{ type: "output-contains", config: { substring: "linted" } }],
+      [{ type: "file-matches", config: { path: "a.js", pattern: "console\\.log" } }],
+      [{ type: "tool-calls", config: { required: [{ name: "^apply_patch$", result: "success" }] } }],
+      [{ type: "tool-calls", config: { required: ["^apply_patch$"] } }],
+    ]) {
+      const weak = structuredClone(specs);
+      weak[0].spec.stimuli[0].graders = graders;
+      assert.throws(() => checkCoverage(assets, weak, { directory }), /prove the hook ran|isn't outcome coverage/, JSON.stringify(graders));
+    }
+    for (const graders of [
+      [{ type: "output-matches", config: { pattern: "lint-on-save: .*console" } }],
+      [{ type: "output-contains", config: { substring: "lint-on-save: line 2" } }],
+      [{ type: "file-matches", config: { path: "lint.log", pattern: "lint-on-save:" } }],
+      [{ type: "program", config: { program: "node", args: [".grading/lint.mjs"] } }],
+    ]) {
+      const honest = structuredClone(specs);
+      honest[0].spec.stimuli[0].graders = graders;
+      assert.equal(checkCoverage(assets, honest, { directory }), 4, JSON.stringify(graders));
+    }
     const unlabeled = structuredClone(specs);
     delete unlabeled[0].spec.stimuli[2].tags.boundary;
     assert.throws(() => checkCoverage(assets, unlabeled, { directory }), /tags\.boundary/);

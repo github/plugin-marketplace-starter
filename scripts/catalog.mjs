@@ -37,50 +37,59 @@ const relativePath = (value) => typeof value === "string" && value.length > 0
   && !/[\\:\u0000-\u001f\u007f]/.test(value)
   && value.split("/").every((part) => part && part !== "." && part !== "..");
 
-export function validateRemoteSource(source) {
-  assert.ok(source && typeof source === "object" && !Array.isArray(source), "Remote source must be an object.");
-  assert.ok(Object.keys(source).every((key) => ["source", "repo", "path", "ref", "sha"].includes(key)), "Unknown remote source field.");
-  assert.equal(source.source, "github", "Only GitHub remote references are supported.");
-  assert.equal(typeof source.repo, "string", "Remote repo must be owner/repo.");
-  assert.match(source.repo, /^[A-Za-z0-9][A-Za-z0-9-]*\/(?!\.{1,2}$)[A-Za-z0-9_.-]+$/, "Remote repo must be owner/repo.");
-  if (source.path !== undefined) assert.ok(relativePath(source.path), "Remote path must be a canonical repository-relative directory.");
+export const shaHelp = "Look it up with: gh api repos/OWNER/REPO/commits/REF --jq .sha";
+
+// A remote entry must pin a full commit sha. A tag or branch can move, so
+// without one, installs follow whatever upstream points it at later.
+export function validateRemoteSource(source, name = "remote plugin") {
+  const fail = (message) => `${name}: ${message} See docs/remote-plugins.md.`;
+  assert.ok(source && typeof source === "object" && !Array.isArray(source), fail('"source" must be a GitHub source object or a "./plugins/<name>" path.'));
+  const unknown = Object.keys(source).filter((key) => !["source", "repo", "path", "ref", "sha"].includes(key));
+  assert.ok(!unknown.length, fail(`unknown source field ${unknown.join(", ")}. Use only source, repo, path, ref, and sha.`));
+  assert.equal(source.source, "github", fail('only "source": "github" remote references are supported.'));
+  assert.ok(typeof source.repo === "string" && /^[A-Za-z0-9][A-Za-z0-9-]*\/(?!\.{1,2}$)[A-Za-z0-9_.-]+$/.test(source.repo),
+    fail('"repo" must be OWNER/REPO, such as "github/evals", not a URL.'));
+  if (source.path !== undefined) {
+    assert.ok(relativePath(source.path), fail(`"path" must be a directory relative to the repository root, such as "packages/plugin", without a leading "./" or "/", "..", or backslashes. Omit "path" when plugin.json is at the repository root.`));
+  }
   if (source.ref !== undefined) assert.ok(typeof source.ref === "string" && source.ref.trim()
-    && !/[\u0000-\u001f\u007f]/.test(source.ref), "Remote ref must be nonempty text.");
-  if (source.sha !== undefined) assert.ok(typeof source.sha === "string" && /^[a-fA-F0-9]{40}$/.test(source.sha), "Remote sha must be a full commit ID.");
+    && !/[\u0000-\u001f\u007f]/.test(source.ref), fail('"ref" must be a nonempty tag or branch name.'));
+  assert.ok(source.sha !== undefined, fail(`pin "sha" to the full 40-character commit ID you reviewed, so a moved tag or branch can't change what people install. ${shaHelp}`));
+  assert.ok(typeof source.sha === "string" && /^[a-fA-F0-9]{40}$/.test(source.sha),
+    fail(`"sha" must be a full 40-character commit ID, not a tag, branch, or short ID. ${shaHelp}`));
 }
 
-// Remote entries are valid without a pin, but unpinned sources follow upstream's
-// default branch, which can move or be unbuilt.
+// A ref is optional, but it tells reviewers which release the sha came from.
 export function remoteWarnings(entry) {
   const warnings = [];
-  if (entry.source.sha === undefined) warnings.push(`${entry.name}: pin a full commit sha so installs are reproducible.`);
-  if (entry.source.ref === undefined) warnings.push(`${entry.name}: name the upstream release with ref.`);
+  if (entry.source.ref === undefined) warnings.push(`${entry.name}: add "ref" with the upstream release tag the sha came from, so reviewers can tell what's pinned.`);
   return warnings;
 }
 
 export function partitionCatalog(catalog) {
-  assert.equal(typeof catalog?.name, "string");
-  assert.match(catalog.name, namePattern);
-  assert.ok(typeof catalog.owner?.name === "string" && catalog.owner.name.trim());
-  assert.ok(Array.isArray(catalog.plugins) && catalog.plugins.length > 0);
+  assert.ok(catalog && typeof catalog === "object" && !Array.isArray(catalog), "marketplace.json must be a JSON object.");
+  assert.ok(typeof catalog.name === "string" && namePattern.test(catalog.name),
+    `name "${catalog.name ?? ""}" must be lowercase letters, digits, and single hyphens, such as my-team-plugins.`);
+  assert.ok(typeof catalog.owner?.name === "string" && catalog.owner.name.trim(), 'set owner.name, such as { "name": "My Team" }.');
+  assert.ok(Array.isArray(catalog.plugins), 'plugins must be a list. Use "plugins": [] for an empty marketplace.');
   const names = new Set();
   const localPlugins = [];
   const remotePlugins = [];
-  for (const entry of catalog.plugins) {
-    assert.equal(typeof entry?.name, "string");
-    assert.match(entry.name, namePattern);
+  catalog.plugins.forEach((entry, index) => {
+    assert.ok(typeof entry?.name === "string" && namePattern.test(entry.name),
+      `plugins[${index}]: name "${entry?.name ?? ""}" must be lowercase letters, digits, and single hyphens.`);
     assert.ok(!names.has(entry.name), `Duplicate plugin: ${entry.name}`);
     names.add(entry.name);
     if (typeof entry.source === "string") {
-      assert.ok(entry.source.startsWith("./plugins/") && relativePath(entry.source.slice(2)), "Local source must stay under ./plugins/.");
+      assert.ok(entry.source.startsWith("./plugins/") && relativePath(entry.source.slice(2)), `${entry.name}: Local source must stay under ./plugins/, such as "./plugins/${entry.name}".`);
       localPlugins.push(entry);
     } else {
-      validateRemoteSource(entry.source);
+      validateRemoteSource(entry.source, entry.name);
       assert.ok(entry.version === undefined || (typeof entry.version === "string" && entry.version.trim()),
         `${entry.name}: remote version must be nonempty text.`);
       remotePlugins.push(entry);
     }
-  }
+  });
   return { catalog, localPlugins, remotePlugins };
 }
 

@@ -43,11 +43,11 @@ export async function listMcpTools(pluginRoot, server) {
   });
   const client = new Client({ name: "starter-inventory", version: "1.0.0" });
   try {
-    await client.connect(transport, { timeout: 10_000 });
+    await client.connect(transport, { timeout: 30_000 });
     const tools = [];
     let cursor;
     do {
-      const page = await client.listTools(cursor ? { cursor } : {}, { timeout: 10_000 });
+      const page = await client.listTools(cursor ? { cursor } : {}, { timeout: 30_000 });
       tools.push(...page.tools);
       cursor = page.nextCursor;
     } while (cursor);
@@ -83,7 +83,7 @@ export async function discoverAssets(directory = root) {
     try { hooks = await json(resolve(source, "com.github.copilot/hooks/hooks.json")); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     for (const event of Object.keys(hooks?.hooks ?? {})) {
-      assets.push({ id: `hook:${plugin.name}/${event}`, kind: "hook", name: event, path: source });
+      assets.push({ id: `hook:${plugin.name}/${event}`, kind: "hook", name: event, plugin: plugin.name, path: source });
     }
     for (const extension of (await entries(resolve(source, "com.github.copilot/extensions"))).filter((entry) => entry.isDirectory())) {
       const path = resolve(source, "com.github.copilot/extensions", extension.name);
@@ -104,14 +104,15 @@ export async function discoverAssets(directory = root) {
 }
 
 // Mirrors Vally's discovery: configured evalFilenames, skipping dist,
-// node_modules, and hidden directories.
+// node_modules, and hidden directories. Returns an empty list when there are no
+// specs; the coverage check then reports any asset that still needs one.
 export async function readEvals(directory = root, config) {
   const vally = config ?? await readVallyConfig(directory);
   const patterns = evalFilenames(vally);
   const isEval = evalFilenameMatcher(patterns);
   const specs = [];
   async function walk(path) {
-    for (const entry of await readdir(path, { withFileTypes: true })) {
+    for (const entry of await entries(path)) {
       const child = resolve(path, entry.name);
       if (entry.isSymbolicLink()) throw new Error(`Do not use symlinked eval inputs: ${child}`);
       if (entry.isDirectory()) {
@@ -120,7 +121,6 @@ export async function readEvals(directory = root, config) {
     }
   }
   await walk(resolve(directory, "evals"));
-  if (!specs.length) throw new Error(`No eval files matching ${patterns.join(", ")} (.vally.yaml evalFilenames) were found under evals/.`);
   return specs;
 }
 
@@ -130,6 +130,20 @@ export function suiteTags(config) {
 }
 
 const programArgs = (graders, script) => graders.some((grader) => grader.type === "program" && list(grader.config?.args).includes(script));
+
+// Evidence that a hook actually ran, not just that the model did the task. A
+// program grader can check real effects. A built-in grader counts only when it
+// matches the hook's own diagnostic prefix, "<plugin>:", which only the hook
+// writes, for example into the edit tool's result.
+export function hookEvidence(grader, plugin) {
+  const marker = `${plugin}:`;
+  const has = (value) => typeof value === "string" && value.includes(marker);
+  if (grader.type === "program") return true;
+  if (grader.type === "tool-calls") return list(grader.config?.required).some((rule) => typeof rule === "object" && has(rule?.result));
+  if (["output-matches", "file-matches"].includes(grader.type)) return has(grader.config?.pattern);
+  if (grader.type === "output-contains") return has(grader.config?.substring);
+  return false;
+}
 
 // Extra checks for the shipped examples. They apply only while those exact
 // assets exist, so renaming or deleting an example removes its contract too.
@@ -150,8 +164,9 @@ function checkPositive(asset, stimulus, spec, path, directory) {
   const graders = stimulus.graders ?? [];
   const env = { ...spec.agent_environment?.env, ...stimulus.agent_environment?.env };
   const mcpServers = { ...spec.agent_environment?.mcpServers, ...stimulus.agent_environment?.mcpServers };
-  assert.ok(graders.some((grader) => outcomeGraders.includes(grader.type) || grader.type === "tool-calls" && asset.kind === "mcp"),
-    `${id}: invocation alone isn't outcome coverage. Add an outcome grader: ${outcomeGraders.join(", ")}${asset.kind === "mcp" ? ", or a tool-calls rule with the tool's result" : ""}.`);
+  assert.ok(graders.some((grader) => outcomeGraders.includes(grader.type)
+    || grader.type === "tool-calls" && (asset.kind === "mcp" || asset.kind === "hook" && hookEvidence(grader, asset.plugin))),
+    `${id}: invocation alone isn't outcome coverage. Add an outcome grader: ${outcomeGraders.join(", ")}${asset.kind === "mcp" ? ", or a tool-calls rule with the tool's result" : asset.kind === "hook" ? ", or a tool-calls rule whose result matches the hook's diagnostic" : ""}.`);
   if (asset.kind === "skill") {
     const skills = [...list(spec.agent_environment?.skills), ...list(stimulus.agent_environment?.skills)];
     assert.ok(skills.some((skill) => resolve(dirname(path), skill) === asset.path), `${id}: load the actual skill. List its directory in agent_environment.skills, relative to the eval file, for example ../../${relativePath(directory, asset.path)}.`);
@@ -179,8 +194,10 @@ function checkPositive(asset, stimulus, spec, path, directory) {
     const mounted = String(env.STARTER_PLUGIN_DIRS ?? "").split(",").map((value) => value.trim()).filter(Boolean)
       .map((value) => resolve(directory, value));
     assert.ok(mounted.includes(asset.path), `${id}: mount the real plugin with agent_environment.env.STARTER_PLUGIN_DIRS.`);
-    assert.ok(graders.some((grader) => ["program", "file-matches", "file-exists"].includes(grader.type)),
-      `${id}: grade the hook's actual effects with a program or file grader.`);
+    assert.ok(graders.some((grader) => hookEvidence(grader, asset.plugin)),
+      `${id}: prove the hook ran. Use a program grader that checks its real effects, or a built-in grader that matches the hook's own "${asset.plugin}:" diagnostic: `
+      + `a tool-calls rule whose result pattern includes it, or output-matches, output-contains, or file-matches with it. `
+      + "A file grader on content the model wrote passes even when the hook never ran. See docs/evals.md#hooks.");
   } else {
     assert.ok(typeof stimulus.tags.boundary === "string" && stimulus.tags.boundary.trim(),
       `${id}: label the host boundary honestly with tags.boundary.`);
@@ -279,7 +296,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const config = await readVallyConfig(root);
     const assets = await discoverAssets();
     const specs = await readEvals(root, config);
+    if (assets.length && !specs.length) {
+      throw new Error(`No eval files matching ${evalFilenames(config).join(", ")} (.vally.yaml evalFilenames) were found under evals/, but ${assets.length} local assets need coverage. Add evals, or check evalFilenames.`);
+    }
     const count = checkCoverage(assets, specs, { suites: suiteTags(config) });
+    if (!assets.length && !specs.length) {
+      console.log("No local plugins or eval specs yet, so there's nothing to cover. Add a plugin with npm run new-plugin -- <name>; it writes an eval that meets these rules.");
+      return;
+    }
     const kinds = Object.entries(Object.groupBy(assets, (asset) => asset.kind)).map(([kind, items]) => `${items.length} ${kind}`).join(", ");
     console.log(`Validated ${specs.length} eval specs and ${count} cases covering ${assets.length} local assets (${kinds}).`);
     for (const asset of assets) console.log(`  ${asset.id}`);
