@@ -16,7 +16,8 @@ test("all local assets have positive, smoke, and negative coverage", async () =>
   const assets = await discoverAssets();
   const specs = await readEvals(root, config);
   const { localPlugins } = await readCatalog(root);
-  assert.ok(assets.length > 0);
+  // A marketplace with no local plugins (only remote entries, or none yet) has nothing to cover.
+  if (!assets.length) return assert.equal(checkCoverage(assets, specs, { suites: suiteTags(config) }), specs.flatMap(({ spec }) => spec.stimuli).length);
   for (const asset of assets) assert.ok(localPlugins.some((plugin) => asset.id.split(":")[1].startsWith(`${plugin.name}/`)));
   const stimuli = specs.flatMap(({ spec }) => spec.stimuli);
   assert.equal(checkCoverage(assets, specs, { suites: suiteTags(config) }), stimuli.length);
@@ -158,7 +159,7 @@ test("eval discovery follows .vally.yaml evalFilenames, including the upstream *
     assert.deepEqual(await names({ paths: { evalFilenames: ["eval.yaml", "*.eval.yaml"] } }), ["a", "b"]);
     assert.deepEqual(await names({ paths: { evalFilenames: ["*.eval.yaml"] } }), ["b"]);
     assert.deepEqual(await names({}), ["a"]);
-    await assert.rejects(readEvals(directory, { paths: { evalFilenames: ["missing.yaml"] } }), /evalFilenames/);
+    assert.deepEqual(await readEvals(directory, { paths: { evalFilenames: ["missing.yaml"] } }), []);
     assert.throws(() => evalFilenameMatcher(["evals/**/eval.yaml"]), /plain file names/);
     assert.equal(paramsFileName("release.eval.yaml"), "release.eval.params.yaml");
   } finally {
@@ -235,8 +236,14 @@ test("deterministic CI stays model-free, and opt-in behavioral CI uses the Evals
   assert.deepEqual(Object.keys(evals.on).sort(), ["pull_request", "workflow_dispatch"]);
   assert.deepEqual(evals.on.pull_request.types, ["opened", "synchronize", "reopened", "ready_for_review"]);
   assert.deepEqual(evals.permissions, { contents: "read" });
-  assert.deepEqual(Object.keys(evals.jobs).sort(), ["evals", "evals-npm"]);
-  for (const [name, job] of Object.entries(evals.jobs)) {
+  assert.deepEqual(Object.keys(evals.jobs).sort(), ["check-runner", "evals", "evals-npm"]);
+  // A mistyped runner fails without a token, instead of falling through to a runner.
+  assert.deepEqual(evals.jobs["check-runner"].permissions, {});
+  assert.equal(evals.jobs["check-runner"].if, "vars.EVALS_RUNNER != '' && vars.EVALS_RUNNER != 'action' && vars.EVALS_RUNNER != 'npm'");
+  for (const [name, job] of Object.entries(evals.jobs).filter(([name]) => name !== "check-runner")) {
+    // Reviewers on the "evals" environment can approve each run before it gets a token.
+    assert.equal(job.environment, "evals", name);
+    assert.equal(String(job.env?.VALLY_TELEMETRY_OPTOUT), "1", name);
     // Opt-in, never on forks or drafts, and only one runner job at a time.
     assert.match(job.if, /github\.event_name == 'workflow_dispatch' \|\|/, name);
     assert.match(job.if, /vars\.ENABLE_EVALS == 'true' &&/, name);
@@ -248,7 +255,7 @@ test("deterministic CI stays model-free, and opt-in behavioral CI uses the Evals
     const preflight = job.steps.find((step) => step.name === "Check the runtime bridge");
     assert.ok(job.steps.indexOf(job.steps.find((step) => step.run?.startsWith("npm ci"))) < job.steps.indexOf(preflight));
   }
-  assert.match(evals.jobs.evals.if, /^vars\.EVALS_RUNNER != 'npm' &&/);
+  assert.match(evals.jobs.evals.if, /^\(vars\.EVALS_RUNNER == '' \|\| vars\.EVALS_RUNNER == 'action'\) &&/);
   assert.match(evals.jobs["evals-npm"].if, /^vars\.EVALS_RUNNER == 'npm' &&/);
   const job = evals.jobs.evals;
   assert.deepEqual(job.permissions, { contents: "read", "copilot-requests": "write", "pull-requests": "write" });
@@ -265,7 +272,7 @@ test("deterministic CI stays model-free, and opt-in behavioral CI uses the Evals
   assert.equal(action.with["vally-version"], manifest.devDependencies["@microsoft/vally-cli"]);
   assert.equal(action.with["copilot-token"], "${{ github.token }}");
   assert.equal(String(action.with["upload-transcripts"]), "false");
-  assert.deepEqual(action.with["credential-env"].trim().split("\n"), ["COPILOT_CLI_PATH"]);
+  assert.deepEqual(action.with["credential-env"].trim().split("\n"), ["COPILOT_CLI_PATH", "VALLY_TELEMETRY_OPTOUT"]);
   assert.deepEqual(Object.keys(action.env), ["COPILOT_CLI_PATH"]);
   assert.equal(action.env.COPILOT_CLI_PATH, "${{ github.workspace }}/scripts/eval-runtime.js");
   const npmJob = evals.jobs["evals-npm"];
@@ -307,4 +314,15 @@ test("reports select the cases of a configured suite or of specific eval specs",
   assert.throws(() => expectedCases(specs, config, { suite: "nightly" }), /Unknown suite nightly/);
   assert.throws(() => expectedCases(specs, config, { evalSpecs: ["evals/missing/eval.yaml"] }), /No eval spec/);
   assert.throws(() => expectedCases(specs, config, { evalSpecs: ["evals/b/release.eval.yaml"], suite: "smoke" }), /no cases/);
+});
+
+// The template locks every package to registry.npmjs.org. A team that installs
+// through its own mirror can change the hosts, but keeps HTTPS and sha512.
+test("every locked package resolves over HTTPS with a sha512 integrity hash", async () => {
+  const lock = JSON.parse(await readFile(resolve(root, "package-lock.json"), "utf8"));
+  for (const [path, entry] of Object.entries(lock.packages)) {
+    if (!path || entry.link) continue;
+    assert.match(entry.resolved ?? "", /^https:\/\//, `${path}: resolve over HTTPS.`);
+    assert.match(entry.integrity ?? "", /^sha512-/, `${path}: use a sha512 integrity hash, not sha1.`);
+  }
 });
