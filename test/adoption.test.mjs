@@ -93,7 +93,12 @@ const removeExamples = (directory, ...names) => ok(directory, "scripts/remove-pl
 test("a team can rename the marketplace, drop examples and the remote entry, and add its own plugins", { timeout: 600_000 }, async (t) => {
   const directory = await scratchRepository(t);
   const fixture = `adoption-${randomBytes(3).toString("hex")}`;
-  if (!existsSync(join(directory, "plugins/release-notes"))) await newPlugin(directory, "release-notes");
+  if (!existsSync(join(directory, "plugins/release-notes"))) {
+    await newPlugin(directory, "release-notes");
+    // The README's minimal chat-skill eval must pass the coverage check and strict lint as written.
+    const example = (await readFile(join(directory, "README.md"), "utf8")).match(/```yaml\r?\n(name: release-notes\r?\n[\s\S]*?)```/)?.[1];
+    if (example) await writeFile(join(directory, "evals/release-notes/eval.yaml"), example);
+  }
   await newPlugin(directory, `${fixture}-tools`, "--with", "mcp", "--with", "agent", "--description", "Fixture tools for the adoption test.");
   const dropped = ["team-brainstorm", "format-json"].filter((name) => present.includes(name));
   if (dropped.length) await removeExamples(directory, ...dropped);
@@ -170,11 +175,12 @@ test("each example can be removed on its own", { timeout: 600_000, skip: !presen
   await Promise.all([worker(), worker(), worker()]);
 });
 
-test("removal prunes install commands, marked sections, table rows, and links to removed files", () => {
+test("removal prunes install commands, marked sections, example table rows, and links to removed files", () => {
   const removed = (link) => link.startsWith("plugins/gone") || link.startsWith("../plugins/gone");
   const text = [
     "| [gone](plugins/gone/) | row |",
     "| [kept](plugins/kept/) | row |",
+    "| Hook | [gone](plugins/gone/) |",
     "copilot plugin install gone@market",
     "copilot plugin install kept@market",
     "<!-- plugin:gone -->",
@@ -184,6 +190,7 @@ test("removal prunes install commands, marked sections, table rows, and links to
   ].join("\n");
   assert.equal(pruneMarkdown(text, ["gone"], removed), [
     "| [kept](plugins/kept/) | row |",
+    "| Hook | gone |",
     "copilot plugin install kept@market",
     "See the gone README and [kept](plugins/kept/).",
   ].join("\n"));

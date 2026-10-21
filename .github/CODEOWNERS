@@ -9,4 +9,4 @@
 # /scripts/                      @your-org/ai-customizations-admins
 # /evals/                        @your-org/ai-customizations
 # /marketplace.json              @your-org/ai-customizations-admins
-# /plugins/format-json/          @your-org/ai-customizations-admins
+# /plugins/<plugin-with-hooks>/  @your-org/ai-customizations-admins

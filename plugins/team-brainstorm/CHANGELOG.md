@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3
+
+- Replace the starter-specific install values in the README with generic ones.
+
 ## 1.0.2
 
 - Decode board requests once from their raw bytes, so a character split across

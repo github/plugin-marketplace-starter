@@ -14,6 +14,11 @@ explains how everything fits together.
 
 ## Add or change a plugin
 
+Start a new plugin with `npm run new-plugin -- <name>`, optionally with
+`--with agent` or `--with mcp`. It creates the files and registrations below,
+including an eval that meets the coverage rules, so you only replace the
+scaffolded content. See [Add a plugin](README.md#add-a-plugin).
+
 Change these together in one pull request:
 
 1. **Plugin files** under `plugins/<name>/`: `plugin.json`, its skills, agents,
@@ -31,8 +36,7 @@ Change these together in one pull request:
    `paths.skills`, and add any path an eval needs under `params`.
 5. **Evals** under `evals/<name>/`: a positive case with invocation and outcome
    assertions for every skill, agent, hook, extension, and MCP tool, a smoke
-   case, and a negative control. See
-   [Add evals](README.md#add-evals-for-your-teams-skills-and-agents).
+   case, and a negative control. See [Evals](docs/evals.md#write-an-eval).
 6. **Tests** under `test/` for code you add, such as servers, hooks, and graders.
 7. **Generated files**: if you changed `plugins/*/src/` or `evals/graders/src/`,
    run `npm run build` and commit the regenerated `dist/` files.
@@ -45,11 +49,17 @@ npm run verify
 ```
 
 `verify` is model-free and must pass. CI runs it on Linux, Windows, and macOS.
+It reports every problem at once as `path: message`, and warns about leftovers
+such as mentions of a plugin that no longer exists.
 
 ## Remove or rename a plugin
 
-Remove or rename its directory, catalog entry, settings entry, `.vally.yaml`
-skill path and params, evals, and tests together. `npm run verify` names
+`npm run remove-plugin -- <name>` removes a plugin's directory, evals, catalog
+entry, settings entry, and `.vally.yaml` skill path and params, and prunes
+Markdown that names it. For a shipped example, `npm run remove-example -- <name>`
+also removes the graders, support files, fixtures, and tests that only it uses.
+To rename a plugin, change its directory, manifest, catalog entry, settings
+key, `.vally.yaml` path, evals, and docs together. `npm run verify` names
 anything you missed.
 
 ## Remote plugins
@@ -61,7 +71,7 @@ never download or run upstream code.
 ## Paid evals
 
 `npm run eval:smoke`, `npm run eval`, and the **Behavioral evals** workflow run
-real Copilot sessions and spend inference credits. Run the narrowest spec that
+real Copilot sessions and spend AI credits. Run the narrowest spec that
 covers your change, for example:
 
 ```sh

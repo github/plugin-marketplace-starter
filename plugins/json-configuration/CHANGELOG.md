@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Replace the starter-specific install values in the README with generic ones.
+
 ## 0.1.2
 
 - Report the `plugin.json` version in the MCP handshake instead of a stale

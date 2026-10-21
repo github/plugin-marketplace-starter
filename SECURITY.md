@@ -21,13 +21,13 @@ data.
 Installing a plugin from this marketplace runs code on the installer's machine
 with their permissions:
 
-- **Hooks** run commands automatically on events such as every successful edit.
-  The `format-json` hook rewrites JSON files. A hook isn't a security boundary
-  and never replaces CI.
+- **Hooks** run commands automatically on events such as every successful edit,
+  and can change files, for example by reformatting them. A hook isn't a
+  security boundary and never replaces CI.
 - **MCP servers** run as local processes and can do anything their code does.
 - **Canvas and SDK extensions** run code in the Copilot host and may start local
-  servers. The `team-brainstorm` server listens only on `127.0.0.1` and checks
-  the `Host` and `Origin` of every request.
+  servers. A local server should listen only on `127.0.0.1` and check the
+  `Host` and `Origin` of every request.
 - **Skills, agents, rules, and commands** shape what the model does, including
   which tools it calls.
 - **Remote plugins** come from another repository. This marketplace never enables

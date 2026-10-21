@@ -1,0 +1,104 @@
+# Customization types
+
+A plugin can ship any mix of these. Agent Plugins 1.0 standardizes skills and
+MCP servers, so other compatible clients can use them. Everything else is
+specific to Copilot and lives under `com.github.copilot/`, which other clients
+ignore. The [Copilot CLI plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference#components)
+lists the official locations. [Examples](examples.md) shows which example
+demonstrates each type.
+
+| Type | Location in a plugin | Works in | Use it for | `new-plugin` |
+|---|---|---|---|---|
+| Skill | `skills/<name>/SKILL.md`, plus optional `templates/` or `references/` | Agent Plugins clients | Procedures and domain knowledge the model loads when a task needs them | Always |
+| MCP server | `mcp.json` at the plugin root | Agent Plugins clients | Tools backed by code, such as validation or lookups | `--with mcp` |
+| Custom agent | `com.github.copilot/agents/<name>.agent.md` | Copilot | A specialist with its own instructions and tool list | `--with agent` |
+| Hook | `com.github.copilot/hooks/hooks.json` | Copilot | Deterministic commands on events like `postToolUse` | By hand |
+| Canvas or SDK extension | `com.github.copilot/extensions/<name>/extension.mjs` | Copilot hosts with SDK extension support | Interactive panels and actions | By hand |
+| LSP server | `com.github.copilot/lsp.json` | Copilot CLI | Language intelligence for a file type | By hand |
+| Slash command | `com.github.copilot/commands/` | Copilot | Shortcuts people run by name | Not recommended yet |
+| Rules | `com.github.copilot/rules/` | Copilot | Guidance that ships with an installed plugin | Not recommended yet |
+
+`lsp.json` is checked against the fields in the plugin reference:
+`lspServers`, a launch command, and `fileExtensions`. The reference's component
+table doesn't list extensions; this repository and the published GitHub Copilot
+Evals plugin both ship them in `com.github.copilot/extensions/`, and the
+installation tests load them from there.
+
+## Rules and slash commands
+
+The plugin reference names the `commands/` and `rules/` directories but doesn't
+document a file format for them, and `copilot plugin install` doesn't report
+whether it loaded them. `npm run verify` only checks that those files aren't
+empty, so it can't tell you whether a rule works.
+
+Until the reference documents a format, don't ship rules or slash commands.
+For company standards, use a skill with `references/` files instead (see
+below). It's documented, it works in every client that supports Agent Skills,
+and its evals can prove it's used.
+
+## Instruction files and prompt files
+
+Instruction and prompt files belong to a repository, not to a plugin. Copilot
+reads them from the project you're working in:
+
+- `.github/copilot-instructions.md` for repository-wide instructions.
+- `.github/instructions/**/*.instructions.md`, each with an `applyTo` glob in its
+  frontmatter, for instructions that apply only to matching files.
+- `AGENTS.md` (Copilot CLI also reads `CLAUDE.md` and `GEMINI.md`) for agent
+  instructions in a directory.
+- `.github/prompts/*.prompt.md` for reusable prompts in VS Code.
+
+See [adding custom instructions](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions)
+and [VS Code prompt files](https://code.visualstudio.com/docs/copilot/customization/prompt-files).
+
+This repository's own [AGENTS.md](../AGENTS.md) and
+[.github/copilot-instructions.md](../.github/copilot-instructions.md) guide agents
+that maintain this marketplace. Installing a plugin doesn't copy them into
+anyone else's project.
+
+## Share guidance across repositories
+
+- Put coding standards and procedures in a skill. Keep `SKILL.md` short and move
+  detail into `references/` files the skill reads when it needs them.
+- Use a custom agent when the guidance comes with a role and a restricted tool
+  list, such as a read-only reviewer.
+- If a team still needs a real instruction file in each repository, ship a skill
+  that writes or updates it, or keep it in a repository template. A plugin can't
+  place files in a consuming repository by itself.
+- Prefer a skill over a prompt file or slash command that repeats it. Skills
+  load when they're relevant, in any client that supports Agent Skills.
+
+## Add a plugin by hand
+
+`npm run new-plugin` does all of this for skills, agents, and MCP servers. To
+add another type, or to understand what it did:
+
+1. Create `plugins/<name>/` with `plugin.json`, `README.md`, `CHANGELOG.md` (with
+   a `## <version>` heading), and `LICENSE`. The name is lowercase and
+   hyphenated, and unique in the catalog.
+2. Add assets in the locations above. A skill's `name` matches its directory; an
+   agent's `name` matches its file name. MCP servers go in a root `mcp.json` as
+   local stdio servers using `${PLUGIN_ROOT}` paths. Hooks run as
+   `node "${PLUGIN_ROOT}/<script>"`.
+3. Add an entry to the catalog with a relative `source`, the same `version` and
+   `description` as `plugin.json`, and enable `<name>@<marketplace>` in the
+   repository overlay.
+4. If it has skills, add `plugins/<name>/skills` to `paths.skills` in
+   [.vally.yaml](../.vally.yaml) so Vally lints them.
+5. Keep the plugin self-contained. Never import a sibling plugin or this
+   repository's `node_modules` at runtime. If an MCP server needs dependencies,
+   write it as `src/server.ts`. [scripts/build.mjs](../scripts/build.mjs) finds
+   every `plugins/*/src/server.ts` and bundles it into `dist/server.mjs` with its
+   license notices, replacing `__PLUGIN_VERSION__` with the version in
+   `plugin.json`. Eval graders in `evals/graders/src/` are bundled the same way.
+   Run `npm run build` after changing those sources and commit the output.
+6. In-repo MCP servers must start offline, without credentials, network access,
+   or a database. `npm run verify` starts each one to read its tool list for
+   eval coverage. Put anything that needs a secret behind a tool call.
+7. Add evals under `evals/<name>/` (see [Evals](evals.md)) and focused tests
+   under `test/` for code such as servers, hooks, and graders. If an eval needs
+   a path, such as your server bundle, add it to `params` in `.vally.yaml`.
+8. Run `npm run verify`.
+
+For every release, change the version in `plugin.json`, the catalog, and the
+changelog together.

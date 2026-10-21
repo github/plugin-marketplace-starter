@@ -5,10 +5,12 @@ read [AGENTS.md](../AGENTS.md) for the maintenance rules and
 [CONTRIBUTING.md](../CONTRIBUTING.md) for the change checklist.
 
 - Keep each plugin self-contained, and change its manifest, catalog entry,
-  changelog, `.vally.yaml` entries, and evals together.
+  changelog, `.vally.yaml` entries, and evals together. Use
+  `npm run new-plugin` and `npm run remove-plugin` (or `remove-example`) to
+  add and remove plugins.
 - Run `npm run build` after changing generated-file sources, then `npm run verify`.
 - Don't run `npm run eval`, `npm run eval:smoke`, or the evals workflow unless
-  asked; they spend inference credits.
+  asked; they spend AI credits.
 
 This file applies to work in this repository only. Installing a plugin from the
 marketplace doesn't copy it into other projects.

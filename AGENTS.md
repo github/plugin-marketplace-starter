@@ -1,30 +1,36 @@
 # Maintaining this marketplace
 
-Follow [README.md](README.md) and [CONTRIBUTING.md](CONTRIBUTING.md) for team setup, package layout, installation,
+Follow [README.md](README.md), [CONTRIBUTING.md](CONTRIBUTING.md), and the
+guides in [docs/](docs/) for team setup, package layout, installation,
 versioning, validation, evals, CI, and host checks. Update those instructions in
 place; don't duplicate them here.
 
 ## Agent-specific rules
 
+- Scaffold a plugin with `npm run new-plugin -- <name>` and remove one with
+  `npm run remove-plugin -- <name>` (`remove-example` for the shipped
+  examples), rather than editing the catalog, overlay, and `.vally.yaml` by hand.
 - Group plugins by workflow, not by asset type. Keep every in-repo example
   self-contained and independently installable, without external services.
   Remote catalog references are separate from the local examples.
 - Keep `.vally.yaml` in step with the plugins: `paths.skills` lists every
   plugin's `skills` directory, and path `params` point at files that exist.
   Live-repository tests check invariants, not a fixed plugin list; put
-  example-specific assertions in tests that skip when the example is gone.
+  example-specific assertions in tests that skip when the example is gone, and
+  list every file an example owns in [scripts/examples.mjs](scripts/examples.mjs).
 - Use the Agent Plugins 1.0 layout: root `plugin.json`, `skills/`, and `mcp.json`.
   Copilot agents (`agents/`), slash commands (`commands/`), rules (`rules/`),
   hooks (`hooks/hooks.json`), LSP servers (`lsp.json`), and SDK extensions
   (`extensions/`) live under `com.github.copilot/`. Check the
   [plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference#components)
-  before adding a component type the examples don't show, and don't invent
-  file formats it doesn't document.
+  before adding a component type the examples don't show. Don't ship rules or
+  slash commands until the reference documents their file format; validation
+  only checks that those files aren't empty. Use a skill for shared standards.
   Don't adopt legacy `.plugin/` or `.claude-plugin/` layouts from documentation.
 - Instruction files (`.github/copilot-instructions.md`, `*.instructions.md`,
   `AGENTS.md`) and prompt files apply only to the repository they're in. To
-  share guidance through the marketplace, package it as a skill, agent, or
-  plugin rules, as the README's customization types section explains.
+  share guidance through the marketplace, package it as a skill or agent, as
+  [docs/customization-types.md](docs/customization-types.md) explains.
 - Don't add a UI framework or database. Never vendor the runtime SDK. The only
   build step regenerates committed artifacts (the MCP server bundle, the
   authoring grader, and their notices). Run `npm run build` after changing their
@@ -51,14 +57,15 @@ place; don't duplicate them here.
 - Valid behavioral failures may be report-only locally; tooling, configuration,
   and grader errors must fail. Never hide failures with blanket catches or
   `continue-on-error`.
-- `npm run eval:smoke`, `npm run eval`, and the evals workflow spend inference
-  credits. Don't run them unless the user asks. Static checks don't establish
-  behavioral quality.
+- `npm run eval:smoke`, `npm run eval`, and the evals workflow spend AI
+  credits. Don't run them unless the user asks, and don't turn on
+  `ENABLE_EVALS` for anyone. Static checks don't establish behavioral quality.
 - When upgrading Vally or Copilot, update the pins, the lockfile, and the
   workflow's `vally-version` together, and verify real custom-agent delegation
   and MCP behavior, not only schema validity. When you touch the workflows,
-  refresh every action's commit SHA (with its version comment) and keep the
-  evals workflow on a Node major that `validate.yml` tests.
+  refresh every action's commit SHA (with its version comment), keep the
+  evals workflow on a Node major that `validate.yml` tests, and keep both eval
+  runner jobs (`action` and `npm`) in step.
 - Keep remote plugins opt-in. The repository settings overlay must never enable
   a remote plugin; that's a deliberate security rule, so developers install
   remote plugins themselves. A remote entry's `name` must match the upstream
@@ -86,4 +93,5 @@ Consult the relevant contract before changing package or catalog fields:
 - [Vally eval schema](https://microsoft.github.io/vally/reference/eval-spec/) and
   [Evals Action](https://github.com/github/evals-action).
 
-The README's [references](README.md#references) cover skills, hooks, and VS Code.
+The README's [references](README.md#references) cover skills, hooks, VS Code,
+and this repository's guides.

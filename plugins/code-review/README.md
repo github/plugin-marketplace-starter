@@ -16,11 +16,9 @@ copilot plugin marketplace add OWNER/REPO
 copilot plugin install code-review@MARKETPLACE
 ```
 
-In this starter, `OWNER/REPO` is `github/plugin-marketplace-starter` and
-`MARKETPLACE` is `plugin-marketplace-starter`. Both change when you create
-your own repository with **Use this template**; see
-[Make it yours](../../README.md#make-it-yours) and
-[Install the examples](../../README.md#install-the-examples) for VS Code.
+Replace `OWNER/REPO` with the GitHub repository that hosts this marketplace
+and `MARKETPLACE` with the `name` in its `marketplace.json`. See
+[Install plugins](../../README.md#install-plugins) for VS Code.
 
 ## What this teaches
 
