@@ -40,8 +40,8 @@ async function markdownFiles(directory, removed) {
 
 // Removes what a Markdown file says about removed plugins: sections wrapped in
 // <!-- plugin:NAME --> ... <!-- /plugin:NAME -->, install commands that name
-// them, and table rows that link to removed files. Other links to removed files
-// become plain text. `removed(link)` says whether a relative link target is gone.
+// them, and table rows whose first cell links to removed files. Other links to
+// removed files become plain text. `removed(link)` says whether a relative link target is gone.
 export function pruneMarkdown(text, names, removed) {
   const kept = [];
   let skipping;
@@ -52,7 +52,8 @@ export function pruneMarkdown(text, names, removed) {
     if (marker && names.includes(marker[2])) { skipping = marker[1] ? undefined : marker[2]; continue; }
     if (skipping) continue;
     if (names.some((name) => line.includes(`copilot plugin install ${name}@`))) continue;
-    if (/^\s*\|/.test(line) && links(line).some(removed)) continue;
+    const firstCell = line.match(/^\s*\|([^|]*)\|/)?.[1];
+    if (firstCell && links(firstCell).some(removed)) continue;
     kept.push(line);
   }
   return kept.join("\n").replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (match, label, link) =>

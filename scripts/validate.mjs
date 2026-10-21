@@ -94,10 +94,15 @@ export async function validateVallySkillPaths(directory, localPlugins) {
 export const templateDefaults = Object.freeze({ marketplace: "plugin-marketplace-starter", owner: "GitHub", package: "plugin-marketplace-starter" });
 
 // Mentions of plugins/<name> in Markdown, CODEOWNERS, and workflow files,
-// including inside code spans, so a removed or renamed plugin can't linger in prose.
+// including inside code spans, so a removed or renamed plugin can't linger in
+// prose. Fenced code blocks are skipped; they often hold illustrative examples.
 export function pluginMentions(text) {
   const mentions = [];
+  let fence;
   text.split(/\r?\n/).forEach((line, index) => {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/)?.[1];
+    if (marker && (!fence || marker.startsWith(fence))) { fence = fence ? undefined : marker[0].repeat(3); return; }
+    if (fence) return;
     for (const match of line.matchAll(/(?<![\w-])(?<!\w\/)plugins\/([a-z0-9]+(?:-[a-z0-9]+)*)(?![\w-])/g)) {
       mentions.push({ line: index + 1, name: match[1] });
     }

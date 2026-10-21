@@ -99,7 +99,7 @@ test("coverage problems are all reported, name the spec and case, and say how to
 });
 
 test("verify warns about template names and prose that mentions missing plugins", async () => {
-  assert.deepEqual(pluginMentions("See `plugins/gone/` and [kept](../plugins/kept/README.md).\n/abs/path/to/plugins/other\nplugins/<name>"), [
+  assert.deepEqual(pluginMentions("See `plugins/gone/` and [kept](../plugins/kept/README.md).\n/abs/path/to/plugins/other\nplugins/<name>\n```yaml\n- ../../plugins/illustrative/skills/x\n```"), [
     { line: 1, name: "gone" }, { line: 1, name: "kept" },
   ]);
   const directory = await mkdtemp(join(tmpdir(), "starter-stale-"));

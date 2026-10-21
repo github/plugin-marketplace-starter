@@ -1,7 +1,8 @@
 import { build } from 'esbuild';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { runCli } from './problems.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const banner = { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" };
@@ -94,8 +95,8 @@ async function main() {
     if (check) {
       let current;
       try { current = await readFile(path, 'utf8'); }
-      catch (error) { if (error.code === 'ENOENT') throw new Error(`Missing generated artifact: ${path}. Run npm run build.`); throw error; }
-      if (normalize(current) !== normalize(contents)) throw new Error(`Stale generated artifact: ${path}. Run npm run build.`);
+      catch (error) { if (error.code === 'ENOENT') throw new Error(`Missing generated artifact: ${relative(root, path).split(sep).join('/')}. Run npm run build.`); throw error; }
+      if (normalize(current) !== normalize(contents)) throw new Error(`Stale generated artifact: ${relative(root, path).split(sep).join('/')}. Run npm run build.`);
     } else {
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, contents);
@@ -105,4 +106,4 @@ async function main() {
   console.log(check ? `${count} generated artifacts are current.` : `Built ${count} generated artifacts.`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await runCli(main);
