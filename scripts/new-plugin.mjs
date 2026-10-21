@@ -17,7 +17,9 @@ evals/<name>/eval.yaml, and registers the plugin in marketplace.json,
 .github/copilot/settings.json, .vally.yaml, and the README's plugin table and
 install commands. npm run verify passes right away.
 
-  --with agent       Also add a read-only custom agent and its delegation eval.
+  --with agent       Also add a read-only custom agent, <name>-specialist, and its
+                     delegation eval. The plugin name can then have at most 53
+                     characters.
   --with mcp         Also add a local stdio MCP server (src/server.ts) with one tool.
   --with hook        Also add a postToolUse hook, its eval, and a model-free test
                      in test/<name>-hook.test.mjs.
@@ -349,8 +351,13 @@ function evalFile(name, { skill, agent, mcp, hook, extension }) {
     "  timeout: 2m",
     "  runs: 1",
   ];
-  if (skill || mcp) lines.push("agent_environment:");
+  if (skill || mcp || agent) lines.push("agent_environment:");
   if (skill) lines.push("  skills:", `    - ../../plugins/${name}/skills/${name}`);
+  // Every case, including the negative control, sees the agent profile, so the
+  // negative case proves the agent isn't used when it's available.
+  if (agent) {
+    lines.push("  files:", `    - src: ../../plugins/${name}/com.github.copilot/agents/${agent}.agent.md`, `      dest: .github/agents/${agent}.agent.md`);
+  }
   if (mcp) {
     lines.push(
       "  mcpServers:",
@@ -408,10 +415,6 @@ function evalFile(name, { skill, agent, mcp, hook, extension }) {
     lines.push(
       `  - name: ${name}-delegates-to-${agent}`,
       `    prompt: Delegate to the ${agent} specialist and report what it says. Don't edit files.`,
-      "    agent_environment:",
-      "      files:",
-      `        - src: ../../plugins/${name}/com.github.copilot/agents/${agent}.agent.md`,
-      `          dest: .github/agents/${agent}.agent.md`,
       "    tags:",
       `      assets: agent:${name}/${agent}`,
       "      suite: smoke",
@@ -569,6 +572,10 @@ export async function newPlugin(name, { components: requested = [], skill = true
   const unknown = requested.filter((item) => !components.includes(item));
   if (unknown.length) throw new Error(`Unknown --with value: ${unknown.join(", ")}. Use ${components.join(", ")}.`);
   if (!skill && !requested.length) throw new Error("A plugin needs at least one asset. Drop --no-skill, or add --with agent, mcp, hook, or extension.");
+  // Asset names share the 64-character limit, and the agent adds "-specialist".
+  if (requested.includes("agent") && `${name}-specialist`.length > 64) {
+    throw new Error(`With --with agent, the plugin name can have at most ${64 - "-specialist".length} characters, so its agent name, ${name}-specialist, fits the 64-character limit. Pick a shorter name.`);
+  }
   const { catalog } = await readCatalog(directory);
   if (catalog.plugins.some((entry) => entry.name === name)) throw new Error(`marketplace.json already has a plugin named ${name}.`);
   for (const path of [`plugins/${name}`, `evals/${name}`]) {

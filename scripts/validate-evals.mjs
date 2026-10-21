@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { contained, evalFilenameMatcher, evalFilenames, expectedCases, frontmatter, parseYaml, readCatalog, readVallyConfig } from "./catalog.mjs";
+import { contained, effectiveTags, evalFilenameMatcher, evalFilenames, expectedCases, frontmatter, parseYaml, readCatalog, readVallyConfig } from "./catalog.mjs";
 import { Problems, relativePath, runCli } from "./problems.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
@@ -176,7 +176,8 @@ function checkPositive(asset, stimulus, spec, path, directory) {
     const files = [...list(spec.agent_environment?.files), ...list(stimulus.agent_environment?.files)];
     assert.ok(files.some((file) => typeof file.src === "string"
       && resolve(dirname(path), file.src) === asset.path
-      && /^\.github\/agents\/[^/]+\.agent\.md$/.test(file.dest)), `${id}: stage the actual agent profile.`);
+      && file.dest === `.github/agents/${asset.name}.agent.md`),
+    `${id}: stage the actual agent profile with agent_environment.files, as dest: .github/agents/${asset.name}.agent.md, so the agent's name matches its file.`);
     assert.ok(graders.some((grader) => grader.type === "tool-calls"
       && list(grader.config?.required).some((rule) => typeof rule === "object"
         && rule.name === "^task$" && rule.args?.agent_type === `^${escapeRegExp(asset.name)}$`)),
@@ -247,16 +248,18 @@ export function checkCoverage(assets, specs, { directory = root, suites = new Se
       if (!stimulus?.name) problems.add(where, "every stimulus needs a name.");
       else if (names.has(stimulus.name)) problems.add(where, "stimulus names must be unique across all eval files so saved results map to one case. Prefix it with the skill or plugin name.");
       names.add(stimulus?.name);
-      const ids = list(stimulus?.tags?.assets);
+      // Vally merges the eval's top-level tags into each case, so coverage does too.
+      const tags = effectiveTags(spec, stimulus);
+      const ids = list(tags.assets);
       if (!ids.length) {
         problems.add(where, 'declare the assets this case covers in tags.assets, for example tags: { assets: ["skill:<plugin>/<skill>"], control: positive, suite: smoke }.');
         continue;
       }
-      if (!["positive", "negative"].includes(stimulus.tags?.control)) {
+      if (!["positive", "negative"].includes(tags.control)) {
         problems.add(where, "set tags.control to positive or negative.");
         continue;
       }
-      for (const suite of list(stimulus.tags?.suite)) {
+      for (const suite of list(tags.suite)) {
         if (!suites.has(suite)) problems.add(where, `tags.suite "${suite}" isn't a configured suite filter in .vally.yaml (${[...suites].join(", ")}).`);
       }
       for (const id of ids) {
@@ -265,16 +268,16 @@ export function checkCoverage(assets, specs, { directory = root, suites = new Se
           problems.add(where, `unknown asset ${id}. Known assets: ${[...byId.keys()].join(", ") || "none"}.`);
           continue;
         }
-        if (stimulus.tags.control === "negative") {
+        if (tags.control === "negative") {
           if (checkNegative(asset, stimulus.graders ?? [])) negative.add(id);
           else weakNegatives.set(id, [...(weakNegatives.get(id) ?? []), where]);
           continue;
         }
         const before = problems.list.length;
-        problems.checkSync(where, () => checkPositive(asset, stimulus, spec, path, directory));
+        problems.checkSync(where, () => checkPositive(asset, { ...stimulus, tags }, spec, path, directory));
         if (problems.list.length !== before) continue;
         covered.add(id);
-        if (list(stimulus.tags.suite).includes(smokeSuite)) smoke.add(id);
+        if (list(tags.suite).includes(smokeSuite)) smoke.add(id);
       }
     }
   }

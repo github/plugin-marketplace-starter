@@ -6,9 +6,9 @@ import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { checkCoverage, discoverAssets, readEvals, root, suiteTags } from "../scripts/validate-evals.mjs";
-import { evalFilenameMatcher, paramsFileName, readCatalog, readVallyConfig } from "../scripts/catalog.mjs";
+import { evalFilenameMatcher, paramsFileName, parseTagSelectors, readCatalog, readVallyConfig } from "../scripts/catalog.mjs";
 import { defaultRuntime, pluginDirectories, runtimeArguments, runtimeEntry } from "../scripts/eval-runtime.js";
-import { evalParams, generatedHeader, isPathParam, pathParams, runtimeBridge, runtimeEnvironment, vallyArguments, vallyCliPath, writeActionParams } from "../scripts/evals.mjs";
+import { evalParams, generatedHeader, isPathParam, pathParams, reportArguments, runtimeBridge, runtimeEnvironment, vallyArguments, vallyCliPath, vallySelection, writeActionParams } from "../scripts/evals.mjs";
 import { expectedCases, render, summarize } from "../scripts/eval-report.mjs";
 
 test("all local assets have positive, smoke, and negative coverage", async () => {
@@ -216,14 +216,29 @@ test("the source validator accepts CRLF changelog headings and excludes generate
   assert.ok(script.includes('"vally-results"'));
 });
 
+
+// These check the safety properties of the workflows, not their exact shape, so
+// the customizations docs/ci.md describes keep npm run verify passing: trimming
+// the validate matrix, removing the evals environment, uploading transcripts
+// for a debug run, or deleting evals.yml.
 test("deterministic CI stays model-free, and opt-in behavioral CI uses the Evals Action or the npm runner on trusted code", async () => {
   const automatic = parse(await readFile(resolve(root, ".github/workflows/validate.yml"), "utf8"));
-  const evals = parse(await readFile(resolve(root, ".github/workflows/evals.yml"), "utf8"));
+  const evalsPath = resolve(root, ".github/workflows/evals.yml");
+  const evals = existsSync(evalsPath) ? parse(await readFile(evalsPath, "utf8")) : undefined;
   const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
   assert.deepEqual(automatic.permissions, { contents: "read" });
-  assert.deepEqual(automatic.jobs.validate.strategy.matrix, { os: ["ubuntu-latest", "windows-latest", "macos-latest"], node: [22, 24] });
+  // Pull requests, plus pushes to named branches only, so a pushed PR branch
+  // doesn't run every job twice; a newer push cancels the superseded run.
+  assert.ok("pull_request" in automatic.on, "validate.yml should run on pull requests.");
+  assert.ok(!("pull_request_target" in automatic.on));
+  if (automatic.on.push !== undefined) assert.ok(automatic.on.push?.branches?.length, "Limit validate.yml's push trigger to your default branch.");
+  assert.match(String(automatic.concurrency?.group ?? ""), /github\.ref/);
+  assert.ok(automatic.concurrency?.["cancel-in-progress"], "Cancel superseded validate runs.");
+  const { matrix } = automatic.jobs.validate.strategy;
+  assert.ok(Array.isArray(matrix.os) && matrix.os.length, "Keep at least one operating system in the matrix.");
+  assert.ok(Array.isArray(matrix.node) && matrix.node.length && matrix.node.every((major) => Number(major) >= 22), "Test Node.js 22 or newer.");
   assert.ok(automatic.jobs.validate.steps.some((step) => step.run === "npm run verify"));
-  for (const workflow of [automatic, evals]) {
+  for (const workflow of [automatic, evals].filter(Boolean)) {
     for (const job of Object.values(workflow.jobs)) {
       for (const step of job.steps) {
         assert.equal(step["continue-on-error"], undefined);
@@ -232,65 +247,67 @@ test("deterministic CI stays model-free, and opt-in behavioral CI uses the Evals
       }
     }
   }
-  assert.ok(!("pull_request_target" in evals.on));
-  assert.deepEqual(Object.keys(evals.on).sort(), ["pull_request", "workflow_dispatch"]);
-  assert.deepEqual(evals.on.pull_request.types, ["opened", "synchronize", "reopened", "ready_for_review"]);
-  assert.deepEqual(evals.permissions, { contents: "read" });
-  assert.deepEqual(Object.keys(evals.jobs).sort(), ["check-runner", "evals", "evals-npm"]);
-  // A mistyped runner fails without a token, instead of falling through to a runner.
-  assert.deepEqual(evals.jobs["check-runner"].permissions, {});
-  assert.equal(evals.jobs["check-runner"].if, "vars.EVALS_RUNNER != '' && vars.EVALS_RUNNER != 'action' && vars.EVALS_RUNNER != 'npm'");
-  for (const [name, job] of Object.entries(evals.jobs).filter(([name]) => name !== "check-runner")) {
-    // Reviewers on the "evals" environment can approve each run before it gets a token.
-    assert.equal(job.environment, "evals", name);
-    assert.equal(String(job.env?.VALLY_TELEMETRY_OPTOUT), "1", name);
-    // Opt-in, never on forks or drafts, and only one runner job at a time.
-    assert.match(job.if, /github\.event_name == 'workflow_dispatch' \|\|/, name);
-    assert.match(job.if, /vars\.ENABLE_EVALS == 'true' &&/, name);
-    assert.match(job.if, /head\.repo\.full_name == github\.repository/, name);
-    assert.match(job.if, /!github\.event\.pull_request\.draft/, name);
-    assert.deepEqual(job.concurrency, { group: "evals-${{ github.workflow_ref }}", "cancel-in-progress": false });
-    const setupNode = job.steps.find((step) => step.uses?.startsWith("actions/setup-node@"));
-    assert.ok(automatic.jobs.validate.strategy.matrix.node.includes(setupNode.with["node-version"]), "Use a Node major that validate.yml also tests.");
-    const preflight = job.steps.find((step) => step.name === "Check the runtime bridge");
-    assert.ok(job.steps.indexOf(job.steps.find((step) => step.run?.startsWith("npm ci"))) < job.steps.indexOf(preflight));
-  }
-  assert.match(evals.jobs.evals.if, /^\(vars\.EVALS_RUNNER == '' \|\| vars\.EVALS_RUNNER == 'action'\) &&/);
-  assert.match(evals.jobs["evals-npm"].if, /^vars\.EVALS_RUNNER == 'npm' &&/);
-  const job = evals.jobs.evals;
-  assert.deepEqual(job.permissions, { contents: "read", "copilot-requests": "write", "pull-requests": "write" });
-  const steps = job.steps;
-  const action = steps.find((step) => step.uses?.startsWith("github/evals-action@"));
-  assert.equal(action.uses, "github/evals-action@83fa12332c3e44ad899f347eaf153a0d9b6432dc");
-  const preflight = steps.find((step) => step.name === "Check the runtime bridge");
-  assert.ok(steps.indexOf(preflight) < steps.indexOf(action));
-  assert.equal(preflight.env.COPILOT_CLI_PATH, action.env.COPILOT_CLI_PATH);
-  assert.ok(steps.indexOf(steps.find((step) => step.run?.startsWith("npm ci"))) < steps.indexOf(action));
-  assert.ok(steps.indexOf(steps.find((step) => step.run === "node scripts/evals.mjs action-params")) < steps.indexOf(action));
-  assert.equal(action.with["working-directory"], ".");
-  assert.match(action.with.suite, /'smoke'/);
-  assert.equal(action.with["vally-version"], manifest.devDependencies["@microsoft/vally-cli"]);
-  assert.equal(action.with["copilot-token"], "${{ github.token }}");
-  assert.equal(String(action.with["upload-transcripts"]), "false");
-  assert.deepEqual(action.with["credential-env"].trim().split("\n"), ["COPILOT_CLI_PATH", "VALLY_TELEMETRY_OPTOUT"]);
-  assert.deepEqual(Object.keys(action.env), ["COPILOT_CLI_PATH"]);
-  assert.equal(action.env.COPILOT_CLI_PATH, "${{ github.workspace }}/scripts/eval-runtime.js");
-  const npmJob = evals.jobs["evals-npm"];
-  assert.deepEqual(npmJob.permissions, { contents: "read", "copilot-requests": "write" });
-  assert.ok(!npmJob.steps.some((step) => step.uses?.startsWith("github/evals-action@")), "The npm runner must not need the private Action.");
-  const runStep = npmJob.steps.find((step) => step.name === "Run evals");
-  assert.equal(runStep.run, 'node scripts/evals.mjs eval --suite "$SUITE" --require-pass');
-  assert.deepEqual(runStep.env, { GITHUB_TOKEN: "${{ github.token }}" });
-  assert.match(npmJob.env.SUITE, /'smoke'/);
-  const report = npmJob.steps.find((step) => step.name === "Report eval results");
-  assert.ok(npmJob.steps.indexOf(runStep) < npmJob.steps.indexOf(report));
-  assert.match(report.if, /!cancelled\(\)/);
-  const upload = npmJob.steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
-  assert.match(upload.if, /vars\.EVALS_UPLOAD_RESULTS == 'true'/, "Transcripts upload only when someone opts in.");
   assert.ok(manifest.scripts.verify.includes("eval:lint"));
   assert.ok(manifest.scripts.verify.includes("build:check"));
   assert.ok(!manifest.scripts.verify.includes("eval:smoke"));
   assert.ok(!manifest.scripts.verify.includes("npm run eval "));
+  if (!evals) return;
+
+  assert.ok(!("pull_request_target" in evals.on));
+  assert.deepEqual(evals.permissions, { contents: "read" });
+  const runners = Object.entries(evals.jobs).filter(([, job]) => job.steps.some((step) =>
+    step.uses?.startsWith("github/evals-action@") || /scripts\/evals\.mjs eval\b/.test(step.run ?? "")));
+  assert.ok(runners.length, "evals.yml should have a job that runs evals.");
+  for (const [name, job] of runners) {
+    // An environment is optional (docs/ci.md explains when to drop it); if
+    // there is one, it's the evals environment.
+    if (job.environment !== undefined) assert.equal(job.environment?.name ?? job.environment, "evals", name);
+    assert.equal(String(job.env?.VALLY_TELEMETRY_OPTOUT), "1", name);
+    // Opt-in, never on forks or drafts.
+    assert.match(job.if, /github\.event_name == 'workflow_dispatch' \|\|/, name);
+    assert.match(job.if, /vars\.ENABLE_EVALS == 'true' &&/, name);
+    assert.match(job.if, /head\.repo\.full_name == github\.repository/, name);
+    assert.match(job.if, /!github\.event\.pull_request\.draft/, name);
+    // A paid run is never cancelled halfway by a newer push.
+    assert.equal(job.concurrency?.["cancel-in-progress"], false, name);
+    assert.ok(!Object.values(job.permissions ?? {}).includes("write-all") && job.permissions?.contents === "read", name);
+    const setupNode = job.steps.find((step) => step.uses?.startsWith("actions/setup-node@"));
+    assert.ok(Number(setupNode.with["node-version"]) >= 22, name);
+    const preflight = job.steps.find((step) => step.name === "Check the runtime bridge");
+    if (preflight) assert.ok(job.steps.indexOf(job.steps.find((step) => step.run?.startsWith("npm ci"))) < job.steps.indexOf(preflight), name);
+  }
+  if (evals.jobs["check-runner"]) {
+    // A mistyped runner fails without a token, instead of falling through to a runner.
+    assert.deepEqual(evals.jobs["check-runner"].permissions, {});
+    assert.equal(evals.jobs["check-runner"].if, "vars.EVALS_RUNNER != '' && vars.EVALS_RUNNER != 'action' && vars.EVALS_RUNNER != 'npm'");
+  }
+  // Only one runner job can match a given EVALS_RUNNER.
+  if (evals.jobs.evals && evals.jobs["evals-npm"]) {
+    assert.match(evals.jobs.evals.if, /^\(vars\.EVALS_RUNNER == '' \|\| vars\.EVALS_RUNNER == 'action'\) &&/);
+    assert.match(evals.jobs["evals-npm"].if, /^vars\.EVALS_RUNNER == 'npm' &&/);
+  }
+  const job = evals.jobs.evals;
+  if (job) {
+    const steps = job.steps;
+    const action = steps.find((step) => step.uses?.startsWith("github/evals-action@"));
+    assert.ok(steps.indexOf(steps.find((step) => step.run?.startsWith("npm ci"))) < steps.indexOf(action));
+    assert.ok(steps.indexOf(steps.find((step) => step.run === "node scripts/evals.mjs action-params")) < steps.indexOf(action));
+    assert.equal(action.with["vally-version"], manifest.devDependencies["@microsoft/vally-cli"]);
+    assert.equal(action.with["copilot-token"], "${{ github.token }}");
+    // Naming anything in credential-env turns off token injection; only these two non-secrets go through it.
+    assert.deepEqual(action.with["credential-env"].trim().split("\n"), ["COPILOT_CLI_PATH", "VALLY_TELEMETRY_OPTOUT"]);
+    assert.equal(action.env.COPILOT_CLI_PATH, "${{ github.workspace }}/scripts/eval-runtime.js");
+  }
+  const npmJob = evals.jobs["evals-npm"];
+  if (npmJob) {
+    assert.ok(!npmJob.steps.some((step) => step.uses?.startsWith("github/evals-action@")), "The npm runner must not need the private Action.");
+    const runStep = npmJob.steps.find((step) => /scripts\/evals\.mjs eval\b/.test(step.run ?? ""));
+    assert.ok(runStep.run.includes("--require-pass"));
+    const report = npmJob.steps.find((step) => /eval-report\.mjs/.test(step.run ?? ""));
+    if (report) assert.ok(npmJob.steps.indexOf(runStep) < npmJob.steps.indexOf(report));
+    const upload = npmJob.steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+    if (upload) assert.match(upload.if, /vars\.EVALS_UPLOAD_RESULTS == 'true'/, "Transcripts upload only when someone opts in.");
+  }
 });
 
 test("reports select the cases of a configured suite or of specific eval specs", () => {
@@ -314,6 +331,69 @@ test("reports select the cases of a configured suite or of specific eval specs",
   assert.throws(() => expectedCases(specs, config, { suite: "nightly" }), /Unknown suite nightly/);
   assert.throws(() => expectedCases(specs, config, { evalSpecs: ["evals/missing/eval.yaml"] }), /No eval spec/);
   assert.throws(() => expectedCases(specs, config, { evalSpecs: ["evals/b/release.eval.yaml"], suite: "smoke" }), /no cases/);
+});
+
+test("selection follows Vally: eval-level tags are inherited, a case's own tag wins, and --tag includes or excludes", () => {
+  const specs = [
+    { path: resolve(root, "evals/ci/eval.yaml"), spec: { tags: { lane: "ci", control: "positive" }, stimuli: [
+      { name: "inherits-ci", tags: {} },
+      { name: "overrides-lane", tags: { lane: "nightly" } },
+      { name: "negative-ci", tags: { control: "negative" } },
+    ] } },
+    { path: resolve(root, "evals/other/eval.yaml"), spec: { stimuli: [{ name: "untagged" }, { name: "smoke-one", tags: { suite: "smoke", control: "negative" } }] } },
+  ];
+  const config = { suites: { ci: { filter: { lane: "ci" } }, smoke: { filter: { suite: "smoke" } }, full: { evals: ["evals/**/eval.yaml"] } } };
+  const names = (options) => [...expectedCases(specs, config, options)].sort();
+  assert.deepEqual(names({ suite: "ci" }), ["inherits-ci", "negative-ci"]);
+  assert.deepEqual(names({ tags: ["control=negative"] }), ["negative-ci", "smoke-one"]);
+  // A missing key never matches an exclusion, as in Vally.
+  assert.deepEqual(names({ tags: ["control!=negative"] }), ["inherits-ci", "overrides-lane", "untagged"]);
+  assert.deepEqual(names({ tags: ["lane=ci,nightly", "control=positive"] }), ["inherits-ci", "overrides-lane"]);
+  assert.deepEqual(names({ suite: "full", tags: ["control=negative"] }), ["negative-ci", "smoke-one"]);
+  assert.deepEqual(names({ evalSpecs: ["evals/ci/eval.yaml"], tags: ["control!=negative"] }), ["inherits-ci", "overrides-lane"]);
+  assert.throws(() => parseTagSelectors(["nokey"]), /Invalid --tag/);
+  assert.deepEqual(parseTagSelectors(["a=1,2", "a=3", "b!=x"]), { include: { a: ["1", "2", "3"] }, exclude: { b: ["x"] } });
+  // Coverage sees the same inherited tags.
+  const asset = { id: "skill:p/p", kind: "skill", name: "p", path: resolve(root, "plugins/p/skills/p") };
+  const inherited = [{ path: resolve(root, "evals/p/eval.yaml"), spec: { tags: { assets: asset.id }, agent_environment: { skills: ["../../plugins/p/skills/p"] }, stimuli: [
+    { name: "p-runs", tags: { control: "positive", suite: "smoke" }, graders: [{ type: "skill-invocation", config: { required: ["p"] } }, { type: "output-contains", config: { substring: "p" } }] },
+    { name: "p-skips", tags: { control: "negative" }, graders: [{ type: "skill-invocation", config: { disallowed: ["p"] } }] },
+  ] } }];
+  assert.equal(checkCoverage([asset], inherited), 2);
+});
+
+test("tag selection matches Vally's own filter on this repository's evals", async (t) => {
+  let vally;
+  try { vally = await import("@microsoft/vally"); } catch { return t.skip("@microsoft/vally isn't installed where the test can import it"); }
+  const config = await readVallyConfig(root);
+  const specs = await readEvals(root, config);
+  if (!specs.length) return t.skip("no eval specs");
+  for (const tags of [["control=negative"], ["control!=negative"], ["suite=smoke"], ["suite=smoke", "control=positive"]]) {
+    const theirs = specs.flatMap(({ spec }) => vally.filterStimuli(spec.stimuli, spec.tags, vally.parseSuiteFilter(tags)).matched.map((stimulus) => stimulus.name)).sort();
+    let ours = [];
+    try { ours = [...expectedCases(specs, config, { tags })].sort(); } catch (error) { if (!/no cases/.test(error.message)) throw error; }
+    assert.deepEqual(ours, theirs, tags.join(" "));
+  }
+});
+
+test("the launcher turns a suite with --plugin, --eval-spec, or --tag into a selection Vally accepts", () => {
+  const config = { suites: { smoke: { filter: { suite: "smoke" } }, full: { evals: ["evals/**/eval.yaml"] } } };
+  const specPaths = ["evals/a/eval.yaml", "evals/a/agent/eval.yaml", "evals/b/other.yaml"];
+  assert.deepEqual(vallySelection([], config), ["--suite", "full"]);
+  assert.deepEqual(vallySelection(["--model", "x"], config), ["--suite", "full", "--model", "x"]);
+  assert.throws(() => vallySelection([], { suites: {} }), /Choose what to run/);
+  assert.deepEqual(vallySelection(["--suite", "smoke"], config), ["--suite", "smoke"]);
+  assert.deepEqual(vallySelection(["--eval-spec", "evals/a/eval.yaml", "--suite", "smoke", "--require-pass"], config),
+    ["--eval-spec", "evals/a/eval.yaml", "--tag", "suite=smoke", "--require-pass"]);
+  assert.deepEqual(vallySelection(["--suite", "full", "--eval-spec", "evals/a/eval.yaml"], config), ["--eval-spec", "evals/a/eval.yaml"]);
+  assert.deepEqual(vallySelection(["--suite", "full", "--tag", "control=negative"], config, { specPaths }),
+    ["--eval-spec", "evals/a/eval.yaml", "--eval-spec", "evals/a/agent/eval.yaml", "--tag", "control=negative"]);
+  assert.deepEqual(vallySelection(["--suite=smoke", "--tag=control!=negative"], config), ["--tag", "suite=smoke", "--tag", "control!=negative"]);
+  assert.throws(() => vallySelection(["--suite", "smoke", "--tag", "suite=full"], config), /already filters on suite/);
+  assert.throws(() => vallySelection(["--suite", "full", "--eval-spec", "evals/b/other.yaml"], config), /None of the selected eval specs are in the full suite/);
+  // The report gets only options it understands, never Vally's run options.
+  assert.deepEqual(reportArguments(["--suite", "smoke", "--model", "gpt-5.4", "--require-pass", "-e", "evals/a/eval.yaml", "--tag", "x=y"], ["a"]),
+    ["--suite", "smoke", "--plugin", "a", "--eval-spec", "evals/a/eval.yaml", "--tag", "x=y"]);
 });
 
 // The template locks every package to registry.npmjs.org. A team that installs

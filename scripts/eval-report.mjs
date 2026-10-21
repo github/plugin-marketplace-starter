@@ -59,7 +59,7 @@ export function render(summary, path) {
   ].join("\n");
 }
 
-export const usage = `Usage: npm run eval:report -- [--suite <name> | --eval-spec <path>... | --plugin <name>...] [--run-dir <path>]
+export const usage = `Usage: npm run eval:report -- [--suite <name>] [--plugin <name>... | --eval-spec <path>...] [--tag <key=value>...] [--run-dir <path>]
 
 Reads a saved eval run and prints a Markdown report. It doesn't run a model.
 Select the same cases you ran, or the report treats the missing ones as errors:
@@ -67,10 +67,13 @@ Select the same cases you ran, or the report treats the missing ones as errors:
   --suite <name>      A suite from .vally.yaml, such as smoke or full.
   --eval-spec <path>  One eval spec. Repeat it for several specs.
   --plugin <name>     Every spec for a plugin, as in node scripts/evals.mjs eval --plugin.
+  --tag <key=value>   Only cases whose tags match, as in Vally: key=value[,value]
+                      includes and key!=value excludes. Repeat it to combine.
   --run-dir <path>    The saved run to read. Defaults to the newest directory
                       under vally-results/.
 
-With no selection, it expects the full suite. It exits nonzero for an incomplete
+With no selection, it expects the full suite. The launcher's --list prints the
+matching report command for a run. It exits nonzero for an incomplete
 run, a runtime or grader error, or a missing result. Valid failed verdicts are
 reported but don't fail it.
 
@@ -82,7 +85,7 @@ async function main() {
   try {
     parsed = parseArgs({ options: {
       suite: { type: "string" }, "eval-spec": { type: "string", multiple: true }, "run-dir": { type: "string" },
-      plugin: { type: "string", multiple: true }, help: { type: "boolean", short: "h" },
+      plugin: { type: "string", multiple: true }, tag: { type: "string", multiple: true }, help: { type: "boolean", short: "h" },
     } });
   } catch (error) {
     throw new Error(`${error.message}. Run npm run eval:report -- --help for the options.`);
@@ -113,7 +116,7 @@ async function main() {
     if (error.code !== "ENOENT") throw error;
     throw new Error(`${relative(root, resolve(directory, "results.jsonl")).split(sep).join("/")} doesn't exist. Pass --run-dir with a directory under vally-results/ that a finished run wrote.`);
   }
-  const expected = expectedCases(specs, config, { suite: values.suite, evalSpecs });
+  const expected = expectedCases(specs, config, { suite: values.suite, evalSpecs, tags: values.tag ?? [] });
   const records = text.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line));
   const summary = summarize(records, expected);
   const markdown = render(summary, directory);

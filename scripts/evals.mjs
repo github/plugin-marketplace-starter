@@ -4,7 +4,7 @@ import { readFile, readdir, writeFile, access } from "node:fs/promises";
 import { resolve, delimiter, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { stringify } from "yaml";
-import { evalFilenameMatcher, evalFilenames, expectedCases, paramsFileName, readVallyConfig } from "./catalog.mjs";
+import { evalFilenameMatcher, evalFilenames, expectedCases, paramsFileName, parseTagSelectors, readVallyConfig, specsInSuite } from "./catalog.mjs";
 import { runCli } from "./problems.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
@@ -91,15 +91,20 @@ Launcher options for eval and lint:
                     evals/<name>/agent/eval.yaml, and any spec whose cases tag one
                     of its assets. Repeat it for several plugins.
   --list            With eval, print the specs and cases that would run, and the
-                    command, without starting a session. It's free.
+                    commands to run and report on them, without starting a
+                    session. It's free.
 
-Any other options go to Vally unchanged, for example --suite smoke,
---eval-spec <path>, --model <id>, or --require-pass. Run
-node scripts/evals.mjs eval --help to also see Vally's own options.
+Any other options go to Vally, for example --suite smoke, --eval-spec <path>,
+--tag <key=value>, --model <id>, or --require-pass. With no --suite,
+--eval-spec, --plugin, or --tag, eval runs the full suite. --plugin and
+--eval-spec work with --suite and --tag: the launcher turns the suite into the
+spec list and tag filter Vally accepts. Run node scripts/evals.mjs eval --help
+to also see Vally's own options.
 
 Examples:
   node scripts/evals.mjs eval --plugin code-review --list
-  node scripts/evals.mjs eval --plugin code-review
+  node scripts/evals.mjs eval --plugin code-review --suite smoke
+  node scripts/evals.mjs eval --tag control=negative --list
   npm run eval:report -- --plugin code-review`;
 
 const slash = (path) => path.split(sep).join("/");
@@ -139,23 +144,92 @@ export function launcherOptions(args) {
   return { plugins, list, help, rest };
 }
 
-const optionValues = (args, name) => args.flatMap((arg, index) => arg === name ? [args[index + 1]] : arg.startsWith(`${name}=`) ? [arg.slice(name.length + 1)] : [])
+const optionValues = (args, ...names) => args.flatMap((arg, index) => names.flatMap((name) =>
+  arg === name ? [args[index + 1]] : arg.startsWith(`${name}=`) ? [arg.slice(name.length + 1)] : []))
   .filter((value) => value !== undefined);
+
+// Removes Vally's selection options (and their values) from an argument list.
+const selectionOptions = ["--suite", "--eval-spec", "-e", "--tag"];
+function withoutSelection(args) {
+  const kept = [];
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (selectionOptions.includes(arg)) index++;
+    else if (!selectionOptions.some((name) => arg.startsWith(`${name}=`))) kept.push(arg);
+  }
+  return kept;
+}
+
+// Reads what a command line selects: a suite, eval specs (including the ones
+// --plugin expands to), and --tag filters.
+export function selection(args) {
+  return {
+    suite: optionValues(args, "--suite").at(-1),
+    evalSpecs: optionValues(args, "--eval-spec", "-e"),
+    tags: optionValues(args, "--tag"),
+  };
+}
+
+// Vally rejects --suite with --eval-spec, and --tag with --suite. When --plugin,
+// --eval-spec, or --tag narrows a suite, this rewrites the suite into what
+// Vally accepts: its `evals` globs narrow the spec list, and its tag filter
+// becomes --tag. With no selection at all, it runs the full suite.
+export function vallySelection(args, config, { directory = root, specPaths = [] } = {}) {
+  const { suite, evalSpecs, tags } = selection(args);
+  if (!suite && !evalSpecs.length && !tags.length) {
+    if (!config?.suites?.full) throw new Error("Choose what to run with --suite <name>, --plugin <name>, --eval-spec <path>, or --tag <key=value>.");
+    return ["--suite", "full", ...args];
+  }
+  if (!suite || (!evalSpecs.length && !tags.length)) return args;
+  const definition = config?.suites?.[suite];
+  if (!definition) throw new Error(`Unknown suite ${suite}. Configured suites: ${Object.keys(config?.suites ?? {}).join(", ") || "none"}.`);
+  let specs = evalSpecs;
+  if (definition.evals) {
+    // Vally can't combine a suite's globs with --tag, so list the specs they match.
+    specs = specsInSuite(specs.length ? specs : specPaths, config, suite, directory);
+    if (!specs.length) throw new Error(`None of the selected eval specs are in the ${suite} suite.`);
+  }
+  const filter = definition.filter ?? {};
+  const own = parseTagSelectors(tags);
+  const overlap = Object.keys(filter).filter((key) => key in own.include || key in own.exclude);
+  if (overlap.length) throw new Error(`The ${suite} suite already filters on ${overlap.join(", ")}. Drop --suite or that --tag.`);
+  return [
+    ...specs.flatMap((path) => ["--eval-spec", path]),
+    ...Object.entries(filter).flatMap(([key, value]) => ["--tag", `${key}=${[value].flat().join(",")}`]),
+    ...tags.flatMap((tag) => ["--tag", tag]),
+    ...withoutSelection(args),
+  ];
+}
+
+// The eval:report options that select the same cases as a run.
+export function reportArguments(args, plugins = []) {
+  const { suite, evalSpecs, tags } = selection(args);
+  return [
+    ...(suite ? ["--suite", suite] : []),
+    ...plugins.flatMap((name) => ["--plugin", name]),
+    ...evalSpecs.flatMap((path) => ["--eval-spec", path]),
+    ...tags.flatMap((tag) => ["--tag", tag]),
+  ];
+}
 
 // What a paid run would select, using the same rules as the report.
 export async function describeSelection(args, directory = root) {
   const { readEvals } = await import("./validate-evals.mjs");
   const config = await readVallyConfig(directory);
   const specs = await readEvals(directory, config);
-  const suite = optionValues(args, "--suite").at(-1);
-  const evalSpecs = optionValues(args, "--eval-spec");
+  const { suite, evalSpecs, tags } = selection(args);
   if (!specs.length) return [];
-  const cases = expectedCases(specs, config, { suite, evalSpecs, directory });
+  const cases = expectedCases(specs, config, { suite, evalSpecs, tags, directory });
   const chosen = specs.filter(({ spec }) => (spec?.stimuli ?? []).some((stimulus) => cases.has(stimulus.name)));
   return chosen.map(({ path, spec }) => ({
     path: slash(relative(directory, path)),
     cases: spec.stimuli.filter((stimulus) => cases.has(stimulus.name)).map((stimulus) => stimulus.name),
   }));
+}
+
+async function specPaths(config) {
+  const { readEvals } = await import("./validate-evals.mjs");
+  return (await readEvals(root, config)).map(({ path }) => slash(relative(root, path)));
 }
 
 async function main() {
@@ -173,24 +247,33 @@ async function main() {
   const options = launcherOptions(raw);
   if (options.help) console.log(`${usage}\n\nVally's options for ${command}:\n`);
   let args = options.rest;
+  let pluginSpecs = [];
   if (options.plugins.length) {
     if (command === "grade") throw new Error("--plugin works with eval and lint. For grade, pass Vally's own options.");
     const { readEvals } = await import("./validate-evals.mjs");
-    const specs = specsForPlugins(options.plugins, await readEvals(root));
-    args = [...specs.flatMap(({ path }) => ["--eval-spec", slash(relative(root, path))]), ...args];
+    pluginSpecs = specsForPlugins(options.plugins, await readEvals(root)).map(({ path }) => slash(relative(root, path)));
+    args = [...pluginSpecs.flatMap((path) => ["--eval-spec", path]), ...args];
   }
   if (options.list) {
     if (command !== "eval") throw new Error("--list works with eval.");
-    const selection = await describeSelection(args);
-    const total = selection.reduce((sum, item) => sum + item.cases.length, 0);
+    const config = await readVallyConfig(root);
+    const chosen = await describeSelection(args);
+    const total = chosen.reduce((sum, item) => sum + item.cases.length, 0);
     if (!total) return console.log("There are no eval specs yet, so nothing would run.");
-    console.log(`Would run ${total} case${total === 1 ? "" : "s"} from ${selection.length} spec${selection.length === 1 ? "" : "s"}. Each case runs at least one Copilot session.`);
-    for (const item of selection) {
+    // Fails here, for free, on a combination Vally would reject.
+    vallySelection(args, config, { specPaths: await specPaths(config) });
+    console.log(`Would run ${total} case${total === 1 ? "" : "s"} from ${chosen.length} spec${chosen.length === 1 ? "" : "s"}. Each case runs at least one Copilot session.`);
+    for (const item of chosen) {
       console.log(`  ${item.path}`);
       for (const name of item.cases) console.log(`    ${name}`);
     }
-    console.log(`\nTo run them (costs AI credits):\n  node scripts/evals.mjs eval ${args.join(" ")}`);
-    console.log(`Then report on the same selection:\n  npm run eval:report -- ${args.filter((arg) => !["--require-pass"].includes(arg)).join(" ")}`);
+    // Show the commands as typed, with --plugin rather than its expanded specs.
+    const { suite, evalSpecs, tags } = selection(args);
+    const all = !suite && !evalSpecs.length && !tags.length ? ["--suite", "full"] : [];
+    const run = [...all, ...options.plugins.flatMap((name) => ["--plugin", name]), ...options.rest];
+    const report = [...all, ...reportArguments(options.rest, options.plugins)];
+    console.log(`\nTo run them (costs AI credits):\n  node scripts/evals.mjs eval ${run.join(" ")}`);
+    console.log(`Then report on the same selection:\n  npm run eval:report${report.length ? ` -- ${report.join(" ")}` : ""}`);
     return;
   }
   if (command === "lint" && !args.length && !existsSync(resolve(root, "plugins"))) {
@@ -201,21 +284,46 @@ async function main() {
     }
     throw new Error("plugins/ doesn't exist, but evals/ has eval specs. Add the plugins they cover, or remove the specs.");
   }
-  if (command === "lint" && options.plugins.length) args = [...args, "--strict"];
   await access(resolve(root, "node_modules/@github/copilot/npm-loader.js"));
   for (const [name, path] of Object.entries(evalParams)) {
     try { await access(path); }
     catch { throw new Error(`.vally.yaml param ${name} points to a missing path: ${path}. Run npm run build or update .vally.yaml.`); }
   }
-  const vally = command === "lint" && options.plugins.length ? [vallyCliPath, "lint", ...Object.entries(evalParams).flatMap(([name, value]) => ["--param", `${name}=${value}`]), ...args] : vallyArguments(command, args);
-  const child = spawn(process.execPath, vally, { cwd: root, stdio: "inherit", env: runtimeEnvironment() });
-  child.on("error", (error) => { console.error(error); process.exitCode = 1; });
-  child.on("exit", (code, signal) => {
-    if (signal) console.error(`Vally terminated by ${signal}.`);
-    process.exitCode = code ?? 1;
-  });
-  process.on("SIGINT", () => child.kill("SIGINT"));
-  process.on("SIGTERM", () => child.kill("SIGTERM"));
+  const params = Object.entries(evalParams).flatMap(([name, value]) => ["--param", `${name}=${value}`]);
+  let runs;
+  if (command === "lint" && options.plugins.length) {
+    // Vally's lint takes one --eval-spec and lints skills only when given a
+    // path, so lint each plugin's skills and each of its specs separately.
+    const extra = withoutSelection(options.rest);
+    runs = [
+      ...options.plugins.filter((name) => existsSync(resolve(root, "plugins", name, "skills")))
+        .map((name) => [vallyCliPath, "lint", `plugins/${name}`, ...params, ...extra, "--strict"]),
+      ...pluginSpecs.map((path) => [vallyCliPath, "lint", "--eval-spec", path, ...params, ...extra, "--strict"]),
+    ];
+  } else if (command === "eval") {
+    const config = await readVallyConfig(root);
+    runs = [vallyArguments(command, options.help ? args : vallySelection(args, config, { specPaths: await specPaths(config) }))];
+  } else runs = [vallyArguments(command, args)];
+  let stopping = false;
+  for (const vally of runs) {
+    const code = await new Promise((done) => {
+      const child = spawn(process.execPath, vally, { cwd: root, stdio: "inherit", env: runtimeEnvironment() });
+      const forward = (signal) => () => { stopping = true; child.kill(signal); };
+      const onInt = forward("SIGINT");
+      const onTerm = forward("SIGTERM");
+      process.on("SIGINT", onInt);
+      process.on("SIGTERM", onTerm);
+      child.on("error", (error) => { console.error(error); done(1); });
+      child.on("exit", (exitCode, signal) => {
+        process.off("SIGINT", onInt);
+        process.off("SIGTERM", onTerm);
+        if (signal) console.error(`Vally terminated by ${signal}.`);
+        done(exitCode ?? 1);
+      });
+    });
+    if (code !== 0) process.exitCode = code;
+    if (stopping) break;
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await runCli(main);

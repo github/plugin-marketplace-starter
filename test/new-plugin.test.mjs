@@ -2,16 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { addToReadme, repositoryName } from "../scripts/new-plugin.mjs";
+import { addToReadme, newPlugin, repositoryName } from "../scripts/new-plugin.mjs";
 import { renameMarkdown } from "../scripts/rename-marketplace.mjs";
 import { launcherOptions, specsForPlugins } from "../scripts/evals.mjs";
 import { ownedPaths } from "../scripts/examples.mjs";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { assertRemovable, removePlugins } from "../scripts/remove-plugin.mjs";
+import { frontmatter } from "../scripts/catalog.mjs";
+import { existsSync, readdirSync } from "node:fs";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { parse } from "yaml";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const script = (name, ...args) => spawnSync(process.execPath, [`scripts/${name}`, ...args], { cwd: root, encoding: "utf8", timeout: 60_000 });
+// Every eval spec under evals/<plugin>/, as repository paths.
+const readEvalsSync = () => readdirSync(join(root, "evals"), { recursive: true, withFileTypes: true })
+  .filter((entry) => entry.isFile() && /(?:^|\.)eval\.ya?ml$/.test(entry.name))
+  .map((entry) => relative(root, join(entry.parentPath, entry.name)).split(/[\\/]/).join("/"));
 
 test("new plugins join the README's plugin table and install commands", () => {
   const readme = [
@@ -86,6 +94,13 @@ test("the launcher lists a selection for free, and every script explains itself"
   assert.equal(listed.status, 0, listed.stderr);
   assert.match(listed.stdout, /^Would run \d+ cases? from \d+ specs?\.|^There are no eval specs yet/);
   if (listed.stdout.startsWith("Would run")) assert.match(listed.stdout, /node scripts\/evals\.mjs eval --suite smoke/);
+  // With no selection, it's the full suite, and both printed commands work as shown.
+  const all = script("evals.mjs", "eval", "--list", "--model", "gpt-5.4");
+  assert.equal(all.status, 0, all.stderr);
+  if (all.stdout.startsWith("Would run")) {
+    assert.match(all.stdout, /node scripts\/evals\.mjs eval --suite full --model gpt-5\.4\n/);
+    assert.match(all.stdout, /npm run eval:report -- --suite full\n/);
+  }
   for (const [name, args, pattern] of [
     ["evals.mjs", ["--help"], /Usage: node scripts\/evals\.mjs/],
     ["eval-report.mjs", ["--help"], /Usage: npm run eval:report/],
@@ -125,6 +140,86 @@ test("support files named after a plugin belong to it, but not to a shorter name
   ]);
   assert.ok(!(await ownedPaths("catalog", { directory })).includes("test/catalog.test.mjs"));
   assert.ok(!(await ownedPaths("common", { directory })).includes("evals/graders/common.mjs"));
+  // A bundled grader's source and build go with the plugin too.
+  for (const file of ["evals/graders/src/bug.mjs", "evals/graders/dist/bug.mjs", "evals/graders/dist/THIRD_PARTY_NOTICES.txt"]) {
+    await mkdir(join(directory, file, ".."), { recursive: true });
+    await writeFile(join(directory, file), "");
+  }
+  const owned = await ownedPaths("bug", { directory, others: ["bug-report"] });
+  assert.ok(owned.includes("evals/graders/src/bug.mjs") && owned.includes("evals/graders/dist/bug.mjs"));
+  assert.ok(!owned.includes("evals/graders/dist/THIRD_PARTY_NOTICES.txt"));
+});
+
+test("removal refuses anything that isn't a plugin name, before it touches the file system", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-remove-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, "marketplace.json"), JSON.stringify({ name: "fixture", owner: { name: "Test" }, plugins: [] }));
+  for (const file of ["docs/keep.md", "scripts/keep.mjs", "plugins/real/plugin.json"]) {
+    await mkdir(join(directory, file, ".."), { recursive: true });
+    await writeFile(join(directory, file), "sentinel");
+  }
+  const outside = resolve(directory, "..");
+  for (const name of ["../docs", "../scripts", "..\\docs", "plugins/../docs", "..", ".", "", "Docs", "a--b", outside, resolve(directory, "docs"), "x".repeat(65)]) {
+    for (const dryRun of [true, false]) {
+      await assert.rejects(removePlugins([name], { directory, dryRun }), /isn't a plugin name\. Plugin names are lowercase.*Nothing was removed/, JSON.stringify(name));
+    }
+  }
+  // One bad name stops the whole request, even with a valid one beside it.
+  await assert.rejects(removePlugins(["real", "../docs"], { directory }), /isn't a plugin name/);
+  for (const file of ["docs/keep.md", "scripts/keep.mjs", "plugins/real/plugin.json"]) assert.ok(existsSync(join(directory, file)), file);
+  await assert.rejects(removePlugins(["ghost"], { directory }), /No plugin named ghost/);
+  // Deletion is limited to plugins/, evals/, test/, and the examples guide.
+  for (const path of ["plugins/real", "evals/real", "test/real.test.mjs", "docs/examples.md"]) assert.doesNotThrow(() => assertRemovable(directory, path), path);
+  for (const path of ["plugins", "plugins/../docs", "../plugins/x", "docs/keep.md", "scripts/x.mjs", outside]) {
+    assert.throws(() => assertRemovable(directory, path), /Refusing to remove/, path);
+  }
+  const cli = script("remove-plugin.mjs", "../scripts", "--dry-run");
+  assert.notEqual(cli.status, 0);
+  assert.match(cli.stderr, /"\.\.\/scripts" isn't a plugin name/);
+  assert.doesNotMatch(cli.stdout, /Would remove/);
+});
+
+test("a long plugin name with an agent is refused before anything is written, and the 53-character limit works", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-long-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const catalog = { name: "fixture", owner: { name: "Test" }, plugins: [] };
+  await writeFile(join(directory, "marketplace.json"), JSON.stringify(catalog));
+  await mkdir(join(directory, ".github/copilot"), { recursive: true });
+  await writeFile(join(directory, ".github/copilot/settings.json"), JSON.stringify({ enabledPlugins: {} }));
+  await writeFile(join(directory, ".vally.yaml"), "paths:\n  skills: []\n");
+  const tooLong = "a".repeat(54);
+  await assert.rejects(newPlugin(tooLong, { components: ["agent"], directory }), /at most 53 characters/);
+  assert.ok(!existsSync(join(directory, "plugins", tooLong)));
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "marketplace.json"), "utf8")), catalog);
+  const name = "b".repeat(53);
+  const { options } = await newPlugin(name, { components: ["agent"], directory });
+  const profile = await readFile(join(directory, "plugins", name, "com.github.copilot/agents", `${options.agent}.agent.md`), "utf8");
+  assert.equal(frontmatter(profile, "agent").name, `${name}-specialist`);
+  assert.equal(frontmatter(await readFile(join(directory, "plugins", name, "skills", name, "SKILL.md"), "utf8"), "skill").name, name);
+  // Every case, including the negative control, sees the agent profile.
+  const spec = parse(await readFile(join(directory, "evals", name, "eval.yaml"), "utf8"));
+  assert.deepEqual(spec.agent_environment.files, [{ src: `../../plugins/${name}/com.github.copilot/agents/${name}-specialist.agent.md`, dest: `.github/agents/${name}-specialist.agent.md` }]);
+  assert.ok(spec.stimuli.every((stimulus) => !stimulus.agent_environment?.files));
+  // A plugin name can still use all 64 characters without an agent.
+  await newPlugin("c".repeat(64), { directory });
+});
+
+test("lint --plugin lints every selected spec and the plugin's skills", (t) => {
+  const specs = readEvalsSync();
+  const nested = Object.entries(Object.groupBy(specs, (path) => path.split("/")[1])).find(([, paths]) => paths.length > 1);
+  if (!nested) return t.skip("no plugin with more than one eval spec");
+  const [plugin, paths] = nested;
+  const result = script("evals.mjs", "lint", "--plugin", plugin);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const output = result.stdout.replaceAll("\\", "/");
+  for (const path of paths) assert.match(output, new RegExp(`${path.replaceAll(".", "\\.")} is valid`), path);
+  if (existsSync(join(root, "plugins", plugin, "skills"))) assert.match(output, /skill\(s\) linted/);
+  const singles = Object.entries(Object.groupBy(specs, (path) => path.split("/")[1])).filter(([, items]) => items.length === 1).slice(0, 2);
+  if (singles.length === 2) {
+    const both = script("evals.mjs", "lint", ...singles.flatMap(([name]) => ["--plugin", name]));
+    assert.equal(both.status, 0, `${both.stdout}\n${both.stderr}`);
+    for (const [, [path]] of singles) assert.match(both.stdout.replaceAll("\\", "/"), new RegExp(`${path.replaceAll(".", "\\.")} is valid`), path);
+  }
 });
 
 test("npm run verify explains missing dependencies instead of crashing", () => {

@@ -135,16 +135,46 @@ export function paramsFileName(evalFileName) {
 
 const globRegExp = (glob) => new RegExp(`^${glob.replace(/[.+^$|()[\]{}]/g, "\\$&").replaceAll("**/", "\u0000").replaceAll("*", "[^/]*").replaceAll("\u0000", "(?:.*/)?")}$`);
 
+// A case's tags as Vally sees them: the eval's top-level tags, with the case's
+// own tags winning on the same key.
+export function effectiveTags(spec, stimulus) {
+  return { ...(spec?.tags ?? {}), ...(stimulus?.tags ?? {}) };
+}
+
+// Parses Vally's --tag selectors: key=value[,value...] to include and
+// key!=value[,value...] to exclude. Repeated keys combine their values.
+export function parseTagSelectors(selectors = []) {
+  const include = {};
+  const exclude = {};
+  for (const entry of selectors) {
+    const at = String(entry).indexOf("=");
+    const negated = at > 0 && entry[at - 1] === "!";
+    const key = String(entry).slice(0, negated ? at - 1 : at).trim();
+    const values = String(entry).slice(at + 1).split(",").map((value) => value.trim()).filter(Boolean);
+    if (at === -1 || !key || !values.length) throw new Error(`Invalid --tag "${entry}". Use key=value[,value...] or key!=value[,value...].`);
+    ((negated ? exclude : include)[key] ??= []).push(...values);
+  }
+  return { include, exclude };
+}
+
+// The same matching rules as Vally: every include key must have one of its
+// values, and any excluded value drops the case.
+export function matchesTags(tags, { include = {}, exclude = {} } = {}) {
+  const values = (key) => Object.hasOwn(tags, key) ? asList(tags[key]).map(String) : [];
+  if (Object.entries(exclude).some(([key, wanted]) => asList(wanted).some((item) => values(key).includes(String(item))))) return false;
+  return Object.entries(include).every(([key, wanted]) => asList(wanted).some((item) => values(key).includes(String(item))));
+}
+
 // Selects the cases a saved run should contain, using the same suite
-// definitions and eval file names as .vally.yaml.
-export function expectedCases(specs, config, { suite, evalSpecs, directory = repositoryRoot } = {}) {
+// definitions, tag filters, and eval file names as .vally.yaml and Vally.
+export function expectedCases(specs, config, { suite, evalSpecs, tags = [], directory = repositoryRoot } = {}) {
   let selected = specs;
   if (evalSpecs?.length) {
     const wanted = evalSpecs.map((path) => resolve(directory, path));
     for (const path of wanted) if (!specs.some((item) => item.path === path)) throw new Error(`No eval spec at ${path}.`);
     selected = specs.filter((item) => wanted.includes(item.path));
   }
-  const name = suite ?? (evalSpecs?.length ? undefined : "full");
+  const name = suite ?? (evalSpecs?.length || tags.length ? undefined : "full");
   let filter = {};
   if (name) {
     const definition = config?.suites?.[name];
@@ -155,14 +185,25 @@ export function expectedCases(specs, config, { suite, evalSpecs, directory = rep
       selected = selected.filter((item) => globs.some((glob) => glob.test(relative(directory, item.path).split(sep).join("/"))));
     }
   }
+  const selectors = parseTagSelectors(tags);
   const expected = new Set();
   for (const { spec } of selected) {
     for (const stimulus of spec.stimuli) {
-      if (!Object.entries(filter).every(([key, value]) => asList(value).some((item) => asList(stimulus.tags?.[key]).includes(item)))) continue;
+      const effective = effectiveTags(spec, stimulus);
+      if (!matchesTags(effective, { include: filter }) || !matchesTags(effective, selectors)) continue;
       if (expected.has(stimulus.name)) throw new Error(`Duplicate case: ${stimulus.name}`);
       expected.add(stimulus.name);
     }
   }
-  if (!expected.size) throw new Error("The selected suite or eval specs contain no cases.");
+  if (!expected.size) throw new Error("The selected suite, tags, or eval specs contain no cases.");
   return expected;
+}
+
+// The eval specs a suite's `evals` globs keep, out of a list of spec paths.
+export function specsInSuite(paths, config, suite, directory = repositoryRoot) {
+  const definition = config?.suites?.[suite];
+  if (!definition) throw new Error(`Unknown suite ${suite}. Configured suites: ${Object.keys(config?.suites ?? {}).join(", ") || "none"}.`);
+  if (!definition.evals) return paths;
+  const globs = asList(definition.evals).map(globRegExp);
+  return paths.filter((path) => globs.some((glob) => glob.test(relative(directory, resolve(directory, path)).split(sep).join("/"))));
 }
