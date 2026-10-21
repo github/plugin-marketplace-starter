@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+
+- Add a Host checks section to the README for the manual release checks.
+
 ## 0.1.4
 
 - Describe the server's access accurately: the handlers don't use files, credentials, or the network, but the process runs with your permissions.

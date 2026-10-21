@@ -50,3 +50,14 @@ Node.js 22.14 or newer on the machine that runs Copilot.
 Edit [src/server.ts](src/server.ts), then run `npm run build` at the repository
 root to regenerate `dist/server.mjs` and its notices. `npm run verify` fails if
 the committed bundle is stale. Commit the source and generated files together.
+
+## Host checks
+
+Before a release, try these by hand in each host you support. Automated tests
+and evals don't prove that a host loads or shows everything.
+
+- Ask the skill to validate some JSON and look up a value, and confirm the
+  `validate_json` and `get_json_value` tools run.
+- Look up a missing pointer and confirm the answer reports `NOT_FOUND`
+  instead of guessing.
+- Ask an unrelated question and confirm the tools don't run.

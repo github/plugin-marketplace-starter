@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Add a Host checks section to the README for the manual release checks.
+
 ## 1.1.0
 
 - Serve each panel under a random path, so other local processes can't reach the board by port alone.

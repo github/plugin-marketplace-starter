@@ -27,8 +27,8 @@ Markdown templates. It's the best one to copy for a skill that answers in chat.
   shouldn't trigger it. Drafts stay in chat; no issue creation or commands.
 - **Also owns:** `evals/graders/bug-report.mjs` and
   `test/grader-bug-report.test.mjs`.
-- **Host checks:** the [smoke checks](../plugins/bug-report/README.md#smoke-checks)
-  in its README.
+- **Host checks:** see [Host checks](../plugins/bug-report/README.md#host-checks) in
+  its README.
 <!-- /plugin:bug-report -->
 
 <!-- plugin:format-json -->
@@ -44,11 +44,8 @@ JSON files an agent edit touched. It has no skill.
   receipt and file effects, not a model's claim that it formatted the file.
 - **Also owns:** `evals/graders/format-json.mjs`, `test/hook.test.mjs`, and
   `test/grader-format-json.test.mjs`.
-- **Host checks:** edit JSON with single-file edits, multi-file edits, and
-  `apply_patch`. Confirm two-space formatting (or your `--indent`), a final newline, and changed-file
-  reporting. Failed edits and unrelated files stay untouched, invalid JSON stays
-  unchanged with a visible diagnostic, and already formatted JSON isn't
-  rewritten.
+- **Host checks:** see [Host checks](../plugins/format-json/README.md#host-checks) in
+  its README.
 
 The hook rewrites JSON files after agent edits. A hook isn't a security
 boundary and doesn't replace CI.
@@ -71,12 +68,8 @@ extension: a shared, session-only board that a person and Copilot both edit.
   param, and `test/board.test.mjs`,
   `test/board-ui.test.mjs`, `test/brainstorm-eval-host.test.mjs`,
   `test/extension.test.mjs`, and `test/grader-brainstorm.test.mjs`.
-- **Host checks:** open the canvas; add, edit, move, and delete notes from the
-  UI and the agent. Reopen the same panel and confirm notes remain; a new
-  session starts empty. Keep keyboard focus on a note control while Copilot
-  edits or moves that note, and confirm focus stays there, or returns to the
-  input if the note is deleted. If you rename the canvas, update both its ID in
-  the extension and the skill's reference to it.
+- **Host checks:** see [Host checks](../plugins/team-brainstorm/README.md#host-checks) in
+  its README.
 
 The extension evals use the shared
 [headless canvas host](../evals/support/canvas-host.mjs), which serves MCP only
@@ -105,6 +98,8 @@ writes a new skill and its Vally eval.
 - **Also owns:** `evals/graders/src/authoring.mjs`, its generated
   `evals/graders/dist/` bundle and notices, the `MARKETPLACE_VALLY_CLI` param,
   and `test/authoring-grader.test.mjs`.
+- **Host checks:** see [Host checks](../plugins/customization-authoring/README.md#host-checks) in
+  its README.
 <!-- /plugin:customization-authoring -->
 
 <!-- plugin:code-review -->
@@ -120,9 +115,8 @@ custom agent it delegates to.
   seeded bug, a clean case, the agent without its skill, and no workspace edits.
   The default agent's answer isn't accepted as the reviewer's.
 - **Also owns:** `evals/fixtures/review/`.
-- **Host checks:** confirm the agent is discovered, and select it with
-  `--agent code-review:code-reviewer` or the agent picker. If you rename the
-  agent, update the skill that delegates to it.
+- **Host checks:** see [Host checks](../plugins/code-review/README.md#host-checks) in
+  its README.
 <!-- /plugin:code-review -->
 
 <!-- plugin:json-configuration -->
@@ -138,6 +132,6 @@ bundled local MCP server that validates JSON and reads values by JSON Pointer.
   over stdio.
 - **Also owns:** the `JSON_MCP_SERVER` param, `test/json-tools.test.mjs`, and
   `test/mcp-protocol.test.mjs`.
-- **Host checks:** ask the skill to validate and look up a value, and confirm
-  the MCP tools run.
+- **Host checks:** see [Host checks](../plugins/json-configuration/README.md#host-checks) in
+  its README.
 <!-- /plugin:json-configuration -->

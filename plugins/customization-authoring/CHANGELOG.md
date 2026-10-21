@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Add a Host checks section to the README for the manual release checks.
+
 ## 0.1.3
 
 - Teach this marketplace's coverage rules in `references/evals.md`: asset,

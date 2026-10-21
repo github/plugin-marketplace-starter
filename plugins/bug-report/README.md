@@ -30,8 +30,10 @@ Keep the routing rules in [SKILL.md](skills/bug-report/SKILL.md) short.
 > Turn these notes into a bug report. Open Settings, switch Theme to Dark,
 > then reload. Expected: Dark stays selected. Actual: Theme resets to Light.
 
-## Smoke checks
+## Host checks
 
+Before a release, try these by hand in each host you support. Automated tests
+and evals don't prove that a host loads or shows everything.
 Try each prompt in a fresh session. Inspect the tool trace as well as the answer:
 the skill should load before drafting, and only the chosen template should be read.
 

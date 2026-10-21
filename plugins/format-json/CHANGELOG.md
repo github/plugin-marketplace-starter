@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Add a Host checks section to the README for the manual release checks.
+
 ## 1.1.0
 
 - Add `--indent N` (1 to 10) to set the indentation. Unsupported arguments are reported instead of ignored.

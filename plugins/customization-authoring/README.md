@@ -43,3 +43,14 @@ that must not trigger it.
 Point the eval reference at your team's conventions, such as required tags or a
 suite name. The shipped reference already follows this marketplace's coverage
 rules: asset tags, a smoke case, and an observable negative control. Keep this skill's own evaluation data out of the skill directory.
+
+## Host checks
+
+Before a release, try these by hand in each host you support. Automated tests
+and evals don't prove that a host loads or shows everything.
+
+- Ask Copilot to create a skill and evals for summarizing a changelog. Confirm
+  the `skill-authoring` skill runs and writes `SKILL.md` and `eval.yaml` in
+  your workspace, not inside the installed plugin.
+- Lint the generated files with `vally lint --strict` and confirm they pass.
+- Ask an ordinary coding question and confirm the skill doesn't run.

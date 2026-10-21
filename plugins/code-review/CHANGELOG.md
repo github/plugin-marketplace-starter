@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Add a Host checks section to the README for the manual release checks.
+
 ## 0.1.2
 
 - Replace the starter-specific install values in the README with generic ones.

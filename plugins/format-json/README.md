@@ -82,3 +82,16 @@ team's formatter invocation and declare its prerequisites. Keep the affected-fil
 selection and report any content changed after the tool ran. Update
 `test/hook.test.mjs` and the grader in `evals/graders/format-json.mjs` to match
 the new output.
+
+## Host checks
+
+Before a release, try these by hand in each host you support. Automated tests
+and evals don't prove that a host loads or shows everything.
+
+- Edit JSON with a single-file edit, a multi-file edit, and `apply_patch`.
+  Confirm two-space formatting (or your `--indent`), a final newline, and a
+  message that names each changed file.
+- Confirm failed edits and unrelated files stay untouched, invalid JSON stays
+  unchanged with a visible diagnostic, and already formatted JSON isn't
+  rewritten.
+- In VS Code, try it in a session that uses the Copilot harness.

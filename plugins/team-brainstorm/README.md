@@ -57,3 +57,19 @@ Change the skill's workflow to match your team's planning habits. Change column
 names in the board model, page, and skill together. Choose a distinctive canvas
 ID when copying the plugin so independently installed examples do not collide.
 Keep server and action input validation in the shared model.
+
+## Host checks
+
+Before a release, try these by hand in each host you support. Automated tests
+and evals don't prove that a host loads or shows everything.
+
+- Open the canvas, and add, edit, move, and delete notes from the page and
+  from chat.
+- Reopen the same panel and confirm the notes remain; a new session starts
+  empty.
+- Keep keyboard focus on a note control while Copilot edits or moves that
+  note, and confirm focus stays there, or returns to the input if the note is
+  deleted.
+- In a host without canvases, confirm the skill keeps the brainstorm in chat.
+- If you rename the canvas, update both its ID in the extension and the
+  skill's reference to it.

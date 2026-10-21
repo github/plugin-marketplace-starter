@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3
+
+- Rename the README's Smoke checks section to Host checks, to match the other plugins and the release checklist.
+
 ## 1.0.2
 
 - Replace the starter-specific install values in the README with generic ones.

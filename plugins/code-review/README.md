@@ -42,3 +42,15 @@ agent picker.
 Tune the agent's checklist for your stack, and keep the skill's delegation step
 pointed at the agent's identifier. If you rename the agent, update the skill,
 evals, and this README together.
+
+## Host checks
+
+Before a release, try these by hand in each host you support. Automated tests
+and evals don't prove that a host loads or shows everything.
+
+- Confirm the `code-reviewer` agent is listed, and select it with
+  `--agent code-review:code-reviewer` or the agent picker.
+- Ask for an adversarial review of a small diff. Confirm the
+  `adversarial-review` skill runs, delegates to the agent, and nothing is
+  edited.
+- Ask an unrelated question and confirm neither the skill nor the agent runs.
