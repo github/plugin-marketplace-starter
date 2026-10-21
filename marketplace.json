@@ -1,6 +1,6 @@
 {
   "name": "plugin-marketplace-starter",
-  "owner": { "name": "digitarald" },
+  "owner": { "name": "GitHub" },
   "plugins": [
     {
       "name": "bug-report",
@@ -19,6 +19,24 @@
       "source": "./plugins/format-json",
       "version": "1.0.0",
       "description": "Format affected JSON files after successful agent edits."
+    },
+    {
+      "name": "customization-authoring",
+      "source": "./plugins/customization-authoring",
+      "version": "0.1.1",
+      "description": "Create focused skills with positive and negative behavioral evals."
+    },
+    {
+      "name": "code-review",
+      "source": "./plugins/code-review",
+      "version": "0.1.0",
+      "description": "Challenge assumptions and find material defects using a read-only reviewer."
+    },
+    {
+      "name": "json-configuration",
+      "source": "./plugins/json-configuration",
+      "version": "0.1.0",
+      "description": "Validate JSON and retrieve configuration values with a local MCP server."
     },
     {
       "name": "evals",

@@ -10,6 +10,9 @@
   "enabledPlugins": {
     "bug-report@plugin-marketplace-starter": true,
     "team-brainstorm@plugin-marketplace-starter": true,
-    "format-json@plugin-marketplace-starter": true
+    "format-json@plugin-marketplace-starter": true,
+    "customization-authoring@plugin-marketplace-starter": true,
+    "code-review@plugin-marketplace-starter": true,
+    "json-configuration@plugin-marketplace-starter": true
   }
 }
