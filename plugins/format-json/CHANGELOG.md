@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Add an Install section and the plugin's own MIT `LICENSE`.
+
 ## 1.0.0
 
 - Format JSON files named by successful shared-runtime edit tool calls.

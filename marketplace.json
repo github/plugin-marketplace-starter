@@ -5,37 +5,37 @@
     {
       "name": "bug-report",
       "source": "./plugins/bug-report",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "description": "Turn rough bug notes into a clear report without inventing missing details."
     },
     {
       "name": "team-brainstorm",
       "source": "./plugins/team-brainstorm",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "description": "Brainstorm together on a small, session-only canvas."
     },
     {
       "name": "format-json",
       "source": "./plugins/format-json",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "description": "Format affected JSON files after successful agent edits."
     },
     {
       "name": "customization-authoring",
       "source": "./plugins/customization-authoring",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "Create focused skills with positive and negative behavioral evals."
     },
     {
       "name": "code-review",
       "source": "./plugins/code-review",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Challenge assumptions and find material defects using a read-only reviewer."
     },
     {
       "name": "json-configuration",
       "source": "./plugins/json-configuration",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "Validate JSON and retrieve configuration values with a local MCP server."
     },
     {

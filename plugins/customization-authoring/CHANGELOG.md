@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- Fix the example eval's `file-matches` regex in `references/evals.md`. YAML
+  single quotes keep backslashes, so it now uses single backslashes.
+- Add an Install section.
+
 ## 0.1.1
 
 - Resolve generated skill and eval paths against the caller's workspace, not the
