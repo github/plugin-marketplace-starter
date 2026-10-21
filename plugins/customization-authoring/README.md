@@ -15,11 +15,9 @@ copilot plugin marketplace add OWNER/REPO
 copilot plugin install customization-authoring@MARKETPLACE
 ```
 
-In this starter, `OWNER/REPO` is `github/plugin-marketplace-starter` and
-`MARKETPLACE` is `plugin-marketplace-starter`. Both change when you create
-your own repository with **Use this template**; see
-[Make it yours](../../README.md#make-it-yours) and
-[Install the examples](../../README.md#install-the-examples) for VS Code.
+Replace `OWNER/REPO` with the GitHub repository that hosts this marketplace
+and `MARKETPLACE` with the `name` in its `marketplace.json`. See
+[Install plugins](../../README.md#install-plugins) for VS Code.
 
 ## What this teaches
 
@@ -43,4 +41,5 @@ that must not trigger it.
 ## Customize
 
 Point the eval reference at your team's conventions, such as required tags or a
-suite name. Keep this skill's own evaluation data out of the skill directory.
+suite name. The shipped reference already follows this marketplace's coverage
+rules: asset tags, a smoke case, and an observable negative control. Keep this skill's own evaluation data out of the skill directory.

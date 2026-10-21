@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { parse } from 'yaml';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { evalParams, root as projectRoot, vallyCliPath } from '../scripts/evals.mjs';
 import { missing } from '../scripts/examples.mjs';
+import { checkCoverage } from '../scripts/validate-evals.mjs';
 
 // Example-only tests: skip every test here when the example's files are gone.
 const skip = missing('evals/graders/dist/authoring.mjs');
@@ -107,11 +108,16 @@ scoring:
 });
 
 const reference = join(projectRoot, 'plugins/customization-authoring/skills/skill-authoring/references/evals.md');
-test('the authoring reference example parses to regexes that accept correct output and reject wrong output', { skip: !existsSync(reference) }, async () => {
+test('the authoring reference example meets the coverage rules, and its regexes accept correct output and reject wrong output', { skip: !existsSync(reference) }, async () => {
   const text = await readFile(reference, 'utf8');
   const block = text.match(/```yaml\r?\n([\s\S]*?)```/)?.[1];
   assert.ok(block, 'the reference keeps a YAML example');
   const spec = parse(block);
+  // Placed where a marketplace keeps it, the example passes the same coverage check as npm run verify.
+  const asset = { id: 'skill:example-plugin/example-skill', kind: 'skill', name: 'example-skill',
+    path: resolve(projectRoot, 'plugins/example-plugin/skills/example-skill') };
+  assert.equal(checkCoverage([asset], [{ path: resolve(projectRoot, 'evals/example-plugin/eval.yaml'), spec }]), 2);
+  assert.ok(spec.stimuli.every((stimulus) => stimulus.name.startsWith('example-skill-')), 'stimulus names carry the skill name');
   const graders = spec.stimuli.flatMap((stimulus) => stimulus.graders ?? []);
   const patterns = graders.filter((grader) => grader.type === 'file-matches').map((grader) => new RegExp(grader.config.pattern));
   assert.ok(patterns.length);
