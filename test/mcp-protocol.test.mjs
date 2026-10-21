@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { copyFile, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, readdir, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -262,4 +263,31 @@ test('startup failures report the actual reason on stderr and exit nonzero', { t
   assert.equal(stdout.join(''), '');
   assert.match(stderr.join(''), /Failed to start the JSON configuration MCP server/u);
   assert.ok(stderr.join('').includes(reason), 'the original failure reason must be logged');
+});
+
+test('the bundle starts when launched through a symlinked directory', { timeout: 30_000 }, async t => {
+  const real = await mkdtemp(join(tmpdir(), 'mcp-real-'));
+  const linked = `${real}-link`;
+  await copyFile(bundle, join(real, 'server.mjs'));
+  // A junction needs no elevation on Windows; macOS temp paths are already symlinked (/var -> /private/var).
+  await symlink(real, linked, 'junction');
+  const client = new Client({ name: 'marketplace-symlink-test', version: '1.0.0' });
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [join(linked, 'server.mjs')],
+    cwd: linked,
+    env: { NODE_PATH: '', NODE_OPTIONS: '' },
+    stderr: 'pipe'
+  });
+  t.after(async () => {
+    try {
+      await client.close();
+    } finally {
+      await rm(linked, { recursive: true, force: true });
+      await rm(real, { recursive: true, force: true });
+    }
+  });
+  await client.connect(transport);
+  const { tools } = await client.listTools();
+  assert.deepEqual(tools.map(tool => tool.name).sort(), [...TOOL_NAMES].sort());
 });

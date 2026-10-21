@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -197,8 +198,16 @@ async function main(): Promise<void> {
 }
 
 // URL decoding and path comparison handle relocated paths, spaces, and Windows drive-letter casing.
+// Node resolves the module URL through symlinks but not argv, so compare real paths (macOS /var -> /private/var).
+const realPath = (path: string) => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+};
 const entrypoint = process.argv[1];
-if (entrypoint && relative(resolve(entrypoint), fileURLToPath(import.meta.url)) === '') {
+if (entrypoint && relative(realPath(entrypoint), realPath(fileURLToPath(import.meta.url))) === '') {
   main().catch(error => {
     console.error('Failed to start the JSON configuration MCP server:', error);
     process.exitCode = 1;

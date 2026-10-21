@@ -7200,6 +7200,7 @@ var require_dist = __commonJS({
 });
 
 // plugins/json-configuration/src/server.ts
+import { realpathSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36726,8 +36727,15 @@ async function main() {
     throw error62;
   }
 }
+var realPath = (path) => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+};
 var entrypoint = process.argv[1];
-if (entrypoint && relative(resolve(entrypoint), fileURLToPath(import.meta.url)) === "") {
+if (entrypoint && relative(realPath(entrypoint), realPath(fileURLToPath(import.meta.url))) === "") {
   main().catch((error62) => {
     console.error("Failed to start the JSON configuration MCP server:", error62);
     process.exitCode = 1;
