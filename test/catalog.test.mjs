@@ -8,7 +8,7 @@ import { discoverAssets, checkCoverage, root } from "../scripts/validate-evals.m
 
 test("the catalog separates local examples from the opt-in Evals reference", async () => {
   const { catalog, localPlugins, remotePlugins } = await readCatalog(root);
-  assert.equal(localPlugins.length, 3);
+  assert.equal(localPlugins.length, 6);
   assert.equal(remotePlugins.length, 1);
   assert.equal(remotePlugins[0].name, "evals");
   assert.deepEqual(remotePlugins[0].source, { source: "github", repo: "github/evals", path: "packages/plugin" });
@@ -52,7 +52,7 @@ test("new custom agents require actual staged profiles, delegation, and subagent
           { type: "tool-calls", config: { required: [{ name: "^task$", args: { agent_type: "^reviewer$" } }] } },
           { type: "output-matches", scope: "subagent", config: { pattern: "finding" } },
         ] },
-        { name: "negative", tags: { assets: assets[0].id, control: "negative" } },
+        { name: "negative", tags: { assets: assets[0].id, control: "negative" }, graders: [{ type: "output-contains", config: { substring: "No actionable findings." } }] },
       ],
     } }];
     assert.equal(checkCoverage(assets, specs), 2);
