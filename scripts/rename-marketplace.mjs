@@ -151,6 +151,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     console.log(`${values["dry-run"] ? "Would rename" : "Renamed"} ${result.from.name} to ${result.to.name}${values["dry-run"] ? ", changing" : ". Changed"}:`);
     for (const path of result.changed) console.log(`  ${path}`);
     if (values["dry-run"]) return;
-    console.log("\nNext: set the copyright holder in LICENSE and each plugin's LICENSE, then run npm run verify. It warns about anything left over.");
+    console.log("\nNext: rewrite the README's introduction for your marketplace, add your own copyright line to LICENSE (keep the template's line), and put your holder in the LICENSE of each plugin you wrote. Then run npm run verify. It warns about anything left over.");
   });
 }

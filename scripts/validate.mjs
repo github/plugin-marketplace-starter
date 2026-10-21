@@ -4,12 +4,13 @@ import { resolve, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import Ajv from "ajv/dist/2020.js";
-import { contained, frontmatter, readCatalog, readVallyConfig, remoteWarnings } from "./catalog.mjs";
+import { contained, frontmatter, parseYaml, readCatalog, readVallyConfig, remoteWarnings } from "./catalog.mjs";
+import { examples } from "./examples.mjs";
 import { Problems, runCli } from "./problems.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 const json = async (path) => JSON.parse(await readFile(path, "utf8"));
-const ignored = [".git", "node_modules", "vally-results", ".vally"];
+const ignored = [".git", "node_modules", "vally-results", ".vally", ".copilot-home"];
 const ajv = new Ajv({ allErrors: true });
 const validatePluginManifest = ajv.compile(await json(resolve(root, "schemas/plugin.schema.json")));
 const validateMcp = ajv.compile(await json(resolve(root, "schemas/mcp.schema.json")));
@@ -103,6 +104,9 @@ export async function validateVallySkillPaths(directory, localPlugins) {
 }
 
 export const templateDefaults = Object.freeze({ marketplace: "plugin-marketplace-starter", owner: "GitHub", package: "plugin-marketplace-starter" });
+// The start of the template README's introduction. rename-marketplace changes
+// the title but leaves the introduction for you to rewrite.
+export const templateIntroduction = "A GitHub template for building, evaluating, and sharing AI customizations";
 
 // Mentions of plugins/<name> in Markdown, CODEOWNERS, and workflow files,
 // including inside code spans, so a removed or renamed plugin can't linger in
@@ -144,23 +148,59 @@ export async function staleReferenceWarnings(directory, catalog, allFiles) {
     }
   }
   warnings.push(...await adoptionWarnings(directory, catalog, allFiles));
+  // Debugging a run with transcripts is fine, but they can hold prompts, model
+  // output, and code, so a merged workflow shouldn't keep uploading them.
+  const evalsWorkflow = await read(resolve(directory, ".github/workflows/evals.yml"));
+  if (evalsWorkflow) {
+    let parsed;
+    try { parsed = parseYaml(evalsWorkflow, ".github/workflows/evals.yml"); } catch { parsed = undefined; }
+    for (const [name, job] of Object.entries(parsed?.jobs ?? {})) {
+      if ((job?.steps ?? []).some((step) => String(step?.with?.["upload-transcripts"]) === "true")) {
+        warnings.push(`.github/workflows/evals.yml: job ${name} uploads transcripts. Set upload-transcripts back to false once you've finished debugging; see docs/ci.md.`);
+      }
+    }
+  }
   return warnings;
 }
 
-const scaffoldText = ["Replace this description with the real trigger", "Replace these instructions with your team's procedure", "Replace these instructions with the specialist's role"];
+// Phrases npm run new-plugin writes into each file it scaffolds. Each one stays
+// until someone replaces the scaffold with the real thing.
+export const scaffoldText = Object.freeze([
+  "Replace this description with the real trigger",
+  "Replace these instructions with your team's procedure",
+  "Replace this description with when the main agent should delegate to it",
+  "Replace these instructions with the specialist's role",
+  "Replace the scaffolded instructions",
+  "Replace this example tool with your own",
+  "Replace this with the hook's real work",
+  "Replace the actions and the page with your own",
+  "Scaffolded checks for the",
+]);
+// The people who wrote the template's tooling and examples. Their MIT notices
+// stay in anything you keep; see Licensing in README.md.
 export const templateLicenseHolders = Object.freeze(["Harald Kirschner", "Ronnie Geraghty"]);
 const read = async (path) => { try { return await readFile(path, "utf8"); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; } };
 
+// Every holder named on a "Copyright" line in a license file.
+export function copyrightHolders(text = "") {
+  return [...text.matchAll(/^\s*Copyright(?:\s+\(c\)|\s+©)?\s+(?:\d{4}(?:\s*[-,]\s*\d{4})*,?\s+)?(.+?)\s*$/gim)].map((match) => match[1]);
+}
+
 // Leftovers that matter once a team has made the marketplace its own: scaffold
-// text always, and the template's name, title, license holder, and placeholder
-// contacts after the marketplace has been renamed.
+// text always, and the template's name, introduction, license lines, and
+// placeholder contacts after the marketplace has been renamed.
 async function adoptionWarnings(directory, catalog, allFiles) {
   const warnings = [];
   for (const file of allFiles) {
     const path = relative(directory, file).split(sep).join("/");
-    if (!/^plugins\/[^/]+\/(?:skills\/[^/]+\/SKILL\.md|com\.github\.copilot\/agents\/[^/]+\.agent\.md)$/.test(path)) continue;
-    const text = await readFile(file, "utf8");
-    if (scaffoldText.some((phrase) => text.includes(phrase))) warnings.push(`${path}: still has scaffolded text from npm run new-plugin. Write the real description and instructions.`);
+    if (!/^(?:plugins\/[^/]+\/(?!dist\/).+\.(?:md|ts|mjs|js)|evals\/[^/]+\/.+\.ya?ml)$/.test(path)) continue;
+    // Comment markers and line breaks don't split a phrase.
+    const text = (await readFile(file, "utf8")).replace(/\s*(?:\/\/|#)?\s+/g, " ");
+    const phrase = scaffoldText.find((item) => text.includes(item));
+    if (phrase) warnings.push(`${path}: still has scaffolded text from npm run new-plugin ("${phrase}"). Replace it with your plugin's real content.`);
+    if (/^plugins\/[^/]+\/README\.md$/.test(path) && !/^## Host checks\s*$/m.test(await readFile(file, "utf8"))) {
+      warnings.push(`${path}: add a "## Host checks" section listing what to try by hand in each host before a release. See docs/local-development.md#before-a-release.`);
+    }
   }
   if (!catalog || catalog.name === templateDefaults.marketplace) return warnings;
   let repo;
@@ -176,13 +216,26 @@ async function adoptionWarnings(directory, catalog, allFiles) {
       if (placeholder !== -1) warnings.push(`${path}:${placeholder + 1}: still has the OWNER/REPO or MARKETPLACE placeholder. Run npm run rename-marketplace, or fill it in by hand.`);
     }
   }
-  if ((await read(resolve(directory, "README.md")))?.startsWith("# Plugin marketplace starter")) {
-    warnings.push("README.md: the title and introduction are still the template's. Rewrite them for your marketplace.");
+  const readme = await read(resolve(directory, "README.md"));
+  if (readme?.startsWith("# Plugin marketplace starter") || readme?.replace(/\s+/g, " ").includes(templateIntroduction)) {
+    warnings.push("README.md: the title or introduction is still the template's. Rewrite them for your marketplace.");
   }
-  const licenses = ["LICENSE", ...allFiles.map((file) => relative(directory, file).split(sep).join("/")).filter((path) => /^plugins\/[^/]+\/LICENSE$/.test(path))];
-  for (const path of licenses) {
-    const holder = (await read(resolve(directory, path)))?.match(/^Copyright \(c\)\s+(?:\d{4}(?:\s*-\s*\d{4})?\s+)?(.+?)\s*$/m)?.[1];
-    if (holder && templateLicenseHolders.includes(holder)) warnings.push(`${path}: the copyright holder is still the template's (${holder}). See Licensing in README.md.`);
+  // MIT asks you to keep the original notice in copies, so a kept example and
+  // the template's tooling keep their authors' lines. These warn only while no
+  // one else is named: the root LICENSE needs your line beside the template's,
+  // and a plugin you wrote needs your own holder.
+  const templateOnly = (holders, plugin) => holders.length > 0 && holders.every((holder) => templateLicenseHolders.includes(holder)
+    || (plugin && holder === templateDefaults.owner && catalog.owner?.name !== templateDefaults.owner));
+  const rootHolders = copyrightHolders(await read(resolve(directory, "LICENSE")));
+  if (templateOnly(rootHolders, false)) {
+    warnings.push(`LICENSE: names only the template's authors (${rootHolders.join(", ")}). Keep their line, since you kept their code, and add a line for your own copyright. See Licensing in README.md.`);
+  }
+  for (const path of allFiles.map((file) => relative(directory, file).split(sep).join("/")).filter((item) => /^plugins\/[^/]+\/LICENSE$/.test(item))) {
+    if (examples[path.split("/")[1]]) continue;
+    const holders = copyrightHolders(await read(resolve(directory, path)));
+    if (templateOnly(holders, true)) {
+      warnings.push(`${path}: names only ${holders.join(", ")}, not you. Put your own holder in it. If the plugin started as a copy of an example, keep that line and add yours. See Licensing in README.md.`);
+    }
   }
   if ((await read(resolve(directory, "SECURITY.md")))?.includes("Replace this section with your team's reporting channel")) {
     warnings.push("SECURITY.md: replace the placeholder reporting section with your real security contact.");
@@ -212,6 +265,10 @@ async function validatePlugin(directory, entry, problems, counts) {
       `needs a "## ${manifest.version}" heading for the current version.`));
   }
   await problems.check(`${label}/README.md`, () => stat(resolve(source, "README.md")));
+  await problems.check(`${label}/LICENSE`, async () => {
+    try { await stat(resolve(source, "LICENSE")); }
+    catch { assert.fail("every plugin needs its own LICENSE, so it stays licensed when it's installed or copied on its own."); }
+  });
   let assets = 0;
   const agents = new Set();
   for (const file of await files(source)) {
@@ -226,9 +283,20 @@ async function validatePlugin(directory, entry, problems, counts) {
         assert.equal(meta.name, path.split("/")[1], `skill name "${meta.name}" must match its directory "${path.split("/")[1]}".`);
         counts.skills++;
       }
-      if (path.endsWith(".agent.md")) {
+      // A component file in the wrong place is a mistake worth naming. A file
+      // inside a skill, such as references/example.agent.md, is just content,
+      // and so is a file whose name only ends like a component's, such as
+      // pre-commit-hooks.json or sample-mcp.json.
+      const base = path.split("/").at(-1);
+      if (!/^skills\/[^/]+\/./.test(path) || /^skills\/[^/]+\/SKILL\.md$/.test(path)) {
+        if (base.endsWith(".agent.md")) assert.match(path, /^com\.github\.copilot\/agents\/[^/]+\.agent\.md$/, "agents belong in com.github.copilot/agents/.");
+        if (base === "mcp.json") assert.equal(path, "mcp.json", "put MCP configuration in the plugin's root mcp.json.");
+        if (base === "hooks.json") assert.equal(path, "com.github.copilot/hooks/hooks.json", "put hooks in com.github.copilot/hooks/hooks.json.");
+        if (base === "lsp.json") assert.equal(path, "com.github.copilot/lsp.json", "put LSP servers in com.github.copilot/lsp.json.");
+      }
+      if (path.startsWith("com.github.copilot/agents/")) {
         assets++;
-        assert.match(path, /^com\.github\.copilot\/agents\/[^/]+\.agent\.md$/, "agents belong in com.github.copilot/agents/.");
+        assert.match(path, /^com\.github\.copilot\/agents\/[^/]+\.agent\.md$/, "com.github.copilot/agents/ holds only <name>.agent.md files.");
         const meta = frontmatter(await readFile(file, "utf8"), where);
         assert.equal(`${meta.name}.agent.md`, path.split("/").at(-1), `agent name "${meta.name}" must match its file name.`);
         assert.ok(!agents.has(meta.name), "duplicate agent name.");
@@ -237,14 +305,12 @@ async function validatePlugin(directory, entry, problems, counts) {
         agents.add(meta.name);
         counts.agents++;
       }
-      if (path.endsWith("mcp.json")) {
+      if (path === "mcp.json") {
         assets++;
-        assert.equal(path, "mcp.json", "put MCP configuration in the plugin's root mcp.json.");
         counts.mcpServers += await validateMcpConfig(source, entry.name);
       }
-      if (file.endsWith("hooks.json")) {
+      if (path === "com.github.copilot/hooks/hooks.json") {
         assets++;
-        assert.equal(path, "com.github.copilot/hooks/hooks.json", "put hooks in com.github.copilot/hooks/hooks.json.");
         const hooks = await json(file);
         assert.equal(hooks.version, 1, "set version to 1.");
         assert.ok(hooks.hooks && Object.keys(hooks.hooks).length, "declare at least one hook event under hooks.");
@@ -270,9 +336,8 @@ async function validatePlugin(directory, entry, problems, counts) {
         assert.ok((await readFile(file, "utf8")).trim(), `${entry.name}: ${path} is empty.`);
         counts[component]++;
       }
-      if (path.endsWith("lsp.json")) {
+      if (path === "com.github.copilot/lsp.json") {
         assets++;
-        assert.equal(path, "com.github.copilot/lsp.json", `${entry.name}: put LSP servers in com.github.copilot/lsp.json.`);
         counts.lspServers += validateLspConfig(await json(file), entry.name);
       }
     });

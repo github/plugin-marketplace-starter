@@ -21,8 +21,12 @@ when the repository has a newer release, so you can decide whether to update.
 It authenticates with GH_TOKEN or GITHUB_TOKEN, or the GitHub CLI's login
 (gh auth token). Private repositories need a token that can read them.`;
 
-// Places a plugin's manifest can live, relative to its directory.
-export const manifestPaths = Object.freeze(["plugin.json", ".github/plugin/plugin.json", ".claude-plugin/plugin.json", ".plugin/plugin.json"]);
+// Where Copilot CLI looks for a legacy plugin manifest, in its documented order
+// (CLI plugin reference, File locations). An Agent Plugins plugin.json at the
+// plugin root takes precedence over all of them.
+export const legacyManifestPaths = Object.freeze([".plugin/plugin.json", "plugin.json", ".github/plugin/plugin.json", ".claude-plugin/plugin.json"]);
+const agentPluginsSchema = /^https:\/\/agent-plugins\.org\/schemas\/\d+\.\d+\.\d+\/plugin\.schema\.json$/;
+const isAgentPluginsManifest = (data) => typeof data?.$schema === "string" && agentPluginsSchema.test(data.$schema);
 
 function token() {
   if (process.env.GH_TOKEN || process.env.GITHUB_TOKEN) return process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
@@ -70,13 +74,34 @@ export async function checkRemote(entry, api) {
     return { name: entry.name, errors, notes };
   }
   let manifest;
-  for (const candidate of manifestPaths) {
+  const fetched = new Map();
+  const load = async (candidate) => {
+    if (fetched.has(candidate)) return fetched.get(candidate);
     const file = path ? `${path}/${candidate}` : candidate;
     const found = await api(`/repos/${repo}/contents/${enc(file)}?ref=${sha}`);
-    if (found.status !== 200 || typeof found.body?.content !== "string") continue;
-    try { manifest = { file, data: JSON.parse(Buffer.from(found.body.content, "base64").toString("utf8")) }; }
-    catch { errors.push(`${file} at the pinned sha isn't valid JSON.`); }
-    break;
+    let result;
+    if (found.status === 200 && typeof found.body?.content === "string") {
+      try { result = { file, candidate, data: JSON.parse(Buffer.from(found.body.content, "base64").toString("utf8")) }; }
+      catch { result = { file, candidate, invalid: true }; }
+    }
+    fetched.set(candidate, result);
+    return result;
+  };
+  // An Agent Plugins plugin.json at the root wins. Otherwise Copilot CLI reads
+  // a legacy manifest from the first of its documented locations.
+  const rootManifest = await load("plugin.json");
+  if (rootManifest && isAgentPluginsManifest(rootManifest.data)) manifest = rootManifest;
+  else {
+    for (const candidate of legacyManifestPaths) {
+      manifest = await load(candidate);
+      if (manifest) break;
+    }
+  }
+  if (manifest?.invalid) {
+    errors.push(`${manifest.file} at the pinned sha isn't valid JSON.`);
+    manifest = undefined;
+  } else if (manifest && !isAgentPluginsManifest(manifest.data)) {
+    notes.push(`upstream uses a legacy plugin manifest (${manifest.file}) rather than an Agent Plugins plugin.json. Copilot CLI loads legacy plugins, but confirm every host you support does.`);
   }
   if (!manifest && !errors.length) {
     errors.push(`no plugin.json under ${path ? `"${path}"` : "the repository root"} at the pinned sha. Check "path"; omit it when plugin.json is at the root.`);

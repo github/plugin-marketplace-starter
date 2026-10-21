@@ -139,13 +139,23 @@ test("malformed events, missing files, and outside paths report rather than sile
   assert.equal(readFileSync(outside, "utf8"), before);
 });
 
-test("symbolic links cannot redirect formatting outside the working directory", { skip: process.platform === "win32" }, (t) => {
+// Windows needs elevation or Developer Mode for a file symlink, so that case
+// skips there. A directory junction needs neither, so the escape through a
+// linked directory runs everywhere.
+test("symbolic links to files are rejected", { skip: process.platform === "win32" && "file symlinks need elevation on Windows" }, (t) => {
   const cwd = fixture(t);
   const outside = fixture(t);
   writeFileSync(join(outside, "sample.json"), before);
   symlinkSync(join(outside, "sample.json"), join(cwd, "sample.json"));
   assert.match(processHook(event(cwd)).output.additionalContext, /symbolic link/);
-  symlinkSync(outside, join(cwd, "linked"));
+  assert.equal(readFileSync(join(outside, "sample.json"), "utf8"), before);
+});
+
+test("a linked directory cannot redirect formatting outside the working directory", (t) => {
+  const cwd = fixture(t);
+  const outside = fixture(t);
+  writeFileSync(join(outside, "sample.json"), before);
+  symlinkSync(outside, join(cwd, "linked"), process.platform === "win32" ? "junction" : "dir");
   assert.match(processHook(event(cwd, "edit", { path: "linked/sample.json" })).output.additionalContext, /outside/);
   assert.equal(readFileSync(join(outside, "sample.json"), "utf8"), before);
 });

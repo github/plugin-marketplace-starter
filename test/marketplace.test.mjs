@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, cp, readFile, readdir, writeFile, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdtemp, mkdir, cp, readFile, readdir, realpath, symlink, unlink, writeFile, rm } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
+import { checkGenerated, generate, portable, writeGenerated } from "../scripts/build.mjs";
 import { contained, frontmatter, parseYaml, readCatalog, readVallyConfig } from "../scripts/catalog.mjs";
 import { checkCoverage, discoverAssets, readEvals, root, suiteTags } from "../scripts/validate-evals.mjs";
 import { hookEvents, markdownLinks, pluginMentions, staleReferenceWarnings, validateMcpConfig, validateRepository } from "../scripts/validate.mjs";
@@ -117,6 +118,64 @@ test("verify warns about template names and prose that mentions missing plugins"
   }
 });
 
+test("license warnings keep the notices MIT requires and ask only for your own line", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-license-"));
+  const write = async (path, text) => { await mkdir(join(directory, path, ".."), { recursive: true }); await writeFile(join(directory, path), text); return join(directory, path); };
+  const license = (...holders) => `MIT License\n\n${holders.map((holder) => `Copyright (c) 2026 ${holder}`).join("\n")}\n\nPermission is hereby granted.\n`;
+  const catalog = { name: "ours", owner: { name: "Acme" } };
+  const warn = async (files) => (await staleReferenceWarnings(directory, catalog, files)).join("\n");
+  try {
+    await write("README.md", "# Ours\n");
+    await write("LICENSE", license("Harald Kirschner"));
+    assert.match(await warn([]), /LICENSE: names only the template's authors \(Harald Kirschner\)\. Keep their line/);
+    // The template's line stays, with yours beside it: no warning.
+    await write("LICENSE", license("Harald Kirschner", "Acme"));
+    assert.doesNotMatch(await warn([]), /LICENSE/);
+    // A kept example keeps its authors' notice, so it never warns.
+    const example = await write("plugins/bug-report/LICENSE", license("Harald Kirschner"));
+    assert.doesNotMatch(await warn([example]), /bug-report/);
+    // A plugin you wrote should name you; a copied example keeps its line and adds yours.
+    const mine = await write("plugins/mine/LICENSE", license("Ronnie Geraghty"));
+    assert.match(await warn([mine]), /plugins\/mine\/LICENSE: names only Ronnie Geraghty, not you/);
+    await write("plugins/mine/LICENSE", license("Ronnie Geraghty", "Acme"));
+    assert.doesNotMatch(await warn([mine]), /plugins\/mine/);
+    await write("plugins/mine/LICENSE", license("GitHub"));
+    assert.match(await warn([mine]), /plugins\/mine\/LICENSE: names only GitHub/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("verify warns about scaffold text in every scaffolded file and the template's introduction", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-scaffold-"));
+  const write = async (path, text) => { await mkdir(join(directory, path, ".."), { recursive: true }); await writeFile(join(directory, path), text); return join(directory, path); };
+  try {
+    await write("README.md", "# Ours\n\nA GitHub template for building, evaluating, and sharing AI customizations\n(skills and more).\n");
+    const files = [
+      await write("plugins/mine/README.md", "This plugin ships a hook. Replace the scaffolded\ninstructions with your own.\n"),
+      await write("plugins/mine/src/server.ts", "// Replace this example tool with your own. Servers must start offline.\n"),
+      await write("plugins/mine/com.github.copilot/hooks/mine.mjs", "  // Replace this with the hook's real work.\n"),
+      await write("plugins/mine/com.github.copilot/extensions/mine/extension.mjs", "// @github/copilot-sdk/extension; don't install it. Replace the\n// actions and the page with your own.\n"),
+      await write("evals/mine/eval.yaml", "name: mine\ndescription: Scaffolded checks for the mine plugin.\n"),
+      await write("plugins/mine/dist/server.mjs", "// Replace this example tool with your own.\n"),
+      await write("plugins/done/README.md", "# Done\n\nReal instructions.\n\n## Host checks\n\n- Try it in each host.\n"),
+      await write("plugins/unchecked/README.md", "# Unchecked\n\nReal instructions.\n"),
+    ];
+    await write(".github/workflows/evals.yml", "jobs:\n  evals:\n    steps:\n      - uses: github/evals-action@x\n        with:\n          upload-transcripts: true\n");
+    const warnings = (await staleReferenceWarnings(directory, { name: "ours", owner: { name: "Acme" } }, files)).join("\n");
+    assert.match(warnings, /evals\.yml: job evals uploads transcripts/);
+    for (const path of ["plugins/mine/README.md", "plugins/mine/src/server.ts", "plugins/mine/com.github.copilot/hooks/mine.mjs",
+      "plugins/mine/com.github.copilot/extensions/mine/extension.mjs", "evals/mine/eval.yaml"]) {
+      assert.match(warnings, new RegExp(`${path.replaceAll(".", "\\.")}: still has scaffolded text`), path);
+    }
+    assert.doesNotMatch(warnings, /dist\/server\.mjs|plugins\/done/);
+    assert.match(warnings, /README\.md: the title or introduction is still the template's/);
+    assert.match(warnings, /plugins\/unchecked\/README\.md: add a "## Host checks" section/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("MCP coverage requires the configured server, an asserted tool result, and observable negative controls", async () => {
   const tool = { id: "mcp:fixture/server/lookup", kind: "mcp", name: "lookup", serverName: "server", path: resolve(root, "plugins/fixture") };
   const call = (result) => ({ type: "tool-calls", config: { required: [{ name: "(^|[./_-])lookup$", result }] } });
@@ -173,6 +232,55 @@ test("a relocated copy discovers the bundled MCP tools without this checkout's n
   }
 });
 
+test("bundle path comments don't depend on where node_modules lives", () => {
+  const text = [
+    "// ../../shared/node_modules/yaml/dist/nodes/identity.js",
+    "// C:/work/node_modules/zod/v4/core/core.js",
+    "// node_modules/ajv/dist/core.js",
+    "// plugins/json-configuration/src/server.ts",
+    '  "../repo/node_modules/ajv/dist/compile/codegen/code.js"(exports) {',
+    '  "node_modules/ajv/dist/compile/util.js"(exports, module) {',
+    'const s = "../node_modules/kept/in/code.js";',
+  ].join("\n");
+  assert.equal(portable(text), [
+    "// node_modules/yaml/dist/nodes/identity.js",
+    "// node_modules/zod/v4/core/core.js",
+    "// node_modules/ajv/dist/core.js",
+    "// plugins/json-configuration/src/server.ts",
+    '  "node_modules/ajv/dist/compile/codegen/code.js"(exports) {',
+    '  "node_modules/ajv/dist/compile/util.js"(exports, module) {',
+    'const s = "../node_modules/kept/in/code.js";',
+  ].join("\n"));
+});
+
+test("generated bundles are identical with a relocated node_modules, and orphaned bundles fail the check", { timeout: 120_000 }, async (t) => {
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "starter-build-")));
+  t.after(async () => {
+    // Remove the link itself first so cleanup can never reach the real node_modules.
+    await unlink(join(directory, "node_modules")).catch(() => {});
+    await rm(directory, { recursive: true, force: true });
+  });
+  await cp(join(root, "plugins"), join(directory, "plugins"), { recursive: true, filter: (path) => !/[\\/]dist(?:[\\/]|$)/.test(path) });
+  if (existsSync(join(root, "evals/graders/src"))) await cp(join(root, "evals/graders/src"), join(directory, "evals/graders/src"), { recursive: true });
+  await cp(join(root, "tsconfig.json"), join(directory, "tsconfig.json"));
+  await symlink(resolve(root, "node_modules"), join(directory, "node_modules"), "junction");
+  const relativeMap = (files, base) => new Map([...files].map(([path, text]) => [relative(base, path).split(sep).join("/"), text.replaceAll("\r\n", "\n")]));
+  const ours = relativeMap(await generate(root), root);
+  const relocated = relativeMap(await generate(directory), directory);
+  assert.deepEqual([...relocated.keys()].sort(), [...ours.keys()].sort());
+  for (const [path, text] of ours) assert.ok(relocated.get(path) === text, `${path} differs when node_modules is a link to another directory.`);
+
+  await writeGenerated(directory);
+  assert.equal(await checkGenerated(directory), ours.size);
+  for (const path of ["plugins/converted/dist/server.mjs", "evals/graders/dist/gone.mjs"]) {
+    await mkdir(join(directory, path, ".."), { recursive: true });
+    await writeFile(join(directory, path), "export {};\n");
+  }
+  await assert.rejects(checkGenerated(directory), /Orphaned generated artifacts: .*evals\/graders\/dist\/gone\.mjs.*plugins\/converted\/dist\/server\.mjs|Orphaned generated artifacts: .*plugins\/converted\/dist\/server\.mjs.*evals\/graders\/dist\/gone\.mjs/);
+  assert.deepEqual((await writeGenerated(directory)).removed.sort(), ["evals/graders/dist/gone.mjs", "plugins/converted/dist/server.mjs"]);
+  assert.equal(await checkGenerated(directory), ours.size);
+});
+
 test("mcp.json must be schema-valid, local stdio, and contained in its plugin", async () => {
   const directory = await mkdtemp(join(tmpdir(), "starter-mcp-config-"));
   const write = (config) => writeFile(join(directory, "mcp.json"), JSON.stringify({
@@ -217,6 +325,7 @@ test("agents and skills must live in their Agent Plugins locations with valid fr
       name: "review", version: "1.0.0", description: "Review fixture.",
     }));
     await writeFile(join(plugin, "README.md"), "# Review\n");
+    await writeFile(join(plugin, "LICENSE"), "MIT License\n\nCopyright (c) 2026 Test\n");
     await writeFile(join(plugin, "CHANGELOG.md"), "# Changelog\n\n## 1.0.0\n");
     await writeFile(join(plugin, "com.github.copilot/agents/reviewer.agent.md"), agent);
     assert.equal((await validateRepository(directory)).agents, 1);
@@ -241,6 +350,32 @@ test("agents and skills must live in their Agent Plugins locations with valid fr
     await assert.rejects(validateRepository(directory), /lists plugins\/renamed\/skills, which doesn't exist/);
     await writeFile(join(directory, ".vally.yaml"), "paths:\n  skills:\n    - plugins/review/skills\n");
     assert.equal((await validateRepository(directory)).skills, 1);
+    // An isolated Copilot home inside the checkout isn't part of the repository.
+    await mkdir(join(directory, ".copilot-home/installed"), { recursive: true });
+    await writeFile(join(directory, ".copilot-home/installed/broken.mjs"), "export const = ;\n");
+    await writeFile(join(directory, ".copilot-home/installed/README.md"), "[gone](missing.md)\n");
+    assert.equal((await validateRepository(directory)).skills, 1);
+    // Files inside a skill, or whose names only end like a component's, are content, not components.
+    await mkdir(join(plugin, "skills/review/references"), { recursive: true });
+    for (const name of ["example.agent.md", "pre-commit-hooks.json", "sample-mcp.json", "mcp.json", "lsp.json", "hooks.json"]) {
+      await writeFile(join(plugin, "skills/review/references", name), "{}\n");
+    }
+    await writeFile(join(plugin, "pre-commit-hooks.json"), "{}\n");
+    await writeFile(join(plugin, "sample-mcp.json"), "{}\n");
+    await writeFile(join(plugin, "my-lsp.json"), "{}\n");
+    const counted = await validateRepository(directory);
+    assert.deepEqual([counted.agents, counted.hooks, counted.mcpServers, counted.lspServers], [0, 0, 0, 0]);
+    await writeFile(join(plugin, "hooks.json"), "{}\n");
+    await assert.rejects(validateRepository(directory), /put hooks in com\.github\.copilot\/hooks\/hooks\.json/);
+    await rm(join(plugin, "hooks.json"));
+    await mkdir(join(plugin, "com.github.copilot/agents"), { recursive: true });
+    await writeFile(join(plugin, "com.github.copilot/agents/notes.md"), "Not an agent.\n");
+    await assert.rejects(validateRepository(directory), /com\.github\.copilot\/agents\/ holds only <name>\.agent\.md files/);
+    await rm(join(plugin, "com.github.copilot"), { recursive: true });
+    // Every plugin carries its own LICENSE.
+    await rm(join(plugin, "LICENSE"));
+    await assert.rejects(validateRepository(directory), /plugins\/review\/LICENSE: every plugin needs its own LICENSE/);
+    await writeFile(join(plugin, "LICENSE"), "MIT License\n\nCopyright (c) 2026 Test\n");
     await rm(join(directory, ".vally.yaml"));
     await assert.rejects(validateRepository(directory), /\.vally\.yaml is required/);
   } finally {
@@ -286,6 +421,7 @@ test("hooks may use any documented event and pass arguments to their plugin scri
       $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "guard", version: "1.0.0", description: "Guard fixture.",
     }));
     await writeFile(join(plugin, "README.md"), "# Guard\n");
+    await writeFile(join(plugin, "LICENSE"), "MIT License\n\nCopyright (c) 2026 Test\n");
     await writeFile(join(plugin, "CHANGELOG.md"), "# Changelog\n\n## 1.0.0\n");
     await writeFile(join(directory, "marketplace.json"), JSON.stringify({ name: "hooks-fixture", owner: { name: "Test" },
       plugins: [{ name: "guard", source: "./plugins/guard", version: "1.0.0", description: "Guard fixture." }] }));
@@ -322,6 +458,7 @@ test("plugins can ship only Copilot slash commands, rules, or LSP servers", asyn
       $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "standards", version: "1.0.0", description: "Standards fixture.",
     }));
     await writeFile(join(plugin, "README.md"), "# Standards\n");
+    await writeFile(join(plugin, "LICENSE"), "MIT License\n\nCopyright (c) 2026 Test\n");
     await writeFile(join(plugin, "CHANGELOG.md"), "# Changelog\n\n## 1.0.0\n");
     await writeFile(join(directory, "marketplace.json"), JSON.stringify({ name: "components-fixture", owner: { name: "Test" },
       plugins: [{ name: "standards", source: "./plugins/standards", version: "1.0.0", description: "Standards fixture." }] }));
