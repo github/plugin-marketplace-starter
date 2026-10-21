@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { isAbsolute, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // The SDK launches .js entry points with Node; this forwards to the pinned full Copilot runtime.
@@ -32,9 +33,25 @@ export function runtimeEntry(env = process.env) {
   return absolute(env.STARTER_COPILOT_CLI, defaultRuntime, "STARTER_COPILOT_CLI");
 }
 
+// The version in the runtime package's package.json, which npm installed from the lockfile.
+export function packageVersion(entry = runtimeEntry()) {
+  return JSON.parse(readFileSync(resolve(dirname(entry), "package.json"), "utf8")).version;
+}
+
+// Copilot CLI auto-update downloads newer releases into a package cache and then
+// launches the newest one, so the pinned package can report a later version.
+// Turning it off makes the CLI run the binary npm installed. CI turns it off by
+// default; set COPILOT_AUTO_UPDATE yourself to override.
+export function runtimeProcessEnvironment(env = process.env) {
+  return { ...env, COPILOT_AUTO_UPDATE: env.COPILOT_AUTO_UPDATE ?? "false" };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const child = spawn(process.execPath, [runtimeEntry(), ...runtimeArguments(process.argv.slice(2))], {
-    stdio: "inherit", windowsHide: true,
+  const args = process.argv.slice(2);
+  // A version check reports both the pinned package and what actually runs.
+  if (args.length === 1 && args[0] === "--version") console.log(`Pinned @github/copilot package: ${packageVersion()}`);
+  const child = spawn(process.execPath, [runtimeEntry(), ...runtimeArguments(args)], {
+    stdio: "inherit", windowsHide: true, env: runtimeProcessEnvironment(),
   });
   child.on("error", (error) => { console.error(error); process.exitCode = 1; });
   child.on("exit", (code, signal) => {
