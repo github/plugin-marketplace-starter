@@ -31,6 +31,9 @@ place; don't duplicate them here.
   slash commands until the reference documents their file format; validation
   only checks that those files aren't empty. Use a skill for shared standards.
   Don't adopt legacy `.plugin/` or `.claude-plugin/` layouts from documentation.
+  VS Code automation templates (`automations/*.automation.md` at the plugin
+  root) are a VS Code-only capability, not an Agent Plugins 1.0 component, and
+  `verify` doesn't check them.
 - Instruction files (`.github/copilot-instructions.md`, `*.instructions.md`,
   `AGENTS.md`) and prompt files apply only to the repository they're in. To
   share guidance through the marketplace, package it as a skill or agent, as

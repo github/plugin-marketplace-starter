@@ -3,7 +3,7 @@
 A plugin can ship any mix of these. Agent Plugins 1.0 standardizes skills and
 MCP servers, so other compatible clients can use them. Everything else is
 specific to Copilot and lives under `com.github.copilot/`, which other clients
-ignore. The [Copilot CLI plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference#components)
+ignore, except VS Code's automation templates, which live in `automations/`. The [Copilot CLI plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference#components)
 lists the official locations.
 <!-- examples -->
 [Examples](examples.md) shows which example demonstrates each type.
@@ -19,6 +19,15 @@ lists the official locations.
 | LSP server | `com.github.copilot/lsp.json` | Language intelligence for a file type | By hand |
 | Slash command | `com.github.copilot/commands/` | Shortcuts people run by name | Not recommended yet |
 | Rules | `com.github.copilot/rules/` | Guidance that ships with an installed plugin | Not recommended yet |
+| Automation template | `automations/<name>.automation.md` | A reusable prompt and schedule that VS Code lists under **Templates from Plugins** in the Agents window | By hand |
+
+Automation templates are a VS Code capability, not part of Agent Plugins 1.0,
+and they live in `automations/` at the plugin root rather than under
+`com.github.copilot/`. Each is Markdown with `version`, `id`, `name`, and
+`schedule` frontmatter; the body is the prompt. Installing the plugin doesn't
+create or turn on an automation. See VS Code's
+[automations in plugins](https://code.visualstudio.com/docs/agents/reference/agent-plugin-reference#_automations-in-plugins).
+`npm run verify` doesn't check them, and a plugin needs another asset too.
 
 `lsp.json` is checked against the fields in the plugin reference:
 `lspServers`, a launch command, and `fileExtensions`. The reference's component
@@ -42,6 +51,7 @@ the **Local** harness is VS Code's own.
 | Hook, in this repository's Copilot CLI format | Yes | Yes | Loads, but receives VS Code's own event fields, so a CLI-format script won't find what it expects | Not verified |
 | Canvas extension | Not verified | Not verified; VS Code's plugin docs don't list extensions | Not verified | Yes, in the right side panel |
 | LSP server | Yes | Not verified | Not verified | Not verified |
+| Automation template | Not verified | Listed in the Agents window | Listed in the Agents window | Not verified |
 
 "Not verified" means the official docs this template checked don't say either
 way, so test it yourself before you rely on it. Sources: the
@@ -131,7 +141,8 @@ and canvas extensions. To add another type, or to understand what it did:
    under `test/` for code such as servers, hooks, and graders. If an eval needs
    a path, such as your server bundle, add it to `params` in `.vally.yaml`.
    Name support files after the plugin so `npm run remove-plugin` removes them
-   with it: `evals/graders/<name>.mjs` or `<name>-*.mjs`, `evals/support/<name>-*`,
+   with it: `evals/graders/<name>.mjs` or `<name>-*.mjs` (also under
+   `evals/graders/src/` for a bundled grader), `evals/support/<name>-*`,
    `evals/fixtures/<name>/`, and `test/<name>.test.mjs` or `test/<name>-*.test.mjs`.
    A file named anything else stays behind when the plugin goes.
 8. Run `npm run verify`.

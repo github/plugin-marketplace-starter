@@ -105,9 +105,12 @@ npm run check-remotes -- anarlog
 This uses the network, so `npm run verify` doesn't run it. For each remote
 entry it confirms that the repository and SHA exist, that `plugin.json` is at
 `path` at that SHA, and that its `name` and `version` match the catalog. It
-also notes when `ref` has moved away from the pin and when the repository has a
-newer release. It authenticates with `GH_TOKEN` or `GITHUB_TOKEN`, or your
-GitHub CLI login.
+reads the manifest the way Copilot CLI does: an Agent Plugins `plugin.json` at
+`path` first, then the legacy locations (`.plugin/plugin.json`, `plugin.json`,
+`.github/plugin/plugin.json`, and `.claude-plugin/plugin.json`), and it notes a
+legacy manifest, since other hosts may not load one. It also notes when `ref`
+has moved away from the pin and when the repository has a newer release. It
+authenticates with `GH_TOKEN` or `GITHUB_TOKEN`, or your GitHub CLI login.
 
 ## Keep pins current
 

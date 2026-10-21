@@ -5,12 +5,32 @@ Two workflows ship with the template.
 ## Deterministic checks
 
 [validate.yml](../.github/workflows/validate.yml) runs `npm ci` and
-`npm run verify` on Linux, Windows, and macOS with Node.js 22 and 24 for every
-push and pull request. It never calls a model and needs only read access. On
-its own, it's enough to keep the marketplace consistent. It runs nine jobs; to
-use fewer Actions minutes in a private repository, trim the matrix to the
-systems and Node.js versions your team uses. Model-free doesn't mean nothing
-runs: it installs dependencies and runs this repository's scripts and tests.
+`npm run verify` on Linux, Windows, and macOS with Node.js 22 and 24. It never
+calls a model and needs only read access. On its own, it's enough to keep the
+marketplace consistent. Model-free doesn't mean nothing runs: it installs
+dependencies and runs this repository's scripts and tests.
+
+- **When it runs.** On every pull request, on pushes to `main`, and by hand
+  from the **Actions** tab. A push to a pull request's branch runs once,
+  through the pull request, not twice. If your default branch has another
+  name, change `branches: [main]` in the workflow.
+- **Superseded runs.** A newer push to a pull request cancels the run it
+  replaces. Runs on `main` always finish, so every commit there gets a result.
+- **Jobs.** It runs six jobs: three operating systems times two Node.js
+  versions. macOS and Windows minutes cost more than Linux minutes in a
+  private repository, so to use fewer Actions minutes, trim the `os` or `node`
+  list in the matrix to the systems and versions your team uses.
+  `npm run verify` only needs at least one of each, with Node.js 22 or newer.
+- **Required checks.** Each job reports a check named
+  `validate (<os>, Node.js <version>)`, such as
+  `validate (ubuntu-latest, Node.js 24)`. In a ruleset or branch protection,
+  require each one you want enforced; there's no single check named after the
+  workflow.
+
+The tests that read the workflows check only what keeps CI safe and
+model-free, not their exact shape, so the changes this page describes (a
+smaller matrix, no `evals` environment, a debug run with transcripts, or no
+`evals.yml` at all) keep `npm run verify` passing.
 
 ## Personal accounts
 
@@ -36,7 +56,8 @@ organization:
   `ENABLE_EVALS` unset and run evals by hand. GitHub Free can't configure
   environments for private repositories at all; this template hasn't verified
   how a job that names one behaves there, so if the eval job fails on the
-  environment, delete the `environment: evals` lines from `evals.yml`. See
+  environment, delete the `environment: evals` lines from `evals.yml`.
+  `npm run verify` still passes without them. See
   [deployment protection rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#required-reviewers).
 
 ## Behavioral evals
@@ -123,7 +144,8 @@ Its lint isn't `--strict` and doesn't lint skill directories, so
 
 `upload-transcripts` stays `false` because raw transcripts can contain prompts,
 model output, and code. Set it to `true` temporarily when you need to debug a
-run, and review who can read workflow artifacts. See the Action's README for
+run, and review who can read workflow artifacts. `npm run verify` warns while
+it's `true`, so it doesn't stay on by accident. See the Action's README for
 separate lint, run, and report jobs if you need narrower permissions.
 
 #### The npm runner
@@ -188,7 +210,9 @@ Before you turn on `ENABLE_EVALS`:
 
 - Protect the default branch with
   [branch protection or a ruleset](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)
-  that requires review and the `Validate marketplace` checks.
+  that requires review and the `validate (<os>, Node.js <version>)` checks from
+  the **Validate marketplace** workflow. Each matrix job is its own check, so
+  add every one you want enforced.
 - Set [code owners](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
   for `.github/workflows/`, `scripts/`, `evals/`, `plugins/`, `marketplace.json`,
   and `.github/copilot/settings.json`, and require their review in the rule. A

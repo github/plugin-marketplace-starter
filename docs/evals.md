@@ -44,6 +44,29 @@ npm run eval:report -- --plugin <name> --plugin <other-name>
 ```
 
 `--eval-spec <path>` still selects one spec, and you can repeat it.
+`--plugin` and `--eval-spec` work with `npm run eval` and `npm run eval:smoke`
+too, which narrows those suites to the plugins you name:
+
+```sh
+npm run eval:smoke -- --plugin <name>
+```
+
+Vally doesn't accept a suite together with specific specs, so the launcher
+turns the suite into what Vally does accept: the specs its `evals` patterns
+match, and `--tag` for its tag filter.
+
+`--tag key=value` selects cases by tag, as in Vally, and `--tag key!=value`
+leaves them out. Repeat it to combine filters. A case inherits its eval's
+top-level `tags`, and its own value wins for the same key. For example, this
+lists every negative control:
+
+```sh
+npm run eval:list -- --tag control=negative
+```
+
+The list, the run, and the report all apply the same rules, and `--list`
+prints the matching report command. With no `--suite`, `--plugin`,
+`--eval-spec`, or `--tag`, the launcher runs the full suite.
 `npm run eval:report -- --help` lists the report's options.
 
 ## Cost
@@ -71,7 +94,9 @@ and check your billing dashboard after a run to learn what your suite costs.
    - Skill: list its directory in `agent_environment.skills`, relative to the
      eval file, such as `../../plugins/<plugin>/skills/<skill>`.
    - Custom agent: copy its real `.agent.md` file to
-     `.github/agents/<name>.agent.md` with `agent_environment.files`.
+     `.github/agents/<name>.agent.md` with `agent_environment.files`, where
+     `<name>` is the agent's `name`. Stage it at the top of the spec so the
+     negative control runs with the agent available, too.
    - MCP server: configure it in `agent_environment.mcpServers`, and pass its
      path through a `.vally.yaml` param so the launcher can make it absolute.
    - Hook: set `agent_environment.env.STARTER_PLUGIN_DIRS` to the plugin

@@ -13,7 +13,7 @@ It gives you:
 <!-- /examples -->
 - Commands that scaffold a plugin, remove one, and rename the marketplace.
 - `npm run verify`, a model-free check of manifests, the catalog, tests, and
-  eval coverage, which CI runs on every push.
+  eval coverage, which CI runs on every pull request.
 - Behavioral evals for every skill, agent, hook, extension, and MCP tool, run
   with [Vally](https://microsoft.github.io/vally/), the eval runner and linter
   pinned in `package.json`. Evals run real Copilot sessions and cost AI
@@ -63,22 +63,26 @@ You need Node.js 22.14 or newer.
 
    The name must be unique, lowercase, and hyphenated. Add `--dry-run` to see
    which files would change.
+   <!-- examples -->
 3. Remove the shipped examples you don't want with
    `npm run remove-example -- <name>...`, or all of them with
    `npm run remove-example -- --all`. See
-   [Remove a plugin](#remove-a-plugin).
+   [Remove a plugin](#remove-a-plugin). You can do this before or after you
+   add your own plugins.
+   <!-- /examples -->
 4. Add your first plugin with `npm run new-plugin -- <name>`. See
-   [Add a plugin](#add-a-plugin). Steps 3 and 4 work in either order, and
-   `npm run verify` passes even with no plugins at all.
-5. Decide whether to keep the remote plugins in the catalog. Remove one with
-   `npm run remove-plugin -- <name>`.
+   [Add a plugin](#add-a-plugin). `npm run verify` passes even with no plugins
+   at all.
    <!-- plugin:github-copilot -->
-   The template's `github-copilot` entry needs access to the private
-   `github/evals` repository; see [Remote plugins](docs/remote-plugins.md).
+5. Decide whether to keep the remote `github-copilot` plugin in the catalog. It
+   needs access to the private `github/evals` repository; see
+   [Remote plugins](docs/remote-plugins.md). Remove it with
+   `npm run remove-plugin -- github-copilot`.
    <!-- /plugin:github-copilot -->
 6. Replace what's meant for you before you ship:
-   - The copyright holder in [LICENSE](LICENSE) and in each plugin's `LICENSE`.
-     See [Licensing](#licensing).
+   - Your own copyright line in [LICENSE](LICENSE), beside the template's, and
+     your holder in the `LICENSE` of each plugin you write. See
+     [Licensing](#licensing).
    - The title and introduction of this README.
    - Real owners in [.github/CODEOWNERS](.github/CODEOWNERS). On a personal
      account, that can be just you.
@@ -90,8 +94,9 @@ You need Node.js 22.14 or newer.
      [.github/copilot-instructions.md](.github/copilot-instructions.md) and
      [AGENTS.md](AGENTS.md).
 7. Run `npm run verify`. It fails on anything inconsistent and warns about
-   leftovers, such as the template's name, title, or license holder, scaffold
-   text you haven't replaced, or a mention of a plugin you removed.
+   leftovers, such as the template's name or introduction, a `LICENSE` that
+   doesn't name you yet, scaffold text you haven't replaced, or a mention of a
+   plugin you removed.
 8. Push, then turn on branch protection or a ruleset for your default branch.
    Rulesets are available for public repositories on every plan. Behavioral
    evals stay off in CI until you turn them on; see
@@ -222,9 +227,9 @@ To run only the plugins you changed, use `--plugin <name>`; see
 ## Continuous integration
 
 [validate.yml](.github/workflows/validate.yml) runs `npm run verify` on Linux,
-Windows, and macOS with Node.js 22 and 24 for every push and pull request. It
-never calls a model, and on its own it's enough to keep the marketplace
-consistent.
+Windows, and macOS with Node.js 22 and 24 for every pull request and every push
+to `main`. It never calls a model, and on its own it's enough to keep the
+marketplace consistent.
 
 [evals.yml](.github/workflows/evals.yml) runs behavioral evals. It's off for
 pull requests until you set the repository variable `ENABLE_EVALS` to `true`,
@@ -261,17 +266,28 @@ docs/                      # Reference guides
 
 The template is [MIT licensed](LICENSE), and so is each plugin, which carries
 its own `LICENSE` so it stays licensed when installed or copied on its own.
+`npm run verify` fails if a plugin has no `LICENSE`.
 
-- Put your own copyright holder in the root `LICENSE` and in each plugin's
-  `LICENSE`, and keep them consistent. `new-plugin` uses the catalog owner for
-  new plugins. `npm run verify` warns while a `LICENSE` still names the
-  template's holder.
-- If you keep or copy an example, keep its MIT notice, which is the
-  attribution the license asks for. Your changes can carry your own copyright
-  line beside it.
+Two different names show up, and they mean different things.
+`owner.name` in [marketplace.json](marketplace.json), `GitHub` in the template,
+says who publishes the catalog. `npm run rename-marketplace` sets it to you.
+The `Copyright` lines in each `LICENSE` say who wrote the code. The template's
+tooling and examples were written by the people named in their `LICENSE`
+files, so those lines name them rather than GitHub.
+
+- MIT asks that its copyright and permission notice stay with every copy, so
+  keep the existing lines in what you keep: the root `LICENSE`, which covers
+  the scripts, tests, and docs, and the `LICENSE` of any example you keep or
+  copy. Add your own `Copyright` line below them for your changes.
+- Put your own holder in the `LICENSE` of each plugin you write.
+  `new-plugin` uses the catalog owner for new plugins.
+- `npm run verify` warns while the root `LICENSE` names only the template's
+  authors, and while a plugin you added names only them or `GitHub`. It
+  doesn't warn about a kept example's notice, which should stay.
 - To use a different license, change the root `LICENSE`, `license` in
   `package.json`, and each plugin's `LICENSE` and `plugin.json` `license`.
-  `verify` doesn't check that they agree.
+  `verify` doesn't check that they agree. Code you kept from the template stays
+  under MIT, with its notice.
 - Keep the vendored Agent Plugins schemas' Apache-2.0
   [license](schemas/LICENSE-APACHE-2.0.txt) and [notice](schemas/NOTICE), and
   the third-party notices beside each generated bundle.

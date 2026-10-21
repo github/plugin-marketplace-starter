@@ -48,6 +48,22 @@ cache, lives wherever its code puts it. The review table below asks for it.
 ## What the examples do and don't do
 
 <!-- /examples -->
+<!-- plugin:bug-report -->
+- **bug-report** reads only its own templates and the notes you give it, and
+  drafts the report in chat. It doesn't write files, run commands, or file an
+  issue. Its evals check that it leaves an example credential out of the draft,
+  but remove secrets from your notes yourself.
+<!-- /plugin:bug-report -->
+<!-- plugin:code-review -->
+- **code-review** gives its agent only the `read` and `search` tools, so it
+  reads the code you point it at and sends it to the model, but never edits,
+  runs code, commits, or posts comments.
+<!-- /plugin:code-review -->
+<!-- plugin:customization-authoring -->
+- **customization-authoring** writes the skill and eval files it generates into
+  your workspace, never inside the installed plugin. It doesn't run paid evals
+  unless you ask.
+<!-- /plugin:customization-authoring -->
 <!-- plugin:format-json -->
 - **format-json** reads only the files a successful edit named, inside the
   session's working directory, and rejects symbolic links. Its diagnostics name

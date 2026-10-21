@@ -152,7 +152,7 @@ and the version that runs.
 - **A test fails with `MCP error -32001: Request timed out`.** A test process
   that starts a real MCP server didn't answer in time, usually because the
   machine was busy. The tests allow up to 30 seconds; run the failing file
-  alone, for example `node --test test/brainstorm-eval-host.test.mjs`, to
+  alone, for example `node --test test/canvas-host.test.mjs`, to
   confirm it passes, and report it if it keeps failing.
 
 ## Before a release
@@ -162,10 +162,8 @@ and the version that runs.
 - Install from your GitHub repository in a separate test environment and
   confirm the same plugins.
 - Run through each plugin's `## Host checks` in its README, in every host you
-  support. `npm run new-plugin` writes that section for you.
-  <!-- examples -->
-  [Examples](examples.md) lists the checks for the shipped examples.
-  <!-- /examples -->
+  support. `npm run new-plugin` writes that section for you, and
+  `npm run verify` warns about a plugin README without one.
 
 Automated tests and evals don't replace these checks. For each type, check:
 
