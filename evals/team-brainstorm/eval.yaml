@@ -74,14 +74,26 @@ stimuli:
       - type: diff-empty
   - name: brainstorm-does-not-trigger-for-arithmetic
     prompt: What is two plus two? Reply with only the digit, without planning or using a board.
+    agent_environment:
+      mcpServers:
+        brainstorm-host:
+          type: stdio
+          command: node
+          args: ['${BRAINSTORM_HOST}']
     tags:
-      assets: skill:team-brainstorm/team-brainstorm
+      assets:
+        - skill:team-brainstorm/team-brainstorm
+        - extension:team-brainstorm/brainstorm
       control: negative
+      boundary: headless-sdk-contract
     graders:
       - type: completed
       - type: skill-invocation
         config:
           disallowed: [team-brainstorm]
+      - type: tool-calls
+        config:
+          disallowed: ['(^|[./_-])(list_canvas_capabilities|open_canvas|invoke_canvas_action)$']
       - type: output-matches
         config:
           pattern: '^\s*4\s*$'

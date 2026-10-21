@@ -2,6 +2,9 @@ paths:
   skills:
     - plugins/bug-report/skills
     - plugins/team-brainstorm/skills
+    - plugins/customization-authoring/skills
+    - plugins/code-review/skills
+    - plugins/json-configuration/skills
   evals:
     - evals
   evalFilenames:
@@ -9,12 +12,13 @@ paths:
   results: vally-results
 params:
   BRAINSTORM_HOST: evals/support/brainstorm-host.mjs
+  JSON_MCP_SERVER: plugins/json-configuration/dist/server.mjs
 suites:
   smoke:
-    description: Representative model-backed coverage for all three example plugins
+    description: Representative model-backed coverage for every local skill, agent, hook, extension, and MCP tool
     filter:
       suite: smoke
   full:
-    description: Template routing, clarification, board collaboration, chat fallback, and formatting behavior
+    description: Positive, negative, and boundary cases for all six local plugins
     evals:
       - evals/**/eval.yaml
