@@ -15,9 +15,10 @@ explains how everything fits together.
 ## Add or change a plugin
 
 Start a new plugin with `npm run new-plugin -- <name>`, optionally with
-`--with agent` or `--with mcp`. It creates the files and registrations below,
-including an eval that meets the coverage rules, so you only replace the
-scaffolded content. See [Add a plugin](README.md#add-a-plugin).
+`--with agent`, `--with mcp`, `--with hook`, `--with extension`, or
+`--no-skill`. It creates the files and registrations below, including an eval
+that meets the coverage rules, so you only replace the scaffolded content. See
+[Add a plugin](README.md#add-a-plugin).
 
 Change these together in one pull request:
 
@@ -27,7 +28,11 @@ Change these together in one pull request:
    plugin or this repository's `node_modules` at runtime.
 2. **Version**: bump `version` in `plugin.json` and the matching
    [marketplace.json](marketplace.json) entry, and add a `## <version>` heading
-   to `CHANGELOG.md`. Any change to a shipped file needs a new version.
+   to `CHANGELOG.md`. Any change to a file under `plugins/<name>/` needs a new
+   version, because that's what people install. Use a patch version for fixes
+   and wording, a minor version for new behavior or options, and a major version
+   when existing use breaks. Changes to evals, tests, and docs outside the
+   plugin don't need one.
 3. **Catalog and settings**: keep the catalog `description` identical to the
    manifest, and enable local plugins in
    [.github/copilot/settings.json](.github/copilot/settings.json). Never enable
@@ -38,7 +43,15 @@ Change these together in one pull request:
    assertions for every skill, agent, hook, extension, and MCP tool, a smoke
    case, and a negative control. See [Evals](docs/evals.md#write-an-eval).
 6. **Tests** under `test/` for code you add, such as servers, hooks, and graders.
-7. **Generated files**: if you changed `plugins/*/src/` or `evals/graders/src/`,
+   Name support files after the plugin, such as `test/<name>-hook.test.mjs` and
+   `evals/graders/<name>.mjs`, so `npm run remove-plugin` removes them with it.
+7. **Related docs**: the plugin's README, and
+   <!-- examples -->
+   for a shipped example, its section in [Examples](docs/examples.md), and
+   <!-- /examples -->
+   anything else that describes what you changed. Don't hard-code suite sizes;
+   `npm run eval:check` prints them.
+8. **Generated files**: if you changed `plugins/*/src/` or `evals/graders/src/`,
    run `npm run build` and commit the regenerated `dist/` files.
 
 Then run:
@@ -50,7 +63,12 @@ npm run verify
 
 `verify` is model-free and must pass. CI runs it on Linux, Windows, and macOS.
 It reports every problem at once as `path: message`, and warns about leftovers
-such as mentions of a plugin that no longer exists.
+such as mentions of a plugin that no longer exists. The test step takes about a
+minute.
+
+For a plugin that's new, or that changes what it can run, read, or reach, fill
+in the review table in [Security and data handling](docs/security.md#review-a-plugin)
+and paste it into the pull request.
 
 ## Remove or rename a plugin
 
@@ -64,20 +82,27 @@ anything you missed.
 
 ## Remote plugins
 
-A remote catalog entry's `name` must match the upstream `plugin.json` name. Pin
-a `ref` and full commit `sha`, and document any access requirement. Local checks
-never download or run upstream code.
+A remote catalog entry's `name` must match the upstream `plugin.json` name. It
+must pin a full commit `sha`, and should name the `ref` it came from. Document
+any access requirement. Local checks never download or run upstream code; run
+`npm run check-remotes` to check the pin against GitHub. See
+[Remote plugins](docs/remote-plugins.md).
 
 ## Paid evals
 
 `npm run eval:smoke`, `npm run eval`, and the **Behavioral evals** workflow run
-real Copilot sessions and spend AI credits. Run the narrowest spec that
-covers your change, for example:
+real Copilot sessions and spend AI credits. Run only the plugins you changed.
+`--plugin` selects every spec for a plugin, including nested ones such as
+`evals/<name>/agent/eval.yaml`. Check the selection for free, then run and
+report on the same selection:
 
 ```sh
-node scripts/evals.mjs eval --eval-spec evals/bug-report/eval.yaml
-npm run eval:report -- --eval-spec evals/bug-report/eval.yaml
+npm run eval:list -- --plugin <name>
+node scripts/evals.mjs eval --plugin <name>
+npm run eval:report -- --plugin <name>
 ```
+
+Repeat `--plugin` for each plugin you changed.
 
 Say in your pull request which evals you ran and what they showed. Inspect a
 failed trajectory before changing an assertion, and don't loosen a check just

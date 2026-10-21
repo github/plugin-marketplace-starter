@@ -7,9 +7,13 @@ place; don't duplicate them here.
 
 ## Agent-specific rules
 
-- Scaffold a plugin with `npm run new-plugin -- <name>` and remove one with
-  `npm run remove-plugin -- <name>` (`remove-example` for the shipped
-  examples), rather than editing the catalog, overlay, and `.vally.yaml` by hand.
+- Scaffold a plugin with `npm run new-plugin -- <name>` (with `--with agent`,
+  `mcp`, `hook`, or `extension`, and `--no-skill` when it has no skill), remove
+  one with `npm run remove-plugin -- <name>` (`remove-example` for the shipped
+  examples), and rename the marketplace with `npm run rename-marketplace`,
+  rather than editing the catalog, overlay, and `.vally.yaml` by hand. Name a
+  plugin's support files after it (`evals/graders/<name>.mjs`,
+  `test/<name>-*.test.mjs`) so removal finds them.
 - Group plugins by workflow, not by asset type. Keep every in-repo example
   self-contained and independently installable, without external services.
   Remote catalog references are separate from the local examples.
@@ -40,6 +44,11 @@ place; don't duplicate them here.
   instructions in the body, and don't duplicate a skill as a command.
 - Formatter hooks must not return permission decisions. Return `{}` for no-ops,
   and never describe the hook as a security boundary or replacement for CI.
+  Prefix hook messages with `<plugin-name>:`, and never put file contents or raw
+  parser messages in them. See [docs/hooks.md](docs/hooks.md).
+- Don't claim a customization type works in a host unless official docs say so;
+  keep the matrix in [docs/customization-types.md](docs/customization-types.md)
+  in step, and write "not verified" where they don't.
 - Preserve coverage when replacing an example; don't delete tests just to
   make validation pass.
 - Keep evals outside plugins, grouped by workflow under `evals/`. Update the
@@ -69,7 +78,9 @@ place; don't duplicate them here.
 - Keep remote plugins opt-in. The repository settings overlay must never enable
   a remote plugin; that's a deliberate security rule, so developers install
   remote plugins themselves. A remote entry's `name` must match the upstream
-  `plugin.json` name, and its source should pin a `ref` and full `sha`. Validate
+  `plugin.json` name, and its source must pin a full `sha` and should name its
+  `ref`. `npm run check-remotes` checks pins against GitHub; it uses the
+  network, so keep it out of `verify`. Validate
   catalog metadata without fetching or executing upstream code in checks, and
   document private-repository access. Don't claim the local evals cover remote
   assets.

@@ -8,6 +8,7 @@ dependency pinned in `package.json`; installed plugins never need it.
 ```sh
 npm ci
 npm run verify                         # model-free, free
+npm run eval:list -- --suite smoke     # free: lists the cases a run would select
 npm run eval:smoke                     # real Copilot sessions, costs AI credits
 npm run eval:report -- --suite smoke
 npm run eval                           # every case, costs more
@@ -22,18 +23,34 @@ The baseline model is `gpt-5.4-mini`; override it with `--model MODEL_ID`.
 Local runs use one worker, per-case timeouts, and one bounded retry for a
 timeout or rate limit. A valid failed verdict isn't retried to get a pass.
 
-Run one spec without the whole suite:
+## Run only the plugins you changed
+
+A plugin can have more than one spec, such as `evals/<name>/eval.yaml` and
+`evals/<name>/agent/eval.yaml`, so running `evals/<name>/eval.yaml` alone can
+miss cases. `--plugin` selects every
+spec under `evals/<name>/`, at any depth, plus any spec with a case that tags
+one of the plugin's assets. Check the selection for free first:
 
 ```sh
-node scripts/evals.mjs eval --eval-spec evals/<name>/eval.yaml
-npm run eval:report -- --eval-spec evals/<name>/eval.yaml
+npm run eval:list -- --plugin <name>
 ```
+
+That prints each spec and case it would run and the exact commands. Then run
+and report on the same selection. Repeat `--plugin` for several plugins:
+
+```sh
+node scripts/evals.mjs eval --plugin <name> --plugin <other-name>
+npm run eval:report -- --plugin <name> --plugin <other-name>
+```
+
+`--eval-spec <path>` still selects one spec, and you can repeat it.
+`npm run eval:report -- --help` lists the report's options.
 
 ## Cost
 
 Each case runs at least one Copilot session, and a retried case runs again.
-`npm run eval:check` prints how many cases each suite has; in the starter,
-`smoke` has 8 and `full` has 21. Copilot bills model usage in AI credits based
+`npm run eval:check` prints how many cases each suite has, and
+`npm run eval:list` names them. Copilot bills model usage in AI credits based
 on the model and the tokens used, so the cost of a case depends on how much
 work it does. A one-turn chat case costs less than a case that delegates to a
 custom agent or edits files. See
@@ -66,20 +83,18 @@ and check your billing dashboard after a run to learn what your suite costs.
      answer isn't proof that the custom agent ran.
    - MCP tools need a `tool-calls` rule with the tool name and its actual
      `result`.
-   - Hooks need a `program` or `file-*` grader that checks their real effects.
+   - Hooks need evidence that the hook itself ran. See [Hooks](#hooks).
    - Extensions need an MCP transport that drives the real extension code, a
      `program` grader, and a `tags.boundary` saying what the eval does and
-     doesn't prove.
+     doesn't prove. See [Extensions](#extensions).
 4. Tag every case with its assets and `tags.control: positive` or `negative`.
    Put a representative positive case in `tags.suite: smoke`. Prefix stimulus
    names with the plugin or skill name; names must be unique across all specs.
 5. Run `npm run verify`, then run the eval, inspect its trajectory, and confirm
    that a wrong outcome would fail the graders.
 
-The [authoring reference](../plugins/customization-authoring/skills/skill-authoring/references/evals.md)
-has a complete, commented skill eval, and the [README](../README.md#evals) has
-one for a skill that answers in chat. `npm run new-plugin` writes one for each
-new plugin.
+[Write an eval, step by step](eval-authoring.md) has complete skill evals with
+each part explained. `npm run new-plugin` writes one for each new plugin.
 
 ### Outcome graders
 
@@ -105,6 +120,54 @@ A negative case must assert something observable:
   rule that disallows the tool.
 
 A tag alone isn't coverage.
+
+### Hooks
+
+A hook eval mounts the real plugin with `agent_environment.env.STARTER_PLUGIN_DIRS`
+and must show that the hook ran, not only that the model did the task. These
+count:
+
+- A `program` grader that checks the hook's real effects.
+- A `tool-calls` rule whose `result` pattern includes the hook's
+  `<plugin-name>:` prefix. Copilot appends a hook's `additionalContext` to the
+  tool result, so only the hook can put it there. For a hook that reports
+  rather than changes files, this is the honest evidence.
+- An `output-matches`, `output-contains`, or `file-matches` grader whose
+  pattern includes that prefix.
+
+A `file-matches` or `file-exists` grader on content the model wrote doesn't
+count: it passes even when the hook never ran. [Hooks](hooks.md) explains the
+prefix convention.
+
+### Extensions
+
+A canvas extension's eval runs it through
+[evals/support/canvas-host.mjs](../evals/support/canvas-host.mjs), a shared
+MCP transport that loads the real `extension.mjs`, stands in for the host's
+SDK, and exposes `list_canvas_capabilities`, `open_canvas`, and
+`invoke_canvas_action`. A new extension needs only configuration: a
+`.vally.yaml` param for its `extension.mjs` path, and a server entry like this:
+
+```yaml
+agent_environment:
+  mcpServers:
+    standup-host:
+      type: stdio
+      command: node
+      args:
+        - '${CANVAS_HOST}'
+        - '${STANDUP_EXTENSION}'
+        - --seed
+        - '[{"action":"add_item","input":{"text":"Existing item"}}]'
+```
+
+`--seed` runs actions before the first call so every session starts the same;
+`--canvas <id>` picks a canvas when the extension registers several. Grade the
+outcome with a `program` grader that reads the actions' real results, and tag
+the case `boundary: headless-sdk-contract`: the host proves the extension's
+contract, not that any app renders it. `npm run new-plugin -- <name> --with extension`
+sets all of this up, and `npm run verify` starts every canvas host an eval
+configures to catch a broken path, canvas ID, or seed before a paid run.
 
 ## Asset identities
 

@@ -4,25 +4,57 @@ A plugin can ship any mix of these. Agent Plugins 1.0 standardizes skills and
 MCP servers, so other compatible clients can use them. Everything else is
 specific to Copilot and lives under `com.github.copilot/`, which other clients
 ignore. The [Copilot CLI plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference#components)
-lists the official locations. [Examples](examples.md) shows which example
-demonstrates each type.
+lists the official locations.
+<!-- examples -->
+[Examples](examples.md) shows which example demonstrates each type.
+<!-- /examples -->
 
-| Type | Location in a plugin | Works in | Use it for | `new-plugin` |
-|---|---|---|---|---|
-| Skill | `skills/<name>/SKILL.md`, plus optional `templates/` or `references/` | Agent Plugins clients | Procedures and domain knowledge the model loads when a task needs them | Always |
-| MCP server | `mcp.json` at the plugin root | Agent Plugins clients | Tools backed by code, such as validation or lookups | `--with mcp` |
-| Custom agent | `com.github.copilot/agents/<name>.agent.md` | Copilot | A specialist with its own instructions and tool list | `--with agent` |
-| Hook | `com.github.copilot/hooks/hooks.json` | Copilot | Deterministic commands on events like `postToolUse` | By hand |
-| Canvas or SDK extension | `com.github.copilot/extensions/<name>/extension.mjs` | Copilot hosts with SDK extension support | Interactive panels and actions | By hand |
-| LSP server | `com.github.copilot/lsp.json` | Copilot CLI | Language intelligence for a file type | By hand |
-| Slash command | `com.github.copilot/commands/` | Copilot | Shortcuts people run by name | Not recommended yet |
-| Rules | `com.github.copilot/rules/` | Copilot | Guidance that ships with an installed plugin | Not recommended yet |
+| Type | Location in a plugin | Use it for | `new-plugin` |
+|---|---|---|---|
+| Skill | `skills/<name>/SKILL.md`, plus optional `templates/` or `references/` | Procedures and domain knowledge the model loads when a task needs them | Included unless `--no-skill` |
+| MCP server | `mcp.json` at the plugin root | Tools backed by code, such as validation or lookups | `--with mcp` |
+| Custom agent | `com.github.copilot/agents/<name>.agent.md` | A specialist with its own instructions and tool list | `--with agent` |
+| Hook | `com.github.copilot/hooks/hooks.json` | Deterministic commands on events like `postToolUse`. See [Hooks](hooks.md) | `--with hook` |
+| Canvas or SDK extension | `com.github.copilot/extensions/<name>/extension.mjs` | Interactive panels and actions | `--with extension` |
+| LSP server | `com.github.copilot/lsp.json` | Language intelligence for a file type | By hand |
+| Slash command | `com.github.copilot/commands/` | Shortcuts people run by name | Not recommended yet |
+| Rules | `com.github.copilot/rules/` | Guidance that ships with an installed plugin | Not recommended yet |
 
 `lsp.json` is checked against the fields in the plugin reference:
 `lspServers`, a launch command, and `fileExtensions`. The reference's component
 table doesn't list extensions; this repository and the published GitHub Copilot
-Evals plugin both ship them in `com.github.copilot/extensions/`, and the
-installation tests load them from there.
+Evals plugin both ship them in `com.github.copilot/extensions/`.
+
+## Where each type works
+
+Skills and MCP servers are part of the Agent Plugins standard, so other
+compatible clients can use them too. Everything else is specific to Copilot,
+and support differs by host. In VS Code it also depends on the session's
+harness, which you pick with the **Session Target** control: the **Copilot**
+harness uses the same runtime as Copilot CLI and the GitHub Copilot app, and
+the **Local** harness is VS Code's own.
+
+| Type | Copilot CLI | VS Code, Copilot harness | VS Code, Local harness | GitHub Copilot app |
+|---|---|---|---|---|
+| Skill | Yes | Yes | Yes | Yes |
+| MCP server | Yes | Yes | Yes | Yes |
+| Custom agent | Yes | Yes | Yes | Not verified |
+| Hook, in this repository's Copilot CLI format | Yes | Yes | Loads, but receives VS Code's own event fields, so a CLI-format script won't find what it expects | Not verified |
+| Canvas extension | Not verified | Not verified; VS Code's plugin docs don't list extensions | Not verified | Yes, in the right side panel |
+| LSP server | Yes | Not verified | Not verified | Not verified |
+
+"Not verified" means the official docs this template checked don't say either
+way, so test it yourself before you rely on it. Sources: the
+[CLI plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference),
+the [hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference),
+VS Code's [agent plugins](https://code.visualstudio.com/docs/agent-customization/agent-plugins),
+[plugin reference](https://code.visualstudio.com/docs/agents/reference/agent-plugin-reference),
+[hooks](https://code.visualstudio.com/docs/agent-customization/hooks), and
+[harnesses](https://code.visualstudio.com/docs/agents/concepts/agent-harnesses)
+pages, and the Copilot app's
+[canvas extensions](https://docs.github.com/en/copilot/how-tos/github-copilot-app/working-with-canvas-extensions)
+page. A skill that drives a canvas should fall back to chat when the host can't
+show one.
 
 ## Rules and slash commands
 
@@ -70,8 +102,8 @@ anyone else's project.
 
 ## Add a plugin by hand
 
-`npm run new-plugin` does all of this for skills, agents, and MCP servers. To
-add another type, or to understand what it did:
+`npm run new-plugin` does all of this for skills, agents, MCP servers, hooks,
+and canvas extensions. To add another type, or to understand what it did:
 
 1. Create `plugins/<name>/` with `plugin.json`, `README.md`, `CHANGELOG.md` (with
    a `## <version>` heading), and `LICENSE`. The name is lowercase and
@@ -79,7 +111,7 @@ add another type, or to understand what it did:
 2. Add assets in the locations above. A skill's `name` matches its directory; an
    agent's `name` matches its file name. MCP servers go in a root `mcp.json` as
    local stdio servers using `${PLUGIN_ROOT}` paths. Hooks run as
-   `node "${PLUGIN_ROOT}/<script>"`.
+   `node "${PLUGIN_ROOT}/<script>"`; see [Hooks](hooks.md).
 3. Add an entry to the catalog with a relative `source`, the same `version` and
    `description` as `plugin.json`, and enable `<name>@<marketplace>` in the
    repository overlay.
@@ -98,6 +130,10 @@ add another type, or to understand what it did:
 7. Add evals under `evals/<name>/` (see [Evals](evals.md)) and focused tests
    under `test/` for code such as servers, hooks, and graders. If an eval needs
    a path, such as your server bundle, add it to `params` in `.vally.yaml`.
+   Name support files after the plugin so `npm run remove-plugin` removes them
+   with it: `evals/graders/<name>.mjs` or `<name>-*.mjs`, `evals/support/<name>-*`,
+   `evals/fixtures/<name>/`, and `test/<name>.test.mjs` or `test/<name>-*.test.mjs`.
+   A file named anything else stays behind when the plugin goes.
 8. Run `npm run verify`.
 
 For every release, change the version in `plugin.json`, the catalog, and the

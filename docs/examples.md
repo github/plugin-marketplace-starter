@@ -8,7 +8,8 @@ below too.
 Each example owns `plugins/<name>/`, `evals/<name>/`, and the extra files
 listed in its section. [scripts/examples.mjs](../scripts/examples.mjs) holds the
 same list, which `remove-example` and the example-only tests use. If you add a
-test, grader, fixture, or param for an example, add it there too.
+test, grader, fixture, or param for an example, add it there too. Removing the
+last example removes this page as well.
 
 The eval coverage for each example establishes its stated contract, not
 universal bug-report quality, review accuracy, or brainstorming creativity.
@@ -44,7 +45,7 @@ JSON files an agent edit touched. It has no skill.
 - **Also owns:** `evals/graders/format-json.mjs`, `test/hook.test.mjs`, and
   `test/grader-format-json.test.mjs`.
 - **Host checks:** edit JSON with single-file edits, multi-file edits, and
-  `apply_patch`. Confirm two-space formatting, a final newline, and changed-file
+  `apply_patch`. Confirm two-space formatting (or your `--indent`), a final newline, and changed-file
   reporting. Failed edits and unrelated files stay untouched, invalid JSON stays
   unchanged with a visible diagnostic, and already formatted JSON isn't
   rewritten.
@@ -66,8 +67,8 @@ extension: a shared, session-only board that a person and Copilot both edit.
   across turns, fall back to chat without a canvas, and don't trigger for
   arithmetic. The extension cases drive the real registered actions and session
   state through an MCP test transport.
-- **Also owns:** `evals/graders/brainstorm.mjs`, `evals/support/brainstorm-*.mjs`,
-  the `BRAINSTORM_HOST` param, and `test/board.test.mjs`,
+- **Also owns:** `evals/graders/brainstorm.mjs`, the `BRAINSTORM_EXTENSION`
+  param, and `test/board.test.mjs`,
   `test/board-ui.test.mjs`, `test/brainstorm-eval-host.test.mjs`,
   `test/extension.test.mjs`, and `test/grader-brainstorm.test.mjs`.
 - **Host checks:** open the canvas; add, edit, move, and delete notes from the
@@ -77,14 +78,16 @@ extension: a shared, session-only board that a person and Copilot both edit.
   input if the note is deleted. If you rename the canvas, update both its ID in
   the extension and the skill's reference to it.
 
-The extension evals use [a headless fixture](../evals/support/brainstorm-host.mjs)
-that serves MCP only as an evaluation transport. Three transport exports stand
-in for the host, while the actual extension, board logic, HTTP server, and
-lifecycle callbacks run unchanged. It starts with one synthetic note, keeps
-state only for that eval session, closes its servers when done, and never
-returns a localhost URL to the model. Only the canvas cases connect to it; the
-no-canvas case still checks the chat fallback. Neither the fixture nor the
-model-free tests prove native rendering in the Copilot App or VS Code.
+The extension evals use the shared
+[headless canvas host](../evals/support/canvas-host.mjs), which serves MCP only
+as an evaluation transport. Three transport exports stand in for the host,
+while the actual extension, board logic, HTTP server, and lifecycle callbacks
+run unchanged. The eval seeds one synthetic note, the host keeps state only for
+that eval session, closes its servers when done, and never returns a localhost
+URL to the model. Only the canvas cases connect to it; the no-canvas case still
+checks the chat fallback. Neither the host nor the model-free tests prove that
+any app renders the canvas; see
+[where each type works](customization-types.md#where-each-type-works).
 <!-- /plugin:team-brainstorm -->
 
 <!-- plugin:customization-authoring -->

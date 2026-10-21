@@ -7,7 +7,37 @@ Two workflows ship with the template.
 [validate.yml](../.github/workflows/validate.yml) runs `npm ci` and
 `npm run verify` on Linux, Windows, and macOS with Node.js 22 and 24 for every
 push and pull request. It never calls a model and needs only read access. On
-its own, it's enough to keep the marketplace consistent.
+its own, it's enough to keep the marketplace consistent. It runs nine jobs; to
+use fewer Actions minutes in a private repository, trim the matrix to the
+systems and Node.js versions your team uses. Model-free doesn't mean nothing
+runs: it installs dependencies and runs this repository's scripts and tests.
+
+## Personal accounts
+
+If the repository belongs to your personal account rather than an
+organization:
+
+- `validate.yml` works as it is, and it's all you need to keep the marketplace
+  consistent. It never calls a model.
+- To run behavioral evals in CI, set the repository variable `EVALS_RUNNER` to
+  `npm`. The default runner uses a private Action that only repositories in the
+  GitHub organization can use, so without this the eval job fails.
+- Copilot usage from the job's token is
+  [billed to your own Copilot plan](https://docs.github.com/en/copilot/concepts/agent-capabilities/agent-powered-workflows-and-operations/copilot-cli-in-github-actions).
+  Each plan includes a monthly allowance of AI credits; see
+  [Copilot plans](https://docs.github.com/en/copilot/get-started/plans) and
+  [billing for individuals](https://docs.github.com/en/copilot/concepts/billing-and-usage/individuals/billing).
+  Copilot Free and Copilot Student use automatic model selection only, so evals
+  that name `gpt-5.4-mini` may not run on those plans. That isn't verified.
+- Run `npm run eval:smoke` locally first to see what a run costs, then try a
+  manual run in CI before you turn on pull request runs.
+- Required reviewers on the `evals` environment work only in public
+  repositories on personal plans. In a private personal repository, leave
+  `ENABLE_EVALS` unset and run evals by hand. GitHub Free can't configure
+  environments for private repositories at all; this template hasn't verified
+  how a job that names one behaves there, so if the eval job fails on the
+  environment, delete the `environment: evals` lines from `evals.yml`. See
+  [deployment protection rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#required-reviewers).
 
 ## Behavioral evals
 
@@ -19,11 +49,20 @@ turn it on.
 
 1. Check the [requirements](#requirements) below.
 2. Pick a runner (see the next section). If you use the npm runner, create the
-   repository variable `EVALS_RUNNER` with the value `npm`.
-3. Try a manual run first: **Actions** > **Behavioral evals** > **Run
+   repository variable `EVALS_RUNNER` with the value `npm`. Any value other
+   than `action`, `npm`, or nothing fails the workflow instead of guessing.
+3. Decide who approves runs. Both eval jobs use an environment named `evals`,
+   which GitHub creates the first time a job uses it. To make a person approve
+   each run before it gets a token, add required reviewers to it in
+   **Settings** > **Environments** > **evals**. On GitHub Free, Pro, and Team
+   plans, required reviewers work only in public repositories; private
+   repositories need GitHub Enterprise. See
+   [deployment protection rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#required-reviewers),
+   and [Security](#security) for what this does and doesn't stop.
+4. Try a manual run first: **Actions** > **Behavioral evals** > **Run
    workflow**, and choose `smoke`. Manual runs work whether or not evals are
    turned on for pull requests.
-4. To run the `smoke` suite on pull requests, create the repository variable
+5. To run the `smoke` suite on pull requests, create the repository variable
    `ENABLE_EVALS` with the value `true`. Repository variables live in
    **Settings** > **Secrets and variables** > **Actions** > **Variables**.
 
@@ -119,8 +158,8 @@ repository variable `EVALS_UPLOAD_RESULTS` to `true`.
 ## Cost
 
 Each case runs at least one Copilot session with `gpt-5.4-mini`, and a retried
-case runs again. `npm run eval:check` prints how many cases each suite has; in
-the starter, `smoke` has 8 and `full` has 21. Copilot bills model usage in AI
+case runs again. `npm run eval:check` prints how many cases each suite has, and
+`npm run eval:list -- --suite smoke` lists them. Copilot bills model usage in AI
 credits based on the model and tokens used, so a case that delegates to an
 agent or edits files costs more than a one-turn chat case. When usage is billed
 to the organization, user-level Copilot budgets don't apply; use cost centers
@@ -131,8 +170,21 @@ After your first manual run, check the dashboard to learn what a run costs.
 ## Security
 
 Same-repository pull requests run their own versions of plugin hooks, MCP
-servers, graders, and scripts with the eval job's token. Before you turn on
-`ENABLE_EVALS`:
+servers, graders, and scripts with the eval job's token, which can make billed
+Copilot requests (and, for the Action runner, write pull request comments).
+Merge review doesn't protect this: the code runs when the pull request is
+opened or updated, before anyone reviews it. Fork pull requests never get these
+runs.
+
+Required reviewers on the `evals` environment add a check before each run:
+someone has to approve it, and a new push needs a new approval. That still has
+a gap. A pull request run uses the workflow file from the pull request's own
+branch, so someone who can push a branch here can edit `evals.yml` to drop the
+environment. Treat write access to this repository as the trust boundary. If
+that's not enough for your team, leave `ENABLE_EVALS` unset and run evals only
+by hand, from a reviewed branch.
+
+Before you turn on `ENABLE_EVALS`:
 
 - Protect the default branch with
   [branch protection or a ruleset](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)
@@ -141,8 +193,12 @@ servers, graders, and scripts with the eval job's token. Before you turn on
   for `.github/workflows/`, `scripts/`, `evals/`, `plugins/`, `marketplace.json`,
   and `.github/copilot/settings.json`, and require their review in the rule. A
   `CODEOWNERS` file alone doesn't enforce anything.
+- Add required reviewers to the `evals` environment, as described above.
 - Every action is pinned to a full commit SHA, and checkout doesn't persist
   credentials. Keep it that way.
+
+[Security and data handling](security.md#data-flow) lists what each runner
+writes, who can read it, and for how long.
 
 ## Turn evals off
 

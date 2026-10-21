@@ -18,8 +18,9 @@ data.
 
 ## What plugins can do
 
-Installing a plugin from this marketplace runs code on the installer's machine
-with their permissions:
+Installing a plugin registers it; it runs nothing yet. Once Copilot loads an
+installed, enabled plugin, its code can run on the installer's machine with
+their permissions, without asking each time:
 
 - **Hooks** run commands automatically on events such as every successful edit,
   and can change files, for example by reformatting them. A hook isn't a
@@ -31,10 +32,16 @@ with their permissions:
 - **Skills, agents, rules, and commands** shape what the model does, including
   which tools it calls.
 - **Remote plugins** come from another repository. This marketplace never enables
-  them automatically, and its checks never download or run them. Review them
-  yourself before installing.
+  them automatically, and its checks never download or run them. Each one is
+  pinned to a commit, which names what was reviewed but doesn't make it safe.
+  Review them yourself before installing.
+
+Opening a trusted checkout of this repository enables every local plugin in it,
+the same as installing them all.
 
 Review a plugin before you trust it, and install only what you need.
+[Security and data handling](docs/security.md) describes what runs when, where
+data goes, and a review checklist for new plugins.
 
 ## Maintaining this marketplace
 
@@ -43,4 +50,7 @@ Review a plugin before you trust it, and install only what you need.
   pull requests can run changed code in the eval workflow with its token.
 - Require review from code owners through branch protection or a ruleset.
 - Pin actions to full commit SHAs and remote plugins to full commit SHAs.
+  `npm run verify` rejects a remote plugin without one.
+- Add required reviewers to the `evals` environment before you turn on pull
+  request evals. See [Continuous integration](docs/ci.md#security).
 - Keep secrets out of files, fixtures, eval specs, and transcripts.
