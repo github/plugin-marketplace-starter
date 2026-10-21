@@ -3,6 +3,19 @@
 A shared-runtime `postToolUse` hook that formats JSON files after successful
 agent edits. There is no skill to invoke.
 
+## Install
+
+```sh
+copilot plugin marketplace add OWNER/REPO
+copilot plugin install format-json@MARKETPLACE
+```
+
+In this starter, `OWNER/REPO` is `github/plugin-marketplace-starter` and
+`MARKETPLACE` is `plugin-marketplace-starter`. Both change when you create
+your own repository with **Use this template**; see
+[Make it yours](../../README.md#make-it-yours) and
+[Install the examples](../../README.md#install-the-examples) for VS Code.
+
 ## How it works
 
 The hook reads `toolName`, `toolArgs`, `toolResult.resultType`, and `cwd` from

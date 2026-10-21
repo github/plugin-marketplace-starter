@@ -1,0 +1,59 @@
+name: New plugin
+description: Propose a plugin for this marketplace before building it.
+title: "New plugin: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Agreeing on scope and risk first saves rework. See CONTRIBUTING.md for what a complete plugin includes.
+  - type: input
+    id: name
+    attributes:
+      label: Plugin name
+      description: Lowercase letters, digits, and hyphens.
+      placeholder: release-notes
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow
+      description: What task does it help with, and who uses it? Give a realistic request someone would type.
+    validations:
+      required: true
+  - type: checkboxes
+    id: components
+    attributes:
+      label: Components
+      description: Pick everything the plugin will ship.
+      options:
+        - label: Skill
+        - label: Custom agent
+        - label: MCP server
+        - label: Hook
+        - label: Slash command
+        - label: Rules
+        - label: LSP server
+        - label: Canvas or SDK extension
+        - label: Remote reference to a plugin in another repository
+  - type: textarea
+    id: risk
+    attributes:
+      label: Permissions and risk
+      description: What can it run, read, write, or reach over the network? Does it need credentials? Hooks and MCP servers run code on every installer's machine.
+    validations:
+      required: true
+  - type: textarea
+    id: evals
+    attributes:
+      label: How we'll know it works
+      description: Describe a positive eval case and a request that must not trigger it.
+    validations:
+      required: true
+  - type: input
+    id: owner
+    attributes:
+      label: Owner
+      description: Who will maintain it?
+    validations:
+      required: true

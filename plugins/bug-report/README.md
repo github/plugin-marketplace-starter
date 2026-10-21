@@ -4,6 +4,19 @@ One portable skill and two Markdown templates. No hooks, scripts, or SDK extensi
 Ask Copilot to turn rough notes into a bug report. It chooses a UI or CLI template,
 asks for essential missing details, and drafts the report in chat.
 
+## Install
+
+```sh
+copilot plugin marketplace add OWNER/REPO
+copilot plugin install bug-report@MARKETPLACE
+```
+
+In this starter, `OWNER/REPO` is `github/plugin-marketplace-starter` and
+`MARKETPLACE` is `plugin-marketplace-starter`. Both change when you create
+your own repository with **Use this template**; see
+[Make it yours](../../README.md#make-it-yours) and
+[Install the examples](../../README.md#install-the-examples) for VS Code.
+
 ## What this teaches
 
 - **Discovery:** the description names the reporting task and excludes debugging.

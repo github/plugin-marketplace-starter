@@ -7,7 +7,9 @@ keep their evals alongside the source.
 
 The starter contains six self-contained example plugins and an optional remote
 reference to GitHub Copilot Evals. Together they show five skills, a custom
-agent, a hook, a canvas extension, and a local MCP server. Installed examples
+agent, a hook, a canvas extension, and a local MCP server.
+[Customization types](#customization-types-and-where-they-live) covers those
+plus slash commands, rules, LSP servers, and how instruction files fit in. Installed examples
 need no dependency installation. Contributor-only tooling provides model-free
 checks, behavioral evals for every local asset, and a GitHub Actions eval
 workflow built on the [Evals Action](https://github.com/github/evals-action).
@@ -41,8 +43,18 @@ workflow built on the [Evals Action](https://github.com/github/evals-action).
    companion skill's reference to it. If you rename the reviewer agent, update
    the review skill that delegates to it.
 5. Review the copyright notices in [LICENSE](LICENSE) and each plugin's `LICENSE`.
-6. Run `npm ci` and `npm run verify`, then push your changes.
-7. Test installation from your new GitHub repository before sharing it.
+6. Replace the placeholders meant for you before you ship:
+   - Set real owners in [.github/CODEOWNERS](.github/CODEOWNERS).
+   - Add your reporting channel to [SECURITY.md](SECURITY.md).
+   - Adjust [CONTRIBUTING.md](CONTRIBUTING.md), the
+     [pull request template](.github/PULL_REQUEST_TEMPLATE.md), and the
+     [new plugin issue form](.github/ISSUE_TEMPLATE/new-plugin.yml) to your process.
+   - Update [.github/copilot-instructions.md](.github/copilot-instructions.md) and
+     [AGENTS.md](AGENTS.md) if your maintenance rules differ.
+7. Run `npm ci` and `npm run verify`, then push your changes.
+8. Turn on branch protection or a ruleset for your default branch (see
+   [Continuous integration](#continuous-integration)), and test installation from
+   your new GitHub repository before sharing it.
 
 For agent-assisted setup and maintenance, see [AGENTS.md](AGENTS.md). It links
 the plugin and marketplace specifications and adds agent-specific rules.
@@ -247,15 +259,78 @@ schemas/                   # Vendored Agent Plugins schemas (Apache-2.0)
 scripts/                   # Validation, build, eval launcher, and reporting
 test/                      # Model-free behavior, protocol, and contract tests
 evals/                     # Model-backed specs, synthetic fixtures, and graders
-.vally.yaml                # smoke and full evaluation suites
+.vally.yaml                # Skill paths, eval file names, params, and suites
 .github/copilot/           # Enables this checkout's marketplace in Copilot
 .github/workflows/         # Automatic validation and Evals Action workflow
+.github/copilot-instructions.md  # Repository instructions for this checkout
+.github/CODEOWNERS, PULL_REQUEST_TEMPLATE.md, ISSUE_TEMPLATE/
+AGENTS.md, CONTRIBUTING.md, SECURITY.md
 ```
 
-Each plugin also has a README and changelog, and the three newer examples carry
-their own `LICENSE`. Agent Plugins 1.0 discovers portable skills from `skills/`
-and MCP servers from a root `mcp.json`. Copilot-specific hooks, agents, and SDK
-extensions belong in `com.github.copilot/`.
+Each plugin also has a README, changelog, and MIT `LICENSE`.
+
+## Customization types and where they live
+
+A plugin can ship any mix of these. Agent Plugins 1.0 standardizes skills and
+MCP servers, so other compatible clients can use them. Everything else is
+specific to Copilot and lives under `com.github.copilot/`, which other clients
+ignore. The [Copilot CLI plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference#components)
+lists the official locations.
+
+| Type | Location in a plugin | Works in | Use it for | Example |
+|---|---|---|---|---|
+| Skill | `skills/<name>/SKILL.md`, plus optional `templates/` or `references/` | Agent Plugins clients | Procedures and domain knowledge the model loads when a task needs them | [bug-report](plugins/bug-report/) |
+| MCP server | `mcp.json` at the plugin root | Agent Plugins clients | Tools backed by code, such as validation or lookups | [json-configuration](plugins/json-configuration/) |
+| Custom agent | `com.github.copilot/agents/<name>.agent.md` | Copilot | A specialist with its own instructions and tool list | [code-review](plugins/code-review/) |
+| Hook | `com.github.copilot/hooks/hooks.json` | Copilot | Deterministic commands on events like `postToolUse` | [format-json](plugins/format-json/) |
+| Slash command | `com.github.copilot/commands/` | Copilot | Shortcuts people run by name | None yet |
+| Rules | `com.github.copilot/rules/` | Copilot | Guidance that ships with an installed plugin | None yet |
+| LSP server | `com.github.copilot/lsp.json` | Copilot CLI | Language intelligence for a file type | None yet |
+| Canvas or SDK extension | `com.github.copilot/extensions/<name>/extension.mjs` | Copilot hosts with SDK extension support | Interactive panels and actions | [team-brainstorm](plugins/team-brainstorm/) |
+
+The plugin reference names the commands and rules directories but doesn't
+document a file format for them, so check the current reference before adding
+one. `npm run verify` only checks that those files aren't empty. `lsp.json` is
+checked against the LSP fields in the reference: `lspServers`, a launch
+command, and `fileExtensions`. The reference's component table doesn't list
+extensions; this repository and the published GitHub Copilot Evals plugin both
+ship them in `com.github.copilot/extensions/`, and the installation tests load
+them from there.
+
+### Instruction files and prompt files
+
+Instruction and prompt files belong to a repository, not to a plugin. Copilot
+reads them from the project you're working in:
+
+- `.github/copilot-instructions.md` for repository-wide instructions.
+- `.github/instructions/**/*.instructions.md`, each with an `applyTo` glob in its
+  frontmatter, for instructions that apply only to matching files.
+- `AGENTS.md` (Copilot CLI also reads `CLAUDE.md` and `GEMINI.md`) for agent
+  instructions in a directory.
+- `.github/prompts/*.prompt.md` for reusable prompts in VS Code.
+
+See [adding custom instructions](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions)
+and [VS Code prompt files](https://code.visualstudio.com/docs/copilot/customization/prompt-files).
+
+This repository's own [AGENTS.md](AGENTS.md) and
+[.github/copilot-instructions.md](.github/copilot-instructions.md) guide agents
+that maintain this marketplace. Installing a plugin from it doesn't copy them
+into anyone else's project.
+
+To share guidance across repositories through the marketplace:
+
+- Put coding standards and procedures in a skill. Keep `SKILL.md` short and move
+  detail into `references/` files the skill loads when it needs them, like
+  [skill-authoring](plugins/customization-authoring/skills/skill-authoring/).
+- Use a custom agent when the guidance comes with a role and a restricted tool
+  list, like the read-only reviewer in [code-review](plugins/code-review/).
+- Use plugin rules for Copilot-only guidance that should ship with an installed
+  plugin.
+- If a team still needs a real instruction file in each repository, ship a skill
+  that writes or updates it, or keep it in a repository template. A plugin can't
+  place files in a consuming repository by itself.
+- Prefer a skill over a prompt file or slash command that repeats it. Skills
+  load when they're relevant, in any client that supports Agent Skills.
 
 ## Add a plugin
 
@@ -266,6 +341,8 @@ extensions belong in `com.github.copilot/`.
    Skills go in `skills/<name>/SKILL.md` with a matching `name`. Agents go in
    `com.github.copilot/agents/<name>.agent.md` with a matching `name`. MCP servers
    go in a root `mcp.json` as local stdio servers using `${PLUGIN_ROOT}` paths.
+   See [Customization types](#customization-types-and-where-they-live) for hooks,
+   commands, rules, LSP servers, and extensions.
 3. Add a relative source entry to the catalog and enable it in the repository
    settings. If it has skills, add its `skills` directory to `paths.skills` in
    [.vally.yaml](.vally.yaml) so Vally lints them.
@@ -519,6 +596,14 @@ Before enabling the workflow, check these requirements:
   repository, the owner's Copilot seat. Opening or updating a pull request can
   start a paid run.
 - The Action supports Linux x64 GitHub-hosted runners only.
+- Same-repository pull requests run their own versions of plugin hooks, MCP
+  servers, graders, and scripts with this job's token. Protect the default branch
+  with [branch protection or a ruleset](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)
+  that requires review and the `Validate marketplace` checks. Set
+  [code owners](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
+  for `.github/workflows/`, `scripts/`, `evals/`, `plugins/`, `marketplace.json`,
+  and `.github/copilot/settings.json`, and require their review in the rule.
+  A `CODEOWNERS` file alone doesn't enforce anything.
 
 See the [Copilot CLI in Actions guidance](https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli-in-actions)
 and [Vally's CI guide](https://microsoft.github.io/vally/get-started/add-to-ci/).
@@ -562,9 +647,9 @@ versions your team deploys.
 
 ## Licensing
 
-The starter is [MIT licensed](LICENSE). The `customization-authoring`,
-`code-review`, and `json-configuration` plugins each carry their own MIT
-`LICENSE`. The vendored Agent Plugins schemas keep their Apache-2.0
+The starter is [MIT licensed](LICENSE). Each plugin carries its own MIT
+`LICENSE` so it stays licensed when installed or copied on its own. The
+vendored Agent Plugins schemas keep their Apache-2.0
 [license](schemas/LICENSE-APACHE-2.0.txt) and [notice](schemas/NOTICE). Bundled
 dependencies keep their notices beside the generated files.
 

@@ -9,6 +9,19 @@ The agent also works on its own.
 | `adversarial-review` skill | [SKILL.md](skills/adversarial-review/SKILL.md) | Asking for an adversarial or defect-focused review of code, a diff, or a plan |
 | `code-reviewer` agent | [code-reviewer.agent.md](com.github.copilot/agents/code-reviewer.agent.md) | Delegating a read-only specialist pass directly |
 
+## Install
+
+```sh
+copilot plugin marketplace add OWNER/REPO
+copilot plugin install code-review@MARKETPLACE
+```
+
+In this starter, `OWNER/REPO` is `github/plugin-marketplace-starter` and
+`MARKETPLACE` is `plugin-marketplace-starter`. Both change when you create
+your own repository with **Use this template**; see
+[Make it yours](../../README.md#make-it-yours) and
+[Install the examples](../../README.md#install-the-examples) for VS Code.
+
 ## What this teaches
 
 - **Skill plus agent:** a skill can delegate to a bundled agent by its advertised

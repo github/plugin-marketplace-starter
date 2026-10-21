@@ -1,6 +1,6 @@
 # Maintaining this marketplace
 
-Follow [README.md](README.md) for team setup, package layout, installation,
+Follow [README.md](README.md) and [CONTRIBUTING.md](CONTRIBUTING.md) for team setup, package layout, installation,
 versioning, validation, evals, CI, and host checks. Update those instructions in
 place; don't duplicate them here.
 
@@ -14,8 +14,17 @@ place; don't duplicate them here.
   Live-repository tests check invariants, not a fixed plugin list; put
   example-specific assertions in tests that skip when the example is gone.
 - Use the Agent Plugins 1.0 layout: root `plugin.json`, `skills/`, and `mcp.json`.
-  Copilot agents, hooks, and SDK extensions live under `com.github.copilot/`.
+  Copilot agents (`agents/`), slash commands (`commands/`), rules (`rules/`),
+  hooks (`hooks/hooks.json`), LSP servers (`lsp.json`), and SDK extensions
+  (`extensions/`) live under `com.github.copilot/`. Check the
+  [plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference#components)
+  before adding a component type the examples don't show, and don't invent
+  file formats it doesn't document.
   Don't adopt legacy `.plugin/` or `.claude-plugin/` layouts from documentation.
+- Instruction files (`.github/copilot-instructions.md`, `*.instructions.md`,
+  `AGENTS.md`) and prompt files apply only to the repository they're in. To
+  share guidance through the marketplace, package it as a skill, agent, or
+  plugin rules, as the README's customization types section explains.
 - Don't add a UI framework or database. Never vendor the runtime SDK. The only
   build step regenerates committed artifacts (the MCP server bundle, the
   authoring grader, and their notices). Run `npm run build` after changing their

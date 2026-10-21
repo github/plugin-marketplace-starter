@@ -8,6 +8,19 @@ servers, or runtime dependencies.
 |---|---|
 | `skill-authoring` | Creating or improving a reusable skill together with its evals |
 
+## Install
+
+```sh
+copilot plugin marketplace add OWNER/REPO
+copilot plugin install customization-authoring@MARKETPLACE
+```
+
+In this starter, `OWNER/REPO` is `github/plugin-marketplace-starter` and
+`MARKETPLACE` is `plugin-marketplace-starter`. Both change when you create
+your own repository with **Use this template**; see
+[Make it yours](../../README.md#make-it-yours) and
+[Install the examples](../../README.md#install-the-examples) for VS Code.
+
 ## What this teaches
 
 - **Discovery:** the description names the authoring task and excludes ordinary

@@ -6,6 +6,19 @@ A shared, session-only brainstorm board for a person and Copilot.
 |---|---|
 | `team-brainstorm` | Exploring ideas, comparing options, or collecting questions and next steps |
 
+## Install
+
+```sh
+copilot plugin marketplace add OWNER/REPO
+copilot plugin install team-brainstorm@MARKETPLACE
+```
+
+In this starter, `OWNER/REPO` is `github/plugin-marketplace-starter` and
+`MARKETPLACE` is `plugin-marketplace-starter`. Both change when you create
+your own repository with **Use this template**; see
+[Make it yours](../../README.md#make-it-yours) and
+[Install the examples](../../README.md#install-the-examples) for VS Code.
+
 ## How it works
 
 The skill opens `marketplace-starter-brainstorm`. The human edits notes in the

@@ -9,6 +9,19 @@ looking up values by JSON Pointer.
 | `validate_json` tool | Checking syntax and reporting the JSON type or `INVALID_JSON` |
 | `get_json_value` tool | Reading a value by RFC 6901 JSON Pointer, with `NOT_FOUND` and `INVALID_POINTER` errors |
 
+## Install
+
+```sh
+copilot plugin marketplace add OWNER/REPO
+copilot plugin install json-configuration@MARKETPLACE
+```
+
+In this starter, `OWNER/REPO` is `github/plugin-marketplace-starter` and
+`MARKETPLACE` is `plugin-marketplace-starter`. Both change when you create
+your own repository with **Use this template**; see
+[Make it yours](../../README.md#make-it-yours) and
+[Install the examples](../../README.md#install-the-examples) for VS Code.
+
 ## How it works
 
 [mcp.json](mcp.json) starts `node ${PLUGIN_ROOT}/dist/server.mjs` over stdio.

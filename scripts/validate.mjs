@@ -36,6 +36,20 @@ export function markdownLinks(text) {
     .filter((link) => !/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(link));
 }
 
+// Shape from the Copilot CLI plugin reference's LSP server configuration.
+export function validateLspConfig(config, label) {
+  const servers = Object.entries(config?.lspServers ?? {});
+  assert.ok(config && typeof config.lspServers === "object" && !Array.isArray(config.lspServers) && servers.length,
+    `${label}: lsp.json needs an lspServers object with at least one server.`);
+  for (const [name, server] of servers) {
+    assert.ok(["command", "bash", "powershell"].some((key) => typeof server?.[key] === "string" && server[key].trim()),
+      `${label}/${name}: set command, bash, or powershell.`);
+    assert.ok(server.fileExtensions && typeof server.fileExtensions === "object" && Object.keys(server.fileExtensions).length,
+      `${label}/${name}: map at least one file extension to a language ID.`);
+  }
+  return servers.length;
+}
+
 export async function validateMcpConfig(directory, label) {
   const config = await json(resolve(directory, "mcp.json"));
   assert.ok(validateMcp(config), `${label}: ${ajv.errorsText(validateMcp.errors)}`);
@@ -77,7 +91,7 @@ export async function validateVallySkillPaths(directory, localPlugins) {
 export async function validateRepository(directory = root) {
   const { catalog, localPlugins, remotePlugins } = await readCatalog(directory);
   const names = new Set();
-  const counts = { plugins: 0, skills: 0, agents: 0, hooks: 0, mcpServers: 0 };
+  const counts = { plugins: 0, skills: 0, agents: 0, hooks: 0, mcpServers: 0, commands: 0, rules: 0, lspServers: 0 };
   for (const entry of localPlugins) {
     names.add(entry.name);
     const source = await contained(resolve(directory, "plugins"), entry.source.slice("./plugins/".length));
@@ -138,6 +152,19 @@ export async function validateRepository(directory = root) {
         assets++;
       }
       if (/^com\.github\.copilot\/extensions\/[^/]+\/extension\.mjs$/.test(path)) assets++;
+      // Slash commands and rules: Copilot documents their directories but not a
+      // file format, so check only that each shipped file has content.
+      const component = path.match(/^com\.github\.copilot\/(commands|rules)\/(?:.+\/)?[^/.][^/]*$/)?.[1];
+      if (component) {
+        assert.ok((await readFile(file, "utf8")).trim(), `${entry.name}: ${path} is empty.`);
+        counts[component]++;
+        assets++;
+      }
+      if (path.endsWith("lsp.json")) {
+        assert.equal(path, "com.github.copilot/lsp.json", `${entry.name}: put LSP servers in com.github.copilot/lsp.json.`);
+        counts.lspServers += validateLspConfig(await json(file), entry.name);
+        assets++;
+      }
     }
     assert.ok(assets, `${entry.name}: plugin has no supported assets.`);
     counts.plugins++;
@@ -173,8 +200,9 @@ export async function validateRepository(directory = root) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const counts = await validateRepository();
   const count = (number, noun) => `${number} ${noun}${number === 1 ? "" : "s"}`;
-  console.log(`Validated ${count(counts.plugins, "local plugin")}: ${count(counts.skills, "skill")}, ${count(counts.agents, "agent")}, `
-    + `${count(counts.hooks, "hook event")}, and ${count(counts.mcpServers, "MCP server")}.`);
+  const parts = [count(counts.skills, "skill"), count(counts.agents, "agent"), count(counts.hooks, "hook event"), count(counts.mcpServers, "MCP server")];
+  for (const [key, noun] of [["commands", "command file"], ["rules", "rule file"], ["lspServers", "LSP server"]]) if (counts[key]) parts.push(count(counts[key], noun));
+  console.log(`Validated ${count(counts.plugins, "local plugin")}: ${parts.slice(0, -1).join(", ")}, and ${parts.at(-1)}.`);
   console.log(`Validated ${count(counts.remotePlugins, "remote reference")} as metadata only; no upstream code was fetched or run.`);
   for (const warning of counts.warnings) console.warn(`Warning: ${warning}`);
 }

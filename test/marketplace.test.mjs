@@ -268,3 +268,45 @@ test("hooks may use any documented event and pass arguments to their plugin scri
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("plugins can ship only Copilot slash commands, rules, or LSP servers", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-components-"));
+  const plugin = join(directory, "plugins/standards");
+  const component = join(plugin, "com.github.copilot");
+  try {
+    await mkdir(join(component, "rules"), { recursive: true });
+    await writeFile(join(plugin, "plugin.json"), JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "standards", version: "1.0.0", description: "Standards fixture.",
+    }));
+    await writeFile(join(plugin, "README.md"), "# Standards\n");
+    await writeFile(join(plugin, "CHANGELOG.md"), "# Changelog\n\n## 1.0.0\n");
+    await writeFile(join(directory, "marketplace.json"), JSON.stringify({ name: "components-fixture", owner: { name: "Test" },
+      plugins: [{ name: "standards", source: "./plugins/standards", version: "1.0.0", description: "Standards fixture." }] }));
+    await mkdir(join(directory, ".github/copilot"), { recursive: true });
+    await writeFile(join(directory, ".github/copilot/settings.json"), JSON.stringify({
+      extraKnownMarketplaces: { "components-fixture": { source: { source: "directory", path: "." } } },
+      enabledPlugins: { "standards@components-fixture": true },
+    }));
+    await writeFile(join(directory, ".vally.yaml"), "paths:\n  skills: []\n");
+    await assert.rejects(validateRepository(directory), /no supported assets/);
+    await writeFile(join(component, "rules/typescript.md"), "Prefer explicit return types on exported functions.\n");
+    assert.equal((await validateRepository(directory)).rules, 1);
+    await writeFile(join(component, "rules/empty.md"), "  \n");
+    await assert.rejects(validateRepository(directory), /rules\/empty\.md is empty/);
+    await rm(join(component, "rules"), { recursive: true });
+    await mkdir(join(component, "commands"), { recursive: true });
+    await writeFile(join(component, "commands/release.md"), "Draft release notes for the current branch.\n");
+    assert.equal((await validateRepository(directory)).commands, 1);
+    await rm(join(component, "commands"), { recursive: true });
+    const lsp = { lspServers: { yaml: { command: "yaml-language-server", args: ["--stdio"], fileExtensions: { ".yaml": "yaml" } } } };
+    await writeFile(join(component, "lsp.json"), JSON.stringify(lsp));
+    assert.equal((await validateRepository(directory)).lspServers, 1);
+    await writeFile(join(component, "lsp.json"), JSON.stringify({ lspServers: { yaml: { command: "yaml-language-server" } } }));
+    await assert.rejects(validateRepository(directory), /file extension/);
+    await rm(join(component, "lsp.json"));
+    await writeFile(join(plugin, "lsp.json"), JSON.stringify(lsp));
+    await assert.rejects(validateRepository(directory), /com\.github\.copilot\/lsp\.json/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
