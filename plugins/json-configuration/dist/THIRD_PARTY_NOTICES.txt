@@ -1,4 +1,4 @@
-Third-party licenses for the bundled JSON configuration MCP server.
+Third-party licenses for the bundled json-configuration MCP server.
 
 ========================================================================
 @modelcontextprotocol/sdk@1.32.1 (MIT)

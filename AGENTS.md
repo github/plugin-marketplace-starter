@@ -9,6 +9,10 @@ place; don't duplicate them here.
 - Group plugins by workflow, not by asset type. Keep every in-repo example
   self-contained and independently installable, without external services.
   Remote catalog references are separate from the local examples.
+- Keep `.vally.yaml` in step with the plugins: `paths.skills` lists every
+  plugin's `skills` directory, and path `params` point at files that exist.
+  Live-repository tests check invariants, not a fixed plugin list; put
+  example-specific assertions in tests that skip when the example is gone.
 - Use the Agent Plugins 1.0 layout: root `plugin.json`, `skills/`, and `mcp.json`.
   Copilot agents, hooks, and SDK extensions live under `com.github.copilot/`.
   Don't adopt legacy `.plugin/` or `.claude-plugin/` layouts from documentation.

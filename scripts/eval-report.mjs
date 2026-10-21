@@ -1,7 +1,8 @@
 import { appendFile, readFile, readdir } from "node:fs/promises";
-import { resolve } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
+import { readVallyConfig } from "./catalog.mjs";
 import { root, readEvals } from "./validate-evals.mjs";
 
 const hasGraderError = (grade) => grade?.status === "error" || (grade?.details ?? []).some(hasGraderError);
@@ -54,9 +55,45 @@ export function render(summary, path) {
   ].join("\n");
 }
 
+const list = (value) => value === undefined ? [] : Array.isArray(value) ? value : [value];
+const globRegExp = (glob) => new RegExp(`^${glob.replace(/[.+^$|()[\]{}]/g, "\\$&").replaceAll("**/", "\u0000").replaceAll("*", "[^/]*").replaceAll("\u0000", "(?:.*/)?")}$`);
+
+// Selects the cases a saved run should contain, using the same suite
+// definitions and eval file names as .vally.yaml.
+export function expectedCases(specs, config, { suite, evalSpecs, directory = root } = {}) {
+  let selected = specs;
+  if (evalSpecs?.length) {
+    const wanted = evalSpecs.map((path) => resolve(directory, path));
+    for (const path of wanted) if (!specs.some((item) => item.path === path)) throw new Error(`No eval spec at ${path}.`);
+    selected = specs.filter((item) => wanted.includes(item.path));
+  }
+  const name = suite ?? (evalSpecs?.length ? undefined : "full");
+  let filter = {};
+  if (name) {
+    const definition = config?.suites?.[name];
+    if (!definition) throw new Error(`Unknown suite ${name}. Configured suites: ${Object.keys(config?.suites ?? {}).join(", ") || "none"}.`);
+    filter = definition.filter ?? {};
+    if (definition.evals) {
+      const globs = list(definition.evals).map(globRegExp);
+      selected = selected.filter((item) => globs.some((glob) => glob.test(relative(directory, item.path).split(sep).join("/"))));
+    }
+  }
+  const expected = new Set();
+  for (const { spec } of selected) {
+    for (const stimulus of spec.stimuli) {
+      if (!Object.entries(filter).every(([key, value]) => list(value).some((item) => list(stimulus.tags?.[key]).includes(item)))) continue;
+      if (expected.has(stimulus.name)) throw new Error(`Duplicate case: ${stimulus.name}`);
+      expected.add(stimulus.name);
+    }
+  }
+  if (!expected.size) throw new Error("The selected suite or eval specs contain no cases.");
+  return expected;
+}
+
 async function main() {
-  const { values } = parseArgs({ options: { suite: { type: "string", default: "full" }, "run-dir": { type: "string" } } });
-  if (!["smoke", "full"].includes(values.suite)) throw new Error("Use --suite smoke or --suite full.");
+  const { values } = parseArgs({ options: {
+    suite: { type: "string" }, "eval-spec": { type: "string", multiple: true }, "run-dir": { type: "string" },
+  } });
   let directory = values["run-dir"];
   if (!directory) {
     const base = resolve(root, "vally-results");
@@ -64,16 +101,8 @@ async function main() {
     if (!runs.length) throw new Error("No saved eval runs.");
     directory = resolve(base, runs.at(-1));
   }
-  const expected = new Set();
-  for (const { spec } of await readEvals()) {
-    for (const stimulus of spec.stimuli) {
-      const suites = Array.isArray(stimulus.tags?.suite) ? stimulus.tags.suite : [stimulus.tags?.suite];
-      if (values.suite === "full" || suites.includes("smoke")) {
-        if (expected.has(stimulus.name)) throw new Error(`Duplicate case: ${stimulus.name}`);
-        expected.add(stimulus.name);
-      }
-    }
-  }
+  const config = await readVallyConfig(root);
+  const expected = expectedCases(await readEvals(root, config), config, { suite: values.suite, evalSpecs: values["eval-spec"] });
   const text = await readFile(resolve(directory, "results.jsonl"), "utf8");
   const records = text.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line));
   const summary = summarize(records, expected);

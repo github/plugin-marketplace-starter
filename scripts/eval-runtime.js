@@ -6,7 +6,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // Defaults resolve from this checkout so hosted runners only need COPILOT_CLI_PATH pointing here.
 const root = fileURLToPath(new URL("../", import.meta.url));
 export const defaultRuntime = resolve(root, "node_modules/@github/copilot/npm-loader.js");
-export const defaultFormatPlugin = resolve(root, "plugins/format-json");
 
 function absolute(value, fallback, name) {
   const path = value ?? fallback;
@@ -14,11 +13,18 @@ function absolute(value, fallback, name) {
   return path;
 }
 
+// STARTER_PLUGIN_DIRS is a comma-separated list of plugin directories to mount
+// with --plugin-dir, relative to the repository root or absolute. Evals set it in
+// agent_environment.env so hook plugins load without a global installation.
+// Commas, not the OS path delimiter, keep one eval file valid on every platform.
+export function pluginDirectories(env = process.env) {
+  return (env.STARTER_PLUGIN_DIRS ?? "").split(",").map((value) => value.trim()).filter(Boolean)
+    .map((value) => isAbsolute(value) ? value : resolve(root, value));
+}
+
 export function runtimeArguments(args, env = process.env) {
   const flags = ["--disable-builtin-mcps", "--no-ask-user"];
-  if (env.STARTER_ENABLE_FORMAT_HOOK === "1") {
-    flags.push("--plugin-dir", absolute(env.STARTER_FORMAT_PLUGIN, defaultFormatPlugin, "STARTER_FORMAT_PLUGIN"));
-  }
+  for (const directory of pluginDirectories(env)) flags.push("--plugin-dir", directory);
   return [...flags, ...args];
 }
 

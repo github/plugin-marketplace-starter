@@ -31,9 +31,12 @@ workflow built on the [Evals Action](https://github.com/github/evals-action).
    name and plugin keys in [.github/copilot/settings.json](.github/copilot/settings.json).
 3. Keep, rename, or delete the local examples. Update each plugin's manifest, catalog
    entry, any skill or agent metadata, README, changelog, evals, and repository
-   settings together. Review the optional remote plugin separately; remove its
-   catalog entry if your team doesn't have upstream access. The repository
-   overlay never enables remote plugins.
+   settings together. Also update [.vally.yaml](.vally.yaml): `paths.skills` lists
+   every plugin's `skills` directory, and `params` holds the paths evals use, such
+   as an MCP server bundle. `npm run verify` names any stale entry. Review the
+   optional remote plugin separately; remove its catalog entry if your team
+   doesn't have upstream access. The repository overlay never enables remote
+   plugins.
 4. If you rename the canvas, update both its ID in the extension and the
    companion skill's reference to it. If you rename the reviewer agent, update
    the review skill that delegates to it.
@@ -263,19 +266,29 @@ extensions belong in `com.github.copilot/`.
    Skills go in `skills/<name>/SKILL.md` with a matching `name`. Agents go in
    `com.github.copilot/agents/<name>.agent.md` with a matching `name`. MCP servers
    go in a root `mcp.json` as local stdio servers using `${PLUGIN_ROOT}` paths.
-3. Add a relative source entry to the catalog and enable it in the repository settings.
+3. Add a relative source entry to the catalog and enable it in the repository
+   settings. If it has skills, add its `skills` directory to `paths.skills` in
+   [.vally.yaml](.vally.yaml) so Vally lints them.
 4. Keep the plugin self-contained. Never import a sibling plugin or root
-   development dependency at runtime. If a server needs dependencies, bundle them
-   inside the plugin and add the bundle to [scripts/build.mjs](scripts/build.mjs).
-5. Add evals under `evals/<name>/` (see below), focused tests under `test/`, and a
-   short README explaining prerequisites and risks.
-6. Change its version in the manifest, catalog, and changelog for every release.
-7. Run `npm run build` if you changed generated files, then `npm run verify`.
+   development dependency at runtime. If an MCP server needs dependencies, write
+   it as `src/server.ts` in the plugin. [scripts/build.mjs](scripts/build.mjs)
+   finds every `plugins/*/src/server.ts` and bundles it into `dist/server.mjs` with
+   its license notices; eval graders in `evals/graders/src/` are bundled the same way.
+5. In-repo MCP servers must start offline, without credentials, network access,
+   or a database. `npm run verify` launches each one to read its real tool list
+   for eval coverage. Put anything that needs a secret behind a tool call, not
+   server startup.
+6. Add evals under `evals/<name>/` (see below), focused tests under `test/`, and a
+   short README explaining prerequisites and risks. If an eval needs a path, such
+   as your server bundle, add it to `params` in `.vally.yaml`.
+7. Change its version in the manifest, catalog, and changelog for every release.
+8. Run `npm run build` if you changed generated files, then `npm run verify`.
 
 The root catalog lists both local examples and optional remote references.
 Deleting a local example also means removing its catalog entry, repository
-enablement, tests, and evals. Remote references stay opt-in and aren't subject to
-local asset coverage checks.
+enablement, `.vally.yaml` skill path and params, tests, and evals. Example-only
+tests skip when their example is gone; the rest check whatever plugins you have.
+Remote references stay opt-in and aren't subject to local asset coverage checks.
 
 To reference a plugin that lives in another repository, add a GitHub source
 object like the `github-copilot` entry. Its catalog `name` must match the `name`
@@ -296,6 +309,7 @@ model-backed evals without installing runtime dependencies into plugins.
 npm ci
 npm run verify
 npm run eval:smoke
+npm run eval:report -- --suite smoke
 npm run eval
 npm run eval:report -- --suite full
 ```
@@ -324,20 +338,28 @@ quality, review accuracy, or brainstorming creativity.
 ### Add evals for your team's skills and agents
 
 1. Create `evals/<workflow>/eval.yaml` with realistic tasks, expected outcomes,
-   and at least one negative or non-trigger case. Keep private production data
-   out of fixtures and expected answers out of agent-visible inputs. Put grader
-   programs and answer keys in `grading_environment`.
+   and at least one negative or non-trigger case. The upstream
+   [github/evals](https://github.com/github/evals) convention,
+   `<name>.eval.yaml`, works too; `evalFilenames` in `.vally.yaml` lists both.
+   Keep private production data out of fixtures and expected answers out of
+   agent-visible inputs. Put grader programs and answer keys in
+   `grading_environment`.
 2. Load the actual asset, rather than pasting its instructions into the task.
    Skill paths in `agent_environment.skills` are relative to the eval file.
    Stage a custom agent with `agent_environment.files`, copying its real
    `.agent.md` file to `.github/agents/<name>.agent.md` in the disposable workspace.
    Configure an MCP server in `agent_environment.mcpServers` and pass its path
-   through a `.vally.yaml` param so the launcher can make it absolute.
+   through a `.vally.yaml` param so the launcher can make it absolute. Mount a
+   hook plugin by setting `agent_environment.env.STARTER_PLUGIN_DIRS` to its
+   directory, such as `plugins/format-json`. Separate several with commas.
 3. Assert both invocation and outcome. Skills use `skill-invocation`. Agents
    require a `tool-calls` assertion for `^task$` and the exact `agent_type`, then
    a subagent-scoped outcome assertion. MCP tools require a `tool-calls` rule
-   with the tool name and its actual `result`. The default agent's answer isn't
-   proof that the intended custom agent ran.
+   with the tool name and its actual `result`. Hooks need a `program` or
+   `file-*` grader that checks their real effects. Extensions need an MCP
+   transport that drives the real extension code, a `program` grader, and a
+   `tags.boundary` saying what the eval does and doesn't prove. The default
+   agent's answer isn't proof that the intended custom agent ran.
 4. Tag every case with its asset identities and `tags.control: positive` or
    `negative`. Tag a representative positive case with `suite: smoke`. Run
    `npm run verify`, then run the relevant eval, inspect its trajectory, and
@@ -354,8 +376,22 @@ quality, review accuracy, or brainstorming creativity.
 The coverage checker discovers every local skill, agent, hook, extension, and
 MCP tool. It starts each local MCP server to read its real tool list. Each asset
 needs a positive case with invocation and outcome assertions, smoke coverage,
-and a negative control. A tag alone isn't coverage. Stimulus names must be
-unique across all specs so saved results map to one case.
+and a negative control with an observable assertion. For an MCP tool, that's a
+real call with an asserted error or result, or a `tool-calls` rule that
+disallows the tool. A tag alone isn't coverage. Stimulus names must be unique
+across all specs so saved results map to one case. The shipped examples carry a
+few extra checks tied to their exact asset IDs; they disappear when you rename
+or remove the example.
+
+Suites are conventions, not fixed names. This repository's `smoke` suite
+selects cases tagged `suite: smoke`, and `full` runs every spec. Upstream
+github/evals examples filter on `lane: ci` instead. A `tags.suite` value must
+match a suite filter in `.vally.yaml`, and every asset needs a case in `smoke`
+because CI runs it by default.
+
+Slash commands, rules, and LSP servers aren't model-invoked the way skills,
+agents, and tools are, so the coverage checker doesn't require evals for them.
+Test them by hand in the hosts you support.
 
 Run one spec without launching the full suite:
 
@@ -374,14 +410,16 @@ The [launcher](scripts/evals.mjs) runs Vally's `copilot-sdk` executor with the
 pinned full Copilot CLI. The SDK's bundled standalone runtime can discover a
 custom agent but rejects running it, so the launcher sets `COPILOT_CLI_PATH` to a
 small [runtime bridge](scripts/eval-runtime.js) that starts the pinned
-`@github/copilot` runtime. The bridge mounts `format-json` with the documented
-`--plugin-dir` option only for hook cases. It doesn't depend on an interactive
-folder-trust prompt or a global plugin installation.
+`@github/copilot` runtime. The bridge mounts each directory listed in an eval's
+`STARTER_PLUGIN_DIRS` with the documented `--plugin-dir` option, so hook cases
+load the real plugin. It doesn't depend on an interactive folder-trust prompt or
+a global plugin installation.
 
-MCP processes don't necessarily start in this checkout, so the launcher passes
-absolute paths for the `BRAINSTORM_HOST` and `JSON_MCP_SERVER` params. It also
-gives the authoring grader the pinned Vally CLI's absolute path through
-`MARKETPLACE_VALLY_CLI` rather than relying on npm having changed `PATH`.
+MCP processes don't necessarily start in this checkout, so the launcher reads
+`params` from `.vally.yaml` and passes every value that contains a slash as an
+absolute path. Other params pass through unchanged. It also gives the authoring
+grader the pinned Vally CLI's absolute path through `MARKETPLACE_VALLY_CLI`
+rather than relying on npm having changed `PATH`.
 
 ### MCP-based canvas evaluation
 
@@ -400,13 +438,15 @@ model-free contract tests certify native Copilot App or VS Code rendering.
 ### Results
 
 Each local run writes JSONL results, a Markdown report, JUnit, and session
-evidence under a timestamped `vally-results/` directory. Use
-`npm run eval:report -- --suite smoke` for a smoke run, or `--suite full` for the
-full suite. `--run-dir PATH` selects a saved run explicitly. An incomplete run,
-unexpected skip, runtime error, or grader infrastructure error fails reporting.
-Valid failed behavioral verdicts remain visible but don't fail the command by
-default. Add `--require-pass` to the eval command when you want those verdicts
-to fail too.
+evidence under a timestamped `vally-results/` directory. Report on it with the
+same selection you ran: `npm run eval:report -- --suite smoke` after
+`npm run eval:smoke`, `--suite full` after `npm run eval`, or
+`--eval-spec evals/bug-report/eval.yaml` after running one spec. `--suite`
+accepts any suite in `.vally.yaml`. `--run-dir PATH` selects a saved run
+explicitly. An incomplete run, unexpected skip, runtime error, or grader
+infrastructure error fails reporting. Valid failed behavioral verdicts remain
+visible but don't fail the command by default. Add `--require-pass` to the eval
+command when you want those verdicts to fail too.
 
 Use `npm run eval:grade -- --help` to see Vally's saved-evidence grading options.
 Re-grading code-based assertions doesn't require another model run.
@@ -436,8 +476,12 @@ comment. The Action installs only Vally, pinned to the same version as
 1. Runs `npm ci` so graders, the brainstorm MCP host, and the pinned full Copilot
    runtime are available.
 2. Runs `node scripts/evals.mjs action-params`. The Action can't pass `--param`,
-   so this writes gitignored `eval.params.yaml` files with this runner's absolute
-   MCP server paths. Vally merges them over the relative `.vally.yaml` defaults.
+   so this writes gitignored eval-level params files (`eval.params.yaml`, or
+   `<name>.eval.params.yaml` beside a `<name>.eval.yaml`) with this runner's
+   absolute paths. Vally merges them over the relative `.vally.yaml` defaults.
+   Generated files start with a header comment. A params file you wrote yourself
+   has no header, so action-params stops with an error instead of overwriting it;
+   commit such a file with `git add -f`, and keep path params in `.vally.yaml`.
 3. Sets `COPILOT_CLI_PATH` to the runtime bridge and `MARKETPLACE_VALLY_CLI` to
    the pinned Vally CLI, and names both in `credential-env`. The Action forwards
    only allowlisted variables to Vally; `credential-env` is how it passes extra

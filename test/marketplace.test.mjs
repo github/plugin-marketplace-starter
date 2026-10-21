@@ -1,29 +1,61 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, cp, readFile, writeFile, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, mkdir, cp, readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { contained, frontmatter, parseYaml } from "../scripts/catalog.mjs";
-import { checkCoverage, discoverAssets, readEvals, root } from "../scripts/validate-evals.mjs";
+import { contained, frontmatter, parseYaml, readCatalog, readVallyConfig } from "../scripts/catalog.mjs";
+import { checkCoverage, discoverAssets, readEvals, root, suiteTags } from "../scripts/validate-evals.mjs";
 import { validateMcpConfig, validateRepository } from "../scripts/validate.mjs";
+
+async function names(path) {
+  try { return (await readdir(path)).sort(); }
+  catch (error) { if (error.code === "ENOENT") return []; throw error; }
+}
 
 test("discovery covers every local skill, agent, hook, extension, and advertised MCP tool", async () => {
   const assets = await discoverAssets();
-  assert.deepEqual(assets.map((asset) => asset.kind).sort(), [
-    "agent", "extension", "hook", "mcp", "mcp", "skill", "skill", "skill", "skill", "skill",
-  ]);
+  const { localPlugins } = await readCatalog(root);
+  const expected = [];
+  for (const plugin of localPlugins) {
+    const source = resolve(root, plugin.source);
+    for (const name of await names(join(source, "skills"))) expected.push(`skill:${plugin.name}/${name}`);
+    for (const name of await names(join(source, "com.github.copilot/agents"))) if (name.endsWith(".agent.md")) expected.push(`agent:${plugin.name}/${name.slice(0, -".agent.md".length)}`);
+    for (const name of await names(join(source, "com.github.copilot/extensions"))) expected.push(`extension:${plugin.name}/${name}`);
+    try {
+      const hooks = JSON.parse(await readFile(join(source, "com.github.copilot/hooks/hooks.json"), "utf8"));
+      for (const event of Object.keys(hooks.hooks)) expected.push(`hook:${plugin.name}/${event}`);
+    } catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
+  assert.deepEqual(assets.filter((asset) => asset.kind !== "mcp").map((asset) => asset.id).sort(), expected.sort());
+  for (const asset of assets.filter((item) => item.kind === "mcp")) assert.match(asset.id, /^mcp:[^/]+\/[^/]+\/[^/]+$/);
+  checkCoverage(assets, await readEvals(), { suites: suiteTags(await readVallyConfig(root)) });
+});
+
+test("the JSON configuration example advertises its two real MCP tools", { skip: !existsSync(resolve(root, "plugins/json-configuration")) }, async () => {
+  const assets = await discoverAssets();
   assert.deepEqual(assets.filter((asset) => asset.kind === "mcp").map((asset) => asset.id).sort(), [
     "mcp:json-configuration/json-configuration/get_json_value",
     "mcp:json-configuration/json-configuration/validate_json",
   ]);
-  checkCoverage(assets, await readEvals());
 });
 
 test("coverage rejects unknown, unloaded, invocation-free, negative-free, and smoke-free cases", async () => {
-  const assets = await discoverAssets();
-  const specs = await readEvals();
-  const author = specs.find((item) => item.spec.name === "customization-authoring");
-  const only = assets.filter((asset) => asset.id === "skill:customization-authoring/skill-authoring");
+  const assets = [{ id: "skill:fixture/fixture-skill", kind: "skill", name: "fixture-skill", path: resolve(root, "plugins/fixture/skills/fixture-skill") }];
+  const author = { path: resolve(root, "evals/fixture/eval.yaml"), spec: {
+    agent_environment: { skills: ["../../plugins/fixture/skills/fixture-skill"] },
+    stimuli: [
+      { name: "does-it", tags: { assets: assets[0].id, control: "positive", suite: "smoke" }, graders: [
+        { type: "skill-invocation", config: { required: ["fixture-skill"] } },
+        { type: "file-exists", config: { path: "out.json" } },
+      ] },
+      { name: "skips-it", tags: { assets: assets[0].id, control: "negative" }, graders: [
+        { type: "skill-invocation", config: { disallowed: ["fixture-skill"] } },
+        { type: "output-contains", config: { substring: "Paris" } },
+      ] },
+    ],
+  } };
+  const only = assets;
   const modify = (mutate) => {
     const copy = structuredClone(author);
     mutate(copy.spec);
@@ -36,22 +68,52 @@ test("coverage rejects unknown, unloaded, invocation-free, negative-free, and sm
   assert.throws(() => checkCoverage(only, modify((spec) => { spec.stimuli[0].graders = [{ type: "output-contains", config: { substring: "ok" } }]; })), /skill invocation/);
   assert.throws(() => checkCoverage(only, modify((spec) => { spec.stimuli = [spec.stimuli[0]]; })), /negative control/);
   assert.throws(() => checkCoverage(only, modify((spec) => { delete spec.stimuli[0].tags.suite; })), /smoke coverage/);
-  assert.throws(() => checkCoverage(only, modify((spec) => { spec.stimuli[0].tags.suite = "pr"; })), /only tagged suite is smoke/);
+  assert.throws(() => checkCoverage(only, modify((spec) => { spec.stimuli[0].tags.suite = "pr"; })), /isn't a configured suite/);
+  assert.doesNotThrow(() => checkCoverage(only, modify((spec) => { spec.stimuli[1].tags.suite = "pr"; }), { suites: new Set(["smoke", "pr"]) }));
+  assert.throws(() => checkCoverage(only, [author], { suites: new Set(["ci"]) }), /needs a "smoke" suite/);
   assert.throws(() => checkCoverage(only, modify((spec) => { delete spec.stimuli[1].tags.control; })), /tags\.control/);
 });
 
-test("MCP coverage requires the configured server and an asserted tool result", async () => {
-  const assets = (await discoverAssets()).filter((asset) => asset.id.includes(":json-configuration/"));
-  const specs = (await readEvals()).filter((item) => item.spec.name === "json-configuration");
-  assert.doesNotThrow(() => checkCoverage(assets, specs));
+test("MCP coverage requires the configured server, an asserted tool result, and observable negative controls", async () => {
+  const tool = { id: "mcp:fixture/server/lookup", kind: "mcp", name: "lookup", serverName: "server", path: resolve(root, "plugins/fixture") };
+  const call = (result) => ({ type: "tool-calls", config: { required: [{ name: "(^|[./_-])lookup$", result }] } });
+  const specs = [{ path: resolve(root, "evals/fixture/eval.yaml"), spec: {
+    agent_environment: { mcpServers: { server: { type: "stdio", command: "node", args: ["${SERVER}"] } } },
+    stimuli: [
+      { name: "finds", tags: { assets: tool.id, control: "positive", suite: "smoke" }, graders: [call('"value"\\s*:\\s*1')] },
+      { name: "reports-missing", tags: { assets: tool.id, control: "negative" }, graders: [{ type: "completed" }, call("NOT_FOUND")] },
+    ],
+  } }];
+  assert.equal(checkCoverage([tool], specs), 2);
   const unconfigured = structuredClone(specs);
   delete unconfigured[0].spec.agent_environment.mcpServers;
-  assert.throws(() => checkCoverage(assets, unconfigured), /configure the actual MCP server/);
+  assert.throws(() => checkCoverage([tool], unconfigured), /configure the actual MCP server/);
   const resultless = structuredClone(specs);
   for (const stimulus of resultless[0].spec.stimuli) {
     for (const grader of stimulus.graders) for (const rule of grader.config?.required ?? []) if (typeof rule === "object") delete rule.result;
   }
-  assert.throws(() => checkCoverage(assets, resultless), /actual tool call and its result/);
+  assert.throws(() => checkCoverage([tool], resultless), /actual tool call and its result/);
+  const completedOnly = structuredClone(specs);
+  completedOnly[0].spec.stimuli[1].graders = [{ type: "completed" }];
+  assert.throws(() => checkCoverage([tool], completedOnly), /mcp:fixture\/server\/lookup: missing negative control/);
+  const negativeWithoutResult = structuredClone(specs);
+  delete negativeWithoutResult[0].spec.stimuli[1].graders[1].config.required[0].result;
+  assert.throws(() => checkCoverage([tool], negativeWithoutResult), /missing negative control/);
+  const otherTool = structuredClone(specs);
+  otherTool[0].spec.stimuli[1].graders = [{ type: "tool-calls", config: { required: [{ name: "^unrelated$", result: "x" }] } }];
+  assert.throws(() => checkCoverage([tool], otherTool), /missing negative control/);
+  const disallowed = structuredClone(specs);
+  disallowed[0].spec.stimuli[1].graders = [{ type: "tool-calls", config: { disallowed: ["(^|[./_-])lookup$"] } }];
+  assert.equal(checkCoverage([tool], disallowed), 2);
+});
+
+test("the JSON configuration example's MCP negative controls stay observable", { skip: !existsSync(resolve(root, "plugins/json-configuration")) }, async () => {
+  const assets = (await discoverAssets()).filter((asset) => asset.id.includes(":json-configuration/"));
+  const specs = (await readEvals()).filter((item) => item.spec.name === "json-configuration");
+  assert.doesNotThrow(() => checkCoverage(assets, specs));
+  const weakened = structuredClone(specs);
+  for (const stimulus of weakened[0].spec.stimuli) if (stimulus.tags.control === "negative") stimulus.graders = [{ type: "completed" }, { type: "output-contains", config: { substring: "NOT_FOUND" } }];
+  assert.throws(() => checkCoverage(assets, weakened), /mcp:json-configuration\/json-configuration\/\w+: missing negative control/);
 });
 
 test("a relocated copy discovers the bundled MCP tools without this checkout's node_modules", async () => {
@@ -59,8 +121,9 @@ test("a relocated copy discovers the bundled MCP tools without this checkout's n
   try {
     await cp(join(root, "marketplace.json"), join(directory, "marketplace.json"));
     await cp(join(root, "plugins"), join(directory, "plugins"), { recursive: true });
+    const original = await discoverAssets();
     const assets = await discoverAssets(directory);
-    assert.equal(assets.filter((asset) => asset.kind === "mcp").length, 2);
+    assert.deepEqual(assets.map((asset) => asset.id), original.map((asset) => asset.id));
     await assert.rejects(contained(directory, ".."), /escapes/);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -101,6 +164,7 @@ test("agents and skills must live in their Agent Plugins locations with valid fr
     await mkdir(join(plugin, "com.github.copilot/agents"), { recursive: true });
     await mkdir(join(directory, ".github/copilot"), { recursive: true });
     await writeFile(join(directory, "marketplace.json"), JSON.stringify(catalog));
+    await writeFile(join(directory, ".vally.yaml"), "paths:\n  skills: []\n");
     await writeFile(join(directory, ".github/copilot/settings.json"), JSON.stringify({
       extraKnownMarketplaces: { "layout-fixture": { source: { source: "directory", path: "." } } },
       enabledPlugins: { "review@layout-fixture": true },
@@ -128,6 +192,14 @@ test("agents and skills must live in their Agent Plugins locations with valid fr
     await mkdir(join(directory, "plugins/uncatalogued"));
     await writeFile(join(plugin, "skills/review/SKILL.md"), "---\nname: review\ndescription: Review.\n---\nReview it.\n");
     await assert.rejects(validateRepository(directory), /Every plugin must be registered/);
+    await rm(join(directory, "plugins/uncatalogued"), { recursive: true });
+    await assert.rejects(validateRepository(directory), /\.vally\.yaml paths\.skills must list plugins\/review\/skills/);
+    await writeFile(join(directory, ".vally.yaml"), "paths:\n  skills:\n    - plugins/review/skills\n    - plugins/renamed/skills\n");
+    await assert.rejects(validateRepository(directory), /lists plugins\/renamed\/skills, which doesn't exist/);
+    await writeFile(join(directory, ".vally.yaml"), "paths:\n  skills:\n    - plugins/review/skills\n");
+    assert.equal((await validateRepository(directory)).skills, 1);
+    await rm(join(directory, ".vally.yaml"));
+    await assert.rejects(validateRepository(directory), /\.vally\.yaml is required/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

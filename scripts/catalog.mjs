@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, realpath } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { parseDocument } from "yaml";
 
 export const namePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -83,4 +83,40 @@ export function partitionCatalog(catalog) {
 
 export async function readCatalog(directory) {
   return partitionCatalog(JSON.parse(await readFile(resolve(directory, "marketplace.json"), "utf8")));
+}
+
+// Shared view of .vally.yaml so the repository tools follow the same eval
+// filenames, suites, skill paths, and params that Vally uses.
+export const defaultEvalFilenames = Object.freeze(["eval.yaml", "eval.yml"]);
+
+export async function readVallyConfig(directory) {
+  let text;
+  try { text = await readFile(resolve(directory, ".vally.yaml"), "utf8"); }
+  catch (error) { if (error.code === "ENOENT") return undefined; throw error; }
+  const config = parseYaml(text, ".vally.yaml") ?? {};
+  assert.ok(typeof config === "object" && !Array.isArray(config), ".vally.yaml must be a mapping.");
+  return config;
+}
+
+const asList = (value) => value === undefined ? [] : Array.isArray(value) ? value : [value];
+
+export function evalFilenames(config) {
+  const names = asList(config?.paths?.evalFilenames);
+  return names.length ? names : [...defaultEvalFilenames];
+}
+
+// Supports the `*` and `?` wildcards Vally users rely on, such as `*.eval.yaml`.
+export function evalFilenameMatcher(patterns) {
+  const regexes = patterns.map((pattern) => {
+    assert.ok(typeof pattern === "string" && pattern && !/[/\\[\]{}!()]/.test(pattern),
+      `.vally.yaml evalFilenames: use plain file names with * or ? wildcards, not "${pattern}".`);
+    return new RegExp(`^${pattern.replace(/[.+^$|]/g, "\\$&").replaceAll("*", "[^/]*").replaceAll("?", ".")}$`);
+  });
+  return (name) => regexes.some((regex) => regex.test(name));
+}
+
+// Vally reads eval-level params from <basename>.params<ext> beside the eval.
+export function paramsFileName(evalFileName) {
+  const ext = extname(evalFileName);
+  return `${basename(evalFileName, ext)}.params${ext}`;
 }

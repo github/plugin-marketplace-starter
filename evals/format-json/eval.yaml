@@ -8,7 +8,8 @@ defaults:
   runs: 1
 agent_environment:
   env:
-    STARTER_ENABLE_FORMAT_HOOK: "1"
+    # Mounts the real plugin with --plugin-dir through scripts/eval-runtime.js.
+    STARTER_PLUGIN_DIRS: plugins/format-json
   files:
     - src: fixtures/input.json
       dest: input.json

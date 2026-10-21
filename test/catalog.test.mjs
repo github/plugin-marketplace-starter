@@ -78,3 +78,49 @@ test("new custom agents require actual staged profiles, delegation, and subagent
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("any new hook or extension gets generic coverage rules, not the examples' specific ones", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-generic-coverage-"));
+  try {
+    const hookPlugin = resolve(directory, "plugins/lint-on-save");
+    await mkdir(resolve(hookPlugin, "com.github.copilot/hooks"), { recursive: true });
+    await writeFile(resolve(hookPlugin, "com.github.copilot/hooks/hooks.json"), JSON.stringify({ version: 1, hooks: { postToolUse: [] } }));
+    const panelPlugin = resolve(directory, "plugins/panel");
+    await mkdir(resolve(panelPlugin, "com.github.copilot/extensions/board"), { recursive: true });
+    await writeFile(resolve(panelPlugin, "com.github.copilot/extensions/board/extension.mjs"), "");
+    await writeFile(resolve(directory, "marketplace.json"), JSON.stringify({
+      name: "generic-fixture", owner: { name: "Test" },
+      plugins: [{ name: "lint-on-save", source: "./plugins/lint-on-save" }, { name: "panel", source: "./plugins/panel" }],
+    }));
+    const assets = await discoverAssets(directory);
+    assert.deepEqual(assets.map((asset) => asset.id), ["hook:lint-on-save/postToolUse", "extension:panel/board"]);
+    const specs = [{ path: resolve(directory, "evals/custom/eval.yaml"), spec: { stimuli: [
+      { name: "hook-runs", agent_environment: { env: { STARTER_PLUGIN_DIRS: "plugins/other, plugins/lint-on-save" } },
+        tags: { assets: assets[0].id, control: "positive", suite: "smoke" },
+        graders: [{ type: "file-matches", config: { path: "a.js", pattern: "linted" } }] },
+      { name: "hook-skips", tags: { assets: assets[0].id, control: "negative" }, graders: [{ type: "diff-empty" }, { type: "output-contains", config: { substring: "ok" } }] },
+      { name: "panel-works", agent_environment: { mcpServers: { "panel-host": { type: "stdio", command: "node", args: ["host.mjs"] } } },
+        tags: { assets: assets[1].id, control: "positive", suite: "smoke", boundary: "headless-sdk-contract" },
+        graders: [{ type: "program", config: { program: "node", args: [".grading/panel.mjs"] } }] },
+      { name: "panel-skips", tags: { assets: assets[1].id, control: "negative" }, graders: [{ type: "tool-calls", config: { disallowed: ["open_canvas"] } }] },
+    ] } }];
+    assert.equal(checkCoverage(assets, specs, { directory }), 4);
+    const unmounted = structuredClone(specs);
+    delete unmounted[0].spec.stimuli[0].agent_environment;
+    assert.throws(() => checkCoverage(assets, unmounted, { directory }), /STARTER_PLUGIN_DIRS/);
+    const claimOnly = structuredClone(specs);
+    claimOnly[0].spec.stimuli[0].graders = [{ type: "output-contains", config: { substring: "linted" } }];
+    assert.throws(() => checkCoverage(assets, claimOnly, { directory }), /program or file grader/);
+    const unlabeled = structuredClone(specs);
+    delete unlabeled[0].spec.stimuli[2].tags.boundary;
+    assert.throws(() => checkCoverage(assets, unlabeled, { directory }), /tags\.boundary/);
+    const noTransport = structuredClone(specs);
+    delete noTransport[0].spec.stimuli[2].agent_environment;
+    assert.throws(() => checkCoverage(assets, noTransport, { directory }), /transport/);
+    const ungraded = structuredClone(specs);
+    ungraded[0].spec.stimuli[2].graders = [{ type: "output-contains", config: { substring: "board" } }];
+    assert.throws(() => checkCoverage(assets, ungraded, { directory }), /program grader/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

@@ -2,39 +2,53 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { resolve, delimiter, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { parse } from "yaml";
-import { checkCoverage, discoverAssets, readEvals, root } from "../scripts/validate-evals.mjs";
-import { readCatalog } from "../scripts/catalog.mjs";
-import { defaultFormatPlugin, defaultRuntime, runtimeArguments, runtimeEntry } from "../scripts/eval-runtime.js";
-import { evalParams, runtimeBridge, runtimeEnvironment, vallyArguments, vallyCliPath, writeActionParams } from "../scripts/evals.mjs";
-import { render, summarize } from "../scripts/eval-report.mjs";
+import { checkCoverage, discoverAssets, readEvals, root, suiteTags } from "../scripts/validate-evals.mjs";
+import { evalFilenameMatcher, paramsFileName, readCatalog, readVallyConfig } from "../scripts/catalog.mjs";
+import { defaultRuntime, pluginDirectories, runtimeArguments, runtimeEntry } from "../scripts/eval-runtime.js";
+import { evalParams, generatedHeader, isPathParam, pathParams, runtimeBridge, runtimeEnvironment, vallyArguments, vallyCliPath, writeActionParams } from "../scripts/evals.mjs";
+import { expectedCases, render, summarize } from "../scripts/eval-report.mjs";
 
-test("all local assets have positive, smoke, and negative coverage with explicit headless canvas boundaries", async () => {
+test("all local assets have positive, smoke, and negative coverage", async () => {
+  const config = await readVallyConfig(root);
+  const assets = await discoverAssets();
+  const specs = await readEvals(root, config);
+  const { localPlugins } = await readCatalog(root);
+  assert.ok(assets.length > 0);
+  for (const asset of assets) assert.ok(localPlugins.some((plugin) => asset.id.split(":")[1].startsWith(`${plugin.name}/`)));
+  const stimuli = specs.flatMap(({ spec }) => spec.stimuli);
+  assert.equal(checkCoverage(assets, specs, { suites: suiteTags(config) }), stimuli.length);
+  for (const asset of assets) {
+    const withoutPositive = specs.map((item) => ({ ...item, spec: { ...item.spec,
+      stimuli: item.spec.stimuli.filter((stimulus) => !(stimulus.tags.control === "positive" && [stimulus.tags.assets].flat().includes(asset.id))) } }))
+      .filter((item) => item.spec.stimuli.length);
+    assert.throws(() => checkCoverage(assets, withoutPositive, { suites: suiteTags(config) }), /missing/);
+  }
+});
+
+test("the brainstorm example keeps explicit headless canvas boundaries", { skip: !existsSync(resolve(root, "plugins/team-brainstorm")) }, async () => {
   const assets = await discoverAssets();
   const specs = await readEvals();
-  assert.deepEqual(assets.map((asset) => asset.id).sort(), [
-    "agent:code-review/code-reviewer",
-    "extension:team-brainstorm/brainstorm", "hook:format-json/postToolUse",
-    "mcp:json-configuration/json-configuration/get_json_value",
-    "mcp:json-configuration/json-configuration/validate_json",
-    "skill:bug-report/bug-report", "skill:code-review/adversarial-review",
-    "skill:customization-authoring/skill-authoring", "skill:json-configuration/json-configuration",
-    "skill:team-brainstorm/team-brainstorm",
-  ]);
-  assert.equal(checkCoverage(assets, specs), 21);
   const canvasCases = specs.flatMap(({ spec }) => spec.stimuli).filter((stimulus) => stimulus.agent_environment?.mcpServers?.["brainstorm-host"]);
-  assert.equal(canvasCases.length, 2);
+  assert.ok(canvasCases.length >= 2);
   for (const stimulus of canvasCases) assert.equal(stimulus.tags.boundary, "headless-sdk-contract");
-  const missing = specs.filter((item) => item.spec.name !== "format-json-integration");
-  assert.throws(() => checkCoverage(assets, missing), /missing positive/);
-  const unloaded = structuredClone(specs);
-  unloaded.find((item) => item.spec.name === "bug-report-behavior").spec.agent_environment.skills = [];
-  assert.throws(() => checkCoverage(assets, unloaded), /load the actual skill/);
   const ungradedNegative = structuredClone(specs);
   const arithmetic = ungradedNegative.flatMap(({ spec }) => spec.stimuli).find((stimulus) => stimulus.name === "brainstorm-does-not-trigger-for-arithmetic");
   arithmetic.tags.assets = ["skill:team-brainstorm/team-brainstorm"];
   assert.throws(() => checkCoverage(assets, ungradedNegative), /extension:team-brainstorm\/brainstorm: missing negative control/);
+  const relabeled = structuredClone(specs);
+  relabeled.flatMap(({ spec }) => spec.stimuli).find((stimulus) => stimulus.name === "brainstorm-preserves-and-moves-session-notes").tags.boundary = "native-ui";
+  assert.throws(() => checkCoverage(assets, relabeled), /host boundary honestly/);
+});
+
+test("the bug-report example must load its actual skill", { skip: !existsSync(resolve(root, "plugins/bug-report")) }, async () => {
+  const assets = await discoverAssets();
+  const specs = await readEvals();
+  const unloaded = structuredClone(specs);
+  unloaded.find((item) => item.spec.name === "bug-report-behavior").spec.agent_environment.skills = [];
+  assert.throws(() => checkCoverage(assets, unloaded), /load the actual skill/);
 });
 
 test("eval-only dependencies stay out of plugins and remote installation stays opt-in", async () => {
@@ -50,8 +64,8 @@ test("eval-only dependencies stay out of plugins and remote installation stays o
   for (const remote of remotePlugins) assert.equal(settings.enabledPlugins[`${remote.name}@${catalog.name}`], undefined);
 });
 
-test("runtime setup uses the pinned full runtime bridge and mounts only the requested hook", () => {
-  const env = runtimeEnvironment({ Path: "/existing", STARTER_ENABLE_FORMAT_HOOK: "1" });
+test("runtime setup uses the pinned full runtime bridge and mounts only requested plugin directories", () => {
+  const env = runtimeEnvironment({ Path: "/existing", STARTER_PLUGIN_DIRS: "plugins/format-json" });
   assert.equal(Object.keys(env).filter((name) => name.toLowerCase() === "path").length, 1);
   assert.equal(env.PATH.split(delimiter)[0], resolve(root, "node_modules/.bin"));
   assert.equal(env.COPILOT_CLI_PATH, runtimeBridge);
@@ -62,20 +76,23 @@ test("runtime setup uses the pinned full runtime bridge and mounts only the requ
   assert.ok(args.includes("--no-ask-user"));
   assert.ok(args.includes("--disable-builtin-mcps"));
   assert.equal(args[args.indexOf("--plugin-dir") + 1], resolve(root, "plugins/format-json"));
-  assert.equal(defaultFormatPlugin, resolve(root, "plugins/format-json"));
   assert.ok(!runtimeArguments([], {}).includes("--plugin-dir"));
-  assert.throws(() => runtimeArguments([], { STARTER_ENABLE_FORMAT_HOOK: "1", STARTER_FORMAT_PLUGIN: "plugins/format-json" }), /absolute/);
+  const absolute = resolve(root, "plugins/other");
+  assert.deepEqual(pluginDirectories({ STARTER_PLUGIN_DIRS: ` plugins/a , ${absolute},,` }), [resolve(root, "plugins/a"), absolute]);
+  assert.equal(runtimeArguments([], { STARTER_PLUGIN_DIRS: "plugins/a,plugins/b" }).filter((arg) => arg === "--plugin-dir").length, 2);
   assert.throws(() => runtimeEntry({ STARTER_COPILOT_CLI: "npm-loader.js" }), /absolute/);
 });
 
-test("the launcher passes absolute params for every .vally.yaml param and keeps bounded retries", async () => {
+test("the launcher passes absolute values for every .vally.yaml path param and keeps bounded retries", async () => {
   const config = parse(await readFile(resolve(root, ".vally.yaml"), "utf8"));
-  assert.deepEqual(Object.keys(config.suites).sort(), ["full", "smoke"]);
-  assert.deepEqual(Object.keys(evalParams).sort(), Object.keys(config.params).sort());
-  for (const [name, value] of Object.entries(config.params)) {
+  assert.ok(config.suites.smoke?.filter?.suite === "smoke", "CI runs the smoke suite by default.");
+  const configuredPaths = Object.entries(config.params ?? {}).filter(([, value]) => isPathParam(value));
+  assert.deepEqual(Object.keys(evalParams).sort(), configuredPaths.map(([name]) => name).sort());
+  for (const [name, value] of configuredPaths) {
     assert.ok(isAbsolute(evalParams[name]));
     assert.equal(evalParams[name], resolve(root, value));
   }
+  assert.ok(!isPathParam("gpt-5.4-mini") && !isPathParam(["a/b"]) && !isPathParam("https://example.com/a") && isPathParam("evals/x.mjs"));
   const run = vallyArguments("eval", ["--suite", "smoke"]);
   for (const flag of [["--workers", "1"], ["--max-retries", "1"], ["--output-dir", "vally-results"]]) {
     assert.equal(run[run.indexOf(flag[0]) + 1], flag[1]);
@@ -87,21 +104,66 @@ test("the launcher passes absolute params for every .vally.yaml param and keeps 
   assert.throws(() => vallyArguments("plan"), /Use eval/);
 });
 
-test("Action params files hold only the absolute params each eval references", async () => {
+test("path params come only from .vally.yaml, so removing an example removes its param", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-params-"));
+  try {
+    assert.deepEqual(await pathParams(directory), {});
+    await writeFile(join(directory, ".vally.yaml"), "params:\n  SERVER: tools/server.mjs\n  MODEL: gpt-5.4-mini\n");
+    assert.deepEqual(await pathParams(directory), { SERVER: resolve(directory, "tools/server.mjs") });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Action params files hold only referenced absolute params and never overwrite authored files", async () => {
   const directory = await mkdtemp(join(tmpdir(), "starter-action-params-"));
+  const params = { JSON_MCP_SERVER: resolve(directory, "server.mjs") };
+  const config = { paths: { evalFilenames: ["eval.yaml", "*.eval.yaml"] } };
   try {
     await mkdir(join(directory, "uses"), { recursive: true });
     await mkdir(join(directory, "plain"), { recursive: true });
+    await mkdir(join(directory, "upstream"), { recursive: true });
     await writeFile(join(directory, "uses/eval.yaml"), "stimuli:\n  - args: ['${JSON_MCP_SERVER}']\n");
     await writeFile(join(directory, "plain/eval.yaml"), "stimuli: []\n");
-    const written = await writeActionParams(directory);
-    assert.deepEqual(written, [join(directory, "uses/eval.params.yaml")]);
-    assert.deepEqual(parse(await readFile(written[0], "utf8")), { params: { JSON_MCP_SERVER: evalParams.JSON_MCP_SERVER } });
+    await writeFile(join(directory, "upstream/release.eval.yaml"), "stimuli:\n  - args: ['${JSON_MCP_SERVER}']\n");
+    const written = (await writeActionParams(directory, params, config)).sort();
+    assert.deepEqual(written, [join(directory, "upstream/release.eval.params.yaml"), join(directory, "uses/eval.params.yaml")].sort());
+    for (const file of written) {
+      const text = await readFile(file, "utf8");
+      assert.ok(text.startsWith(generatedHeader));
+      assert.deepEqual(parse(text), { params });
+    }
+    assert.equal((await writeActionParams(directory, params, config)).length, 2);
+    await writeFile(join(directory, "uses/eval.params.yaml"), "params:\n  MODEL: [a, b]\n");
+    await assert.rejects(writeActionParams(directory, params, config), /wasn't generated by action-params/);
+    assert.equal(await readFile(join(directory, "uses/eval.params.yaml"), "utf8"), "params:\n  MODEL: [a, b]\n");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
   const ignore = await readFile(resolve(root, ".gitignore"), "utf8");
   assert.match(ignore, /^evals\/\*\*\/eval\.params\.yaml$/m);
+  assert.match(ignore, /^evals\/\*\*\/\*\.eval\.params\.yaml$/m);
+});
+
+test("eval discovery follows .vally.yaml evalFilenames, including the upstream *.eval.yaml convention", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-eval-names-"));
+  try {
+    await mkdir(join(directory, "evals/a"), { recursive: true });
+    await mkdir(join(directory, "evals/graders/dist"), { recursive: true });
+    await writeFile(join(directory, "evals/a/eval.yaml"), "name: a\nstimuli: []\n");
+    await writeFile(join(directory, "evals/a/release.eval.yaml"), "name: b\nstimuli: []\n");
+    await writeFile(join(directory, "evals/a/eval.params.yaml"), "params: {}\n");
+    await writeFile(join(directory, "evals/graders/dist/ignored.eval.yaml"), "name: dist\n");
+    const names = async (config) => (await readEvals(directory, config)).map(({ spec }) => spec.name).sort();
+    assert.deepEqual(await names({ paths: { evalFilenames: ["eval.yaml", "*.eval.yaml"] } }), ["a", "b"]);
+    assert.deepEqual(await names({ paths: { evalFilenames: ["*.eval.yaml"] } }), ["b"]);
+    assert.deepEqual(await names({}), ["a"]);
+    await assert.rejects(readEvals(directory, { paths: { evalFilenames: ["missing.yaml"] } }), /evalFilenames/);
+    assert.throws(() => evalFilenameMatcher(["evals/**/eval.yaml"]), /plain file names/);
+    assert.equal(paramsFileName("release.eval.yaml"), "release.eval.params.yaml");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 const trial = (passed = true) => ({
@@ -193,4 +255,27 @@ test("deterministic CI stays model-free and behavioral CI uses the Evals Action 
   assert.ok(manifest.scripts.verify.includes("build:check"));
   assert.ok(!manifest.scripts.verify.includes("eval:smoke"));
   assert.ok(!manifest.scripts.verify.includes("npm run eval "));
+});
+
+test("reports select the cases of a configured suite or of specific eval specs", () => {
+  const specs = [
+    { path: resolve(root, "evals/a/eval.yaml"), spec: { stimuli: [{ name: "a-smoke", tags: { suite: "smoke" } }, { name: "a-other", tags: {} }] } },
+    { path: resolve(root, "evals/b/release.eval.yaml"), spec: { stimuli: [{ name: "b-ci", tags: { lane: ["ci", "nightly"] } }] } },
+  ];
+  const config = { suites: {
+    smoke: { filter: { suite: "smoke" } },
+    ci: { filter: { lane: "ci" } },
+    full: { evals: ["evals/**/eval.yaml", "evals/**/*.eval.yaml"] },
+    "a-only": { evals: ["evals/a/*.yaml"] },
+  } };
+  const names = (options) => [...expectedCases(specs, config, options)].sort();
+  assert.deepEqual(names({}), ["a-other", "a-smoke", "b-ci"]);
+  assert.deepEqual(names({ suite: "smoke" }), ["a-smoke"]);
+  assert.deepEqual(names({ suite: "ci" }), ["b-ci"]);
+  assert.deepEqual(names({ suite: "a-only" }), ["a-other", "a-smoke"]);
+  assert.deepEqual(names({ evalSpecs: ["evals/b/release.eval.yaml"] }), ["b-ci"]);
+  assert.deepEqual(names({ evalSpecs: ["evals/a/eval.yaml"], suite: "smoke" }), ["a-smoke"]);
+  assert.throws(() => expectedCases(specs, config, { suite: "nightly" }), /Unknown suite nightly/);
+  assert.throws(() => expectedCases(specs, config, { evalSpecs: ["evals/missing/eval.yaml"] }), /No eval spec/);
+  assert.throws(() => expectedCases(specs, config, { evalSpecs: ["evals/b/release.eval.yaml"], suite: "smoke" }), /no cases/);
 });

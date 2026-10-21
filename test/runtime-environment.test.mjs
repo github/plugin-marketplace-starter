@@ -5,7 +5,8 @@ import { join, delimiter, isAbsolute, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { root as projectRoot, runtimeEnvironment, jsonMcpServerPath, vallyCliPath } from '../scripts/evals.mjs';
+import { existsSync } from 'node:fs';
+import { root as projectRoot, runtimeEnvironment, evalParams, vallyCliPath } from '../scripts/evals.mjs';
 import { parseYaml } from '../scripts/catalog.mjs';
 
 test('direct Node execution gets the pinned validator and a normalized executable path', () => {
@@ -18,7 +19,8 @@ test('direct Node execution gets the pinned validator and a normalized executabl
   assert.ok(isAbsolute(env.MARKETPLACE_VALLY_CLI));
 });
 
-test('the eval launches the actual shipped MCP bundle independently of the process cwd', async () => {
+test('the eval launches the actual shipped MCP bundle independently of the process cwd', { skip: !existsSync(resolve(projectRoot, 'plugins/json-configuration')) }, async () => {
+  const jsonMcpServerPath = evalParams.JSON_MCP_SERVER;
   const spec = parseYaml(await readFile(resolve(projectRoot, 'evals/json-configuration/eval.yaml'), 'utf8'), 'json eval');
   assert.deepEqual(spec.agent_environment.mcpServers['json-configuration'].args, ['${JSON_MCP_SERVER}']);
   assert.ok(isAbsolute(jsonMcpServerPath));

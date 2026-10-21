@@ -4,7 +4,7 @@ import { resolve, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import Ajv from "ajv/dist/2020.js";
-import { contained, frontmatter, readCatalog, remoteWarnings } from "./catalog.mjs";
+import { contained, frontmatter, readCatalog, readVallyConfig, remoteWarnings } from "./catalog.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 const json = async (path) => JSON.parse(await readFile(path, "utf8"));
@@ -34,6 +34,27 @@ export async function validateMcpConfig(directory, label) {
     }
   }
   return servers.length;
+}
+
+// Vally lints skills from .vally.yaml paths.skills, so a renamed or added plugin
+// must be listed there too. Failing here names the file to fix.
+export async function validateVallySkillPaths(directory, localPlugins) {
+  const config = await readVallyConfig(directory);
+  assert.ok(config, ".vally.yaml is required; it lists skill directories, eval filenames, params, and suites.");
+  const listed = config.paths?.skills === undefined ? [] : [config.paths.skills].flat();
+  assert.ok(listed.every((path) => typeof path === "string" && path), ".vally.yaml paths.skills must be a list of directories.");
+  const resolved = new Set(listed.map((path) => resolve(directory, path)));
+  for (const path of listed) {
+    try { assert.ok((await stat(resolve(directory, path))).isDirectory()); }
+    catch { throw new Error(`.vally.yaml paths.skills lists ${path}, which doesn't exist. Update it after renaming or removing a plugin.`); }
+  }
+  for (const entry of localPlugins) {
+    const skills = resolve(directory, entry.source, "skills");
+    let exists = false;
+    try { exists = (await stat(skills)).isDirectory(); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (exists) assert.ok(resolved.has(skills), `.vally.yaml paths.skills must list ${relative(directory, skills).split(sep).join("/")} so Vally lints ${entry.name}'s skills.`);
+  }
 }
 
 export async function validateRepository(directory = root) {
@@ -115,6 +136,7 @@ export async function validateRepository(directory = root) {
     [...names].map((name) => [`${name}@${catalog.name}`, true]),
   ), "Enable every local plugin in the repository overlay. Never enable a remote plugin there: "
     + "checking out this repository must not activate code fetched from another repository, so developers install remote plugins themselves.");
+  await validateVallySkillPaths(directory, localPlugins);
   for (const file of await files(directory)) {
     if (/\.(?:mjs|js)$/.test(file)) {
       const check = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });

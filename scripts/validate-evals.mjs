@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { contained, frontmatter, parseYaml, readCatalog } from "./catalog.mjs";
+import { contained, evalFilenameMatcher, evalFilenames, frontmatter, parseYaml, readCatalog, readVallyConfig } from "./catalog.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 const json = async (path) => JSON.parse(await readFile(path, "utf8"));
@@ -100,25 +100,52 @@ export async function discoverAssets(directory = root) {
   return assets;
 }
 
-export async function readEvals(directory = root) {
+// Mirrors Vally's discovery: configured evalFilenames, skipping dist,
+// node_modules, and hidden directories.
+export async function readEvals(directory = root, config) {
+  const vally = config ?? await readVallyConfig(directory);
+  const patterns = evalFilenames(vally);
+  const isEval = evalFilenameMatcher(patterns);
   const specs = [];
   async function walk(path) {
     for (const entry of await readdir(path, { withFileTypes: true })) {
       const child = resolve(path, entry.name);
       if (entry.isSymbolicLink()) throw new Error(`Do not use symlinked eval inputs: ${child}`);
-      if (entry.isDirectory()) await walk(child);
-      else if (entry.name === "eval.yaml") specs.push({ path: child, spec: parseYaml(await readFile(child, "utf8"), child) });
+      if (entry.isDirectory()) {
+        if (!["dist", "node_modules"].includes(entry.name) && !entry.name.startsWith(".")) await walk(child);
+      } else if (isEval(entry.name)) specs.push({ path: child, spec: parseYaml(await readFile(child, "utf8"), child) });
     }
   }
   await walk(resolve(directory, "evals"));
-  if (!specs.length) throw new Error("No eval.yaml files were found.");
+  if (!specs.length) throw new Error(`No eval files matching ${patterns.join(", ")} (.vally.yaml evalFilenames) were found under evals/.`);
   return specs;
 }
 
-function checkPositive(asset, stimulus, spec, path) {
+// Tag values that select a stimulus into a configured tag-filtered suite.
+export function suiteTags(config) {
+  return new Set(Object.values(config?.suites ?? {}).flatMap((suite) => list(suite?.filter?.suite)));
+}
+
+const programArgs = (graders, script) => graders.some((grader) => grader.type === "program" && list(grader.config?.args).includes(script));
+
+// Extra checks for the shipped examples. They apply only while those exact
+// assets exist, so renaming or deleting an example removes its contract too.
+const exampleContracts = {
+  "hook:format-json/postToolUse": ({ graders }) => {
+    assert.ok(programArgs(graders, ".grading/format-json.mjs"), "hook:format-json/postToolUse: grade the hook's actual file effects.");
+  },
+  "extension:team-brainstorm/brainstorm": ({ stimulus, mcpServers, graders }) => {
+    const id = "extension:team-brainstorm/brainstorm";
+    assert.equal(stimulus.tags.boundary, "headless-sdk-contract", `${id}: label the host boundary honestly.`);
+    assert.ok(mcpServers["brainstorm-host"], `${id}: configure the actual extension contract transport.`);
+    assert.ok(programArgs(graders, ".grading/brainstorm.mjs"), `${id}: grade the extension's actual session state.`);
+  },
+};
+
+function checkPositive(asset, stimulus, spec, path, directory) {
   const id = asset.id;
   const graders = stimulus.graders ?? [];
-  const env = { ...spec.agent_environment, ...stimulus.agent_environment };
+  const env = { ...spec.agent_environment?.env, ...stimulus.agent_environment?.env };
   const mcpServers = { ...spec.agent_environment?.mcpServers, ...stimulus.agent_environment?.mcpServers };
   assert.ok(graders.some((grader) => outcomeGraders.includes(grader.type) || grader.type === "tool-calls" && asset.kind === "mcp"),
     `${stimulus.name}: invocation alone is not outcome coverage.`);
@@ -146,18 +173,32 @@ function checkPositive(asset, stimulus, spec, path) {
         && matches(rule.name, asset.name) && typeof rule.result === "string" && rule.result.length > 0)),
     `${id}: assert the actual tool call and its result.`);
   } else if (asset.kind === "hook") {
-    assert.equal(env.env?.STARTER_ENABLE_FORMAT_HOOK, "1", `${id}: mount the real formatter plugin.`);
-    assert.ok(graders.some((grader) => grader.type === "program" && list(grader.config?.args).includes(".grading/format-json.mjs")),
-      `${id}: grade the hook's actual file effects.`);
+    const mounted = String(env.STARTER_PLUGIN_DIRS ?? "").split(",").map((value) => value.trim()).filter(Boolean)
+      .map((value) => resolve(directory, value));
+    assert.ok(mounted.includes(asset.path), `${id}: mount the real plugin with agent_environment.env.STARTER_PLUGIN_DIRS.`);
+    assert.ok(graders.some((grader) => ["program", "file-matches", "file-exists"].includes(grader.type)),
+      `${id}: grade the hook's actual effects with a program or file grader.`);
   } else {
-    assert.equal(stimulus.tags.boundary, "headless-sdk-contract", `${id}: label the host boundary honestly.`);
-    assert.ok(mcpServers["brainstorm-host"], `${id}: configure the actual extension contract transport.`);
-    assert.ok(graders.some((grader) => grader.type === "program" && list(grader.config?.args).includes(".grading/brainstorm.mjs")),
-      `${id}: grade the extension's actual session state.`);
+    assert.ok(typeof stimulus.tags.boundary === "string" && stimulus.tags.boundary.trim(),
+      `${id}: label the host boundary honestly with tags.boundary.`);
+    assert.ok(Object.keys(mcpServers).length, `${id}: configure the transport that exercises the actual extension.`);
+    assert.ok(graders.some((grader) => grader.type === "program"), `${id}: grade the extension's actual state with a program grader.`);
   }
+  exampleContracts[id]?.({ stimulus, mcpServers, graders });
 }
 
-export function checkCoverage(assets, specs) {
+// A negative control must assert something observable. For an MCP tool that's
+// either an asserted error or result from a real call, or the tool being disallowed.
+function checkNegative(asset, graders) {
+  if (asset.kind !== "mcp") return graders.some((grader) => outcomeGraders.includes(grader.type) || grader.type === "tool-calls");
+  return graders.some((grader) => grader.type === "tool-calls" && (
+    list(grader.config?.required).some((rule) => typeof rule === "object"
+      && matches(rule.name, asset.name) && typeof rule.result === "string" && rule.result.length > 0)
+    || list(grader.config?.disallowed).some((rule) => matches(typeof rule === "object" ? rule?.name : rule, asset.name))));
+}
+
+export function checkCoverage(assets, specs, { directory = root, suites = new Set(["smoke"]), smokeSuite = "smoke" } = {}) {
+  assert.ok(suites.has(smokeSuite), `.vally.yaml needs a "${smokeSuite}" suite that filters on tags.suite.`);
   const byId = new Map(assets.map((asset) => [asset.id, asset]));
   const covered = new Set();
   const smoke = new Set();
@@ -171,33 +212,35 @@ export function checkCoverage(assets, specs) {
       const ids = list(stimulus.tags?.assets);
       assert.ok(ids.length, `${stimulus.name}: declare covered assets.`);
       assert.ok(["positive", "negative"].includes(stimulus.tags?.control), `${stimulus.name}: set tags.control to positive or negative.`);
-      for (const suite of list(stimulus.tags?.suite)) assert.equal(suite, "smoke", `${stimulus.name}: the only tagged suite is smoke; full includes every spec.`);
+      for (const suite of list(stimulus.tags?.suite)) {
+        assert.ok(suites.has(suite), `${stimulus.name}: tags.suite "${suite}" isn't a configured suite filter in .vally.yaml (${[...suites].join(", ")}).`);
+      }
       for (const id of ids) {
         const asset = byId.get(id);
         assert.ok(asset, `${stimulus.name}: unknown asset ${id}`);
-        const graders = stimulus.graders ?? [];
         if (stimulus.tags.control === "negative") {
-          if (asset.kind === "mcp" || graders.some((grader) => outcomeGraders.includes(grader.type) || grader.type === "tool-calls")) negative.add(id);
+          if (checkNegative(asset, stimulus.graders ?? [])) negative.add(id);
           continue;
         }
-        checkPositive(asset, stimulus, spec, path);
+        checkPositive(asset, stimulus, spec, path, directory);
         covered.add(id);
-        if (list(stimulus.tags.suite).includes("smoke")) smoke.add(id);
+        if (list(stimulus.tags.suite).includes(smokeSuite)) smoke.add(id);
       }
     }
   }
   for (const id of byId.keys()) {
     assert.ok(covered.has(id), `${id}: missing positive behavioral coverage.`);
-    assert.ok(smoke.has(id), `${id}: missing smoke coverage.`);
-    assert.ok(negative.has(id), `${id}: missing negative control.`);
+    assert.ok(smoke.has(id), `${id}: missing ${smokeSuite} coverage.`);
+    assert.ok(negative.has(id), `${id}: missing negative control with an observable assertion.`);
   }
   return names.size;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const config = await readVallyConfig(root);
   const assets = await discoverAssets();
-  const specs = await readEvals();
-  const count = checkCoverage(assets, specs);
+  const specs = await readEvals(root, config);
+  const count = checkCoverage(assets, specs, { suites: suiteTags(config) });
   const kinds = Object.entries(Object.groupBy(assets, (asset) => asset.kind)).map(([kind, items]) => `${items.length} ${kind}`).join(", ");
   console.log(`Validated ${specs.length} eval specs and ${count} cases covering ${assets.length} local assets (${kinds}).`);
   for (const asset of assets) console.log(`  ${asset.id}`);

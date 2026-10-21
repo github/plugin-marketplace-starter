@@ -7,4 +7,7 @@ node_modules/
 !.env.example
 vally-results/
 .vally/
+# Written by `node scripts/evals.mjs action-params` in CI. To commit a params file
+# you wrote yourself, add it with `git add -f`; action-params won't overwrite it.
 evals/**/eval.params.yaml
+evals/**/*.eval.params.yaml

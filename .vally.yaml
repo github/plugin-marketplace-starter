@@ -1,3 +1,6 @@
+# Vally project configuration, also read by scripts/validate.mjs,
+# scripts/validate-evals.mjs, and scripts/evals.mjs. When you add, rename, or
+# remove a plugin with skills, update paths.skills; npm run verify checks it.
 paths:
   skills:
     - plugins/bug-report/skills
@@ -7,9 +10,14 @@ paths:
     - plugins/json-configuration/skills
   evals:
     - evals
+  # eval.yaml is this repository's convention; *.eval.yaml is the upstream
+  # github/evals convention. Both work.
   evalFilenames:
     - eval.yaml
+    - "*.eval.yaml"
   results: vally-results
+# Values containing a slash are repository-relative paths. The launcher and CI
+# pass them to evals as absolute paths.
 params:
   BRAINSTORM_HOST: evals/support/brainstorm-host.mjs
   JSON_MCP_SERVER: plugins/json-configuration/dist/server.mjs
@@ -19,6 +27,7 @@ suites:
     filter:
       suite: smoke
   full:
-    description: Positive, negative, and boundary cases for all six local plugins
+    description: Positive, negative, and boundary cases for every local plugin
     evals:
       - evals/**/eval.yaml
+      - evals/**/*.eval.yaml
