@@ -58,8 +58,9 @@ export const protectedPaths = new Set([
 // named after it, and for a shipped example, the extra files listed above.
 // Support files follow a naming convention, so `npm run remove-plugin` can find
 // the graders, eval hosts, fixtures, and tests of plugins you add:
-// evals/graders/<name>.mjs, evals/graders/<name>-*.mjs, evals/support/<name>-*,
-// evals/fixtures/<name>/, test/<name>.test.mjs, and test/<name>-*.test.mjs. A
+// evals/graders/<name>.mjs, evals/graders/<name>-*.mjs, the bundled grader pair
+// evals/graders/src/<name>.mjs and evals/graders/dist/<name>.mjs (or <name>-*.mjs),
+// evals/support/<name>-*, evals/fixtures/<name>/, test/<name>.test.mjs, and test/<name>-*.test.mjs. A
 // file whose name also fits a longer plugin name in `others`, such as
 // test/bug-report.test.mjs for a plugin named bug, belongs to that plugin.
 export async function ownedPaths(name, { directory = root, others = [] } = {}) {
@@ -67,7 +68,8 @@ export async function ownedPaths(name, { directory = root, others = [] } = {}) {
   const mine = (base) => (base === name || base.startsWith(`${name}-`))
     && !longer.some((other) => base === other || base.startsWith(`${other}-`));
   const conventional = [];
-  for (const [folder, suffix] of [["evals/graders", ".mjs"], ["evals/support", ""], ["evals/fixtures", ""], ["test", ".test.mjs"]]) {
+  for (const [folder, suffix] of [["evals/graders", ".mjs"], ["evals/graders/src", ".mjs"], ["evals/graders/dist", ".mjs"],
+    ["evals/support", ""], ["evals/fixtures", ""], ["test", ".test.mjs"]]) {
     let entries = [];
     try { entries = await readdir(resolve(directory, folder), { withFileTypes: true }); }
     catch (error) { if (error.code !== "ENOENT") throw error; }

@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir, rm, rmdir, writeFile } from "node:fs/promises";
-import { resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { parseDocument } from "yaml";
+import { namePattern } from "./catalog.mjs";
 import { examples, ownedPaths, presentExamples } from "./examples.mjs";
 import { runCli } from "./problems.mjs";
 
@@ -13,8 +14,8 @@ const usage = (directory = root) => `Usage: npm run remove-plugin -- <name>... [
        npm run remove-example -- --all [--dry-run]
 
 Removes each plugin and everything it owns: plugins/<name>/, evals/<name>/, and
-support files named after it (evals/graders/<name>.mjs, evals/support/<name>-*,
-evals/fixtures/<name>/, test/<name>.test.mjs, and test/<name>-*.test.mjs). For a
+support files named after it (evals/graders/<name>.mjs, a bundled grader in
+evals/graders/src/ and its dist/ build, evals/support/<name>-*, evals/fixtures/<name>/, test/<name>.test.mjs, and test/<name>-*.test.mjs). For a
 shipped example, it also removes the graders, eval support files, and tests
 listed for it in scripts/examples.mjs. It removes the plugin's marketplace.json
 entry, repository settings key, .vally.yaml skill path and params, install
@@ -58,6 +59,21 @@ function placeholderRow(header) {
   return `| ${["_None yet._", ...Array(columns - 1).fill("")].join(" | ")} |`.replace(/ {2,}\|/g, " |");
 }
 
+// Renumbers top-level ordered lists after a marked step is removed, so a list
+// that lost step 3 reads 1, 2, 3 rather than 1, 2, 4.
+function renumber(lines) {
+  let next;
+  return lines.map((line) => {
+    const item = line.match(/^(\d+)([.)])(\s.*)?$/);
+    if (item) {
+      next = next === undefined ? Number(item[1]) : next;
+      return `${next++}${item[2]}${item[3] ?? ""}`;
+    }
+    if (line.trim() && !/^\s/.test(line)) next = undefined;
+    return line;
+  });
+}
+
 // Removes what a Markdown file says about removed plugins: sections wrapped in
 // <!-- plugin:NAME --> ... <!-- /plugin:NAME --> (or the `markers` given, such
 // as `examples` once no shipped example is left), install commands that name
@@ -69,12 +85,13 @@ export function pruneMarkdown(text, names, removed, markers = []) {
   const lines = text.split(/\r?\n/);
   const kept = [];
   let skipping;
+  let pruned = false;
   const links = (line) => [...line.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1])
     .filter((link) => !/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(link));
   let table;
   lines.forEach((line, index) => {
     const marker = line.match(/^\s*<!--\s*(\/?)([a-z0-9:-]+)\s*-->\s*$/);
-    if (marker && sections.has(marker[2])) { skipping = marker[1] ? undefined : marker[2]; return; }
+    if (marker && sections.has(marker[2])) { skipping = marker[1] ? undefined : marker[2]; pruned = true; return; }
     if (skipping) return;
     if (names.some((name) => line.includes(`copilot plugin install ${name}@`))) return;
     const header = isTableRow(line) && isDelimiter(lines[index + 1] ?? "");
@@ -92,7 +109,7 @@ export function pruneMarkdown(text, names, removed, markers = []) {
     kept.push(line);
   });
   if (table?.dropped && !table.rows) kept.push(placeholderRow(table.header));
-  return kept.join("\n").replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (match, label, link) =>
+  return (pruned ? renumber(kept) : kept).join("\n").replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (match, label, link) =>
     !/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(link) && removed(link) ? label : match);
 }
 
@@ -111,8 +128,27 @@ async function removeEmptyDirectories(directory, paths) {
   }
 }
 
+// Throws unless `path` stays inside plugins/, evals/, or test/ (or is the
+// examples guide), so a bad name can never point a recursive delete elsewhere.
+export function assertRemovable(directory, path) {
+  const target = resolve(directory, path);
+  const rel = relative(resolve(directory), target);
+  const parts = rel.split(sep);
+  const inside = !isAbsolute(rel) && !parts.includes("..");
+  const allowed = inside && (parts.length > 1 && ["plugins", "evals", "test"].includes(parts[0]) || parts.join("/") === "docs/examples.md");
+  if (!allowed) throw new Error(`Refusing to remove ${path}: removal only deletes files inside plugins/, evals/, or test/. Nothing was removed.`);
+  return target;
+}
+
 export async function removePlugins(names, { directory = root, examplesOnly = false, dryRun = false } = {}) {
   if (!names.length) throw new Error("Name at least one plugin to remove.");
+  // Check every name before touching the file system, so a path such as
+  // ../docs never reaches a lookup or a delete.
+  const invalid = names.filter((name) => typeof name !== "string" || !namePattern.test(name) || name.length > 64);
+  if (invalid.length) {
+    throw new Error(`${invalid.map((name) => JSON.stringify(String(name))).join(", ")} ${invalid.length === 1 ? "isn't a plugin name" : "aren't plugin names"}. `
+      + "Plugin names are lowercase letters, digits, and single hyphens, such as release-notes. Nothing was removed.");
+  }
   const catalogPath = resolve(directory, "marketplace.json");
   const catalog = await json(catalogPath);
   const remote = [];
@@ -135,6 +171,7 @@ export async function removePlugins(names, { directory = root, examplesOnly = fa
     owned.push("docs/examples.md");
     removedRoots.push(resolve(directory, "docs/examples.md"));
   }
+  for (const path of owned) assertRemovable(directory, path);
   const changes = { removed: owned, remote, updated: [] };
   if (dryRun) return changes;
 
@@ -166,12 +203,12 @@ export async function removePlugins(names, { directory = root, examplesOnly = fa
     changes.updated.push(".vally.yaml");
   }
 
-  // Generated grader notices go with the last grader source that produced them.
-  const graderSources = resolve(directory, "evals/graders/src");
-  const hasGraderSources = existsSync(graderSources) && (await readdir(graderSources)).some((name) => name.endsWith(".mjs"));
-  if (!hasGraderSources && existsSync(resolve(directory, "evals/graders/dist"))) {
-    await rm(resolve(directory, "evals/graders/dist"), { recursive: true, force: true });
-    changes.removed.push("evals/graders/dist");
+  // A removed grader source leaves the shared notices behind, so rebuild. That
+  // rewrites the notices for the graders that are left and deletes generated
+  // files whose source is gone.
+  if (owned.some((path) => path.startsWith("evals/graders/src/") || path.startsWith("evals/graders/dist/"))) {
+    const { writeGenerated } = await import("./build.mjs");
+    for (const path of (await writeGenerated(directory)).removed) if (!changes.removed.includes(path)) changes.removed.push(path);
   }
   await removeEmptyDirectories(directory, [...owned, "evals/graders/src", "evals/graders/dist"]);
 

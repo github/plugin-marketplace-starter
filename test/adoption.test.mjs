@@ -68,9 +68,8 @@ async function scratchRepository(t) {
 async function verify(directory, { tests = true } = {}) {
   await ok(directory, "scripts/typecheck.mjs");
   const validated = await ok(directory, "scripts/validate.mjs");
-  // node_modules is linked into the copy, which changes bundle path comments,
-  // so rebuild here; the real checkout runs build --check.
-  await ok(directory, "scripts/build.mjs");
+  // node_modules is linked into the copy, so this also proves the committed
+  // bundles don't depend on where node_modules lives.
   await ok(directory, "scripts/build.mjs", "--check");
   const coverage = await ok(directory, "scripts/validate-evals.mjs");
   await ok(directory, "scripts/evals.mjs", "lint");
@@ -184,6 +183,14 @@ test("an empty or remote-only marketplace passes verify, and new plugins scaffol
   assert.ok((await json(join(directory, "marketplace.json"))).plugins.every((entry) => typeof entry.source === "string"));
   const empty = await verify(directory, { tests: false });
   if (!ownPlugins.length) assert.match(empty.coverage, /nothing to cover/);
+  // The setup steps about examples and the remote plugin go with them, and the list stays numbered in order.
+  const setup = (await readFile(join(directory, "README.md"), "utf8")).match(/## Make it yours\n[\s\S]*?\n## /)?.[0];
+  if (setup) {
+    if (present.length) assert.doesNotMatch(setup, /remove-example/);
+    assert.doesNotMatch(setup, /github-copilot/);
+    const numbers = [...setup.matchAll(/^(\d+)\. /gm)].map((match) => Number(match[1]));
+    assert.deepEqual(numbers, numbers.map((_, index) => index + 1));
+  }
 
   const [hook, canvas, skill] = ["lint", "standup", "notes"].map((name) => `${prefix}-${name}`);
   await newPlugin(directory, hook, "--no-skill", "--with", "hook");
@@ -236,8 +243,12 @@ test("rename-marketplace renames the catalog, overlay, package, and install comm
   }
   const { validated } = await verify(directory, { tests: false });
   assert.doesNotMatch(validated, /name is still the template's|still names the template's marketplace|OWNER\/REPO/);
+  if (readme.includes("A GitHub template for building, evaluating, and sharing AI customizations")) {
+    // rename-marketplace changes the title, but the introduction is still the template's.
+    assert.match(validated, /README\.md: the title or introduction is still the template's/);
+  }
   if (/Harald Kirschner|Ronnie Geraghty/.test(await readFile(join(directory, "LICENSE"), "utf8"))) {
-    assert.match(validated, /LICENSE: the copyright holder is still the template's/);
+    assert.match(validated, /LICENSE: names only the template's authors/);
   }
 
   // A new plugin's README uses the real repository, and a second rename works too.
@@ -263,6 +274,12 @@ test("each example can be removed on its own", { timeout: 600_000, skip: !presen
     }
   };
   await Promise.all([worker(), worker(), worker()]);
+});
+
+test("removal renumbers a list that lost a marked step", () => {
+  const text = ["1. One", "   <!-- plugin:gone -->", "2. Gone", "   more about it", "   <!-- /plugin:gone -->", "3. Three", "   detail", "", "4. Four", "", "Other text.", "1. Separate", "3. List"].join("\n");
+  assert.equal(pruneMarkdown(text, ["gone"], () => false), ["1. One", "2. Three", "   detail", "", "3. Four", "", "Other text.", "1. Separate", "2. List"].join("\n"));
+  assert.equal(pruneMarkdown("1. One\n3. Kept as is\n", [], () => false), "1. One\n3. Kept as is\n");
 });
 
 test("removal prunes install commands, marked sections, example table rows, and links to removed files", () => {

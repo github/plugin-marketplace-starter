@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { basename, dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { runCli } from './problems.mjs';
@@ -56,6 +56,16 @@ async function notices(directory, label, metafile) {
   return { text, packages: packagePaths.size };
 }
 
+// esbuild names each bundled module by its path from the repository. When
+// node_modules lives elsewhere (a workspace root, a link, or a shared install),
+// those paths would differ per machine, so they're rewritten to start at
+// node_modules/. Only path comments and module keys change, never code.
+export function portable(text) {
+  return text
+    .replace(/^(\s*\/\/ )[^\n]*?(?<![^/\s])(node_modules\/[^\n]*)$/gm, '$1$2')
+    .replace(/^(\s*")[^"\n]*?(?<![^/"])(node_modules\/[^"\n]*"\()/gm, '$1$2');
+}
+
 export async function generate(directory = root) {
   const files = new Map();
   const groups = new Map();
@@ -70,7 +80,7 @@ export async function generate(directory = root) {
       define: bundle.define,
       banner,
     });
-    files.set(output, result.outputFiles[0].text);
+    files.set(output, portable(result.outputFiles[0].text));
     const noticesPath = resolve(dirname(output), 'THIRD_PARTY_NOTICES.txt');
     const group = groups.get(noticesPath) ?? [];
     group.push({ label: bundle.label, metafile: result.metafile });
@@ -87,23 +97,71 @@ export async function generate(directory = root) {
   return files;
 }
 
-async function main() {
-  const check = process.argv.includes('--check');
-  const files = await generate();
-  const normalize = text => text.replaceAll('\r\n', '\n');
-  for (const [path, contents] of files) {
-    if (check) {
-      let current;
-      try { current = await readFile(path, 'utf8'); }
-      catch (error) { if (error.code === 'ENOENT') throw new Error(`Missing generated artifact: ${relative(root, path).split(sep).join('/')}. Run npm run build.`); throw error; }
-      if (normalize(current) !== normalize(contents)) throw new Error(`Stale generated artifact: ${relative(root, path).split(sep).join('/')}. Run npm run build.`);
-    } else {
-      await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, contents);
+// Every file in a generated directory: plugins/<name>/dist/ and evals/graders/dist/.
+export async function generatedFiles(directory = root) {
+  const found = [];
+  async function walk(path) {
+    for (const entry of await entries(path)) {
+      const child = resolve(path, entry.name);
+      if (entry.isDirectory()) await walk(child);
+      else found.push(child);
     }
   }
-  const count = files.size;
-  console.log(check ? `${count} generated artifacts are current.` : `Built ${count} generated artifacts.`);
+  for (const plugin of (await entries(resolve(directory, 'plugins'))).filter(entry => entry.isDirectory())) {
+    await walk(resolve(directory, 'plugins', plugin.name, 'dist'));
+  }
+  await walk(resolve(directory, 'evals/graders/dist'));
+  return found;
+}
+
+const normalize = text => text.replaceAll('\r\n', '\n');
+const label = (directory, path) => relative(directory, path).split(sep).join('/');
+
+// Writes every generated artifact that changed and deletes the ones whose
+// source is gone. Returns the repository paths it deleted.
+export async function writeGenerated(directory = root) {
+  const files = await generate(directory);
+  for (const [path, contents] of files) {
+    let current;
+    try { current = await readFile(path, 'utf8'); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (current !== undefined && normalize(current) === normalize(contents)) continue;
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, contents);
+  }
+  const removed = [];
+  for (const path of await generatedFiles(directory)) {
+    if (files.has(path)) continue;
+    await rm(path, { force: true });
+    removed.push(label(directory, path));
+  }
+  return { count: files.size, removed };
+}
+
+export async function checkGenerated(directory = root) {
+  const files = await generate(directory);
+  for (const [path, contents] of files) {
+    let current;
+    try { current = await readFile(path, 'utf8'); }
+    catch (error) { if (error.code === 'ENOENT') throw new Error(`Missing generated artifact: ${label(directory, path)}. Run npm run build.`); throw error; }
+    if (normalize(current) !== normalize(contents)) throw new Error(`Stale generated artifact: ${label(directory, path)}. Run npm run build.`);
+  }
+  const orphaned = (await generatedFiles(directory)).filter(path => !files.has(path));
+  if (orphaned.length) {
+    throw new Error(`Orphaned generated artifact${orphaned.length === 1 ? '' : 's'}: ${orphaned.map(path => label(directory, path)).join(', ')}. `
+      + 'Nothing builds these anymore because their source is gone. Run npm run build to delete them.');
+  }
+  return files.size;
+}
+
+async function main() {
+  if (process.argv.includes('--check')) {
+    console.log(`${await checkGenerated()} generated artifacts are current.`);
+    return;
+  }
+  const { count, removed } = await writeGenerated();
+  for (const path of removed) console.log(`Deleted ${path}; its source is gone.`);
+  console.log(`Built ${count} generated artifacts.`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await runCli(main);
