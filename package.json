@@ -8,7 +8,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "build:check": "node scripts/build.mjs --check",
-    "check": "tsc --noEmit && node scripts/validate.mjs",
+    "check": "node scripts/typecheck.mjs && node scripts/validate.mjs",
     "test": "node --test",
     "verify": "npm run check && npm run build:check && npm test && npm run eval:check && npm run eval:lint",
     "eval:check": "node scripts/validate-evals.mjs",

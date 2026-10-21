@@ -65,6 +65,7 @@ async function scratchRepository(t) {
 
 // The same model-free checks as npm run verify, run inside a scratch copy.
 async function verify(directory, { tests = true } = {}) {
+  await ok(directory, "scripts/typecheck.mjs");
   const validated = await ok(directory, "scripts/validate.mjs");
   // node_modules is linked into the copy, which changes bundle path comments,
   // so rebuild here; the real checkout runs build --check.
