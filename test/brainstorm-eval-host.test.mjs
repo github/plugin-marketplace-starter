@@ -2,28 +2,37 @@ import baseTest from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { missing } from "../scripts/examples.mjs";
 
 // Example-only tests: skip every test here when the example's files are gone.
-const skip = missing("evals/support/brainstorm-host.mjs", "evals/support/brainstorm-loader.mjs", "plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/board.mjs");
+// The generic canvas host driving the real brainstorm extension, as its evals do.
+const extensionPath = "plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/extension.mjs";
+const skip = missing("evals/support/canvas-host.mjs", extensionPath, "plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/board.mjs");
 const test = skip ? (name) => baseTest(name, { skip }) : baseTest;
-const { CANVAS_ID, LIMITS, createBrainstormFixture } = skip ? {} : await import("../evals/support/brainstorm-host.mjs");
-const { resolve: resolveSdk } = skip ? {} : await import("../evals/support/brainstorm-loader.mjs");
+const { LIMITS, createCanvasFixture } = skip ? {} : await import("../evals/support/canvas-host.mjs");
+const { resolve: resolveSdk } = skip ? {} : await import("../evals/support/canvas-loader.mjs");
 const { noteSchema } = skip ? {} : await import("../plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/board.mjs");
+const CANVAS_ID = "marketplace-starter-brainstorm";
 
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const hostUrl = new URL("../evals/support/brainstorm-host.mjs", import.meta.url);
-const sdkUrl = new URL("../evals/support/brainstorm-sdk.mjs", import.meta.url);
+const hostUrl = new URL("../evals/support/canvas-host.mjs", import.meta.url);
+const sdkUrl = new URL("../evals/support/canvas-sdk.mjs", import.meta.url);
+// The same seed the team-brainstorm eval passes, so every session starts with one note.
+const seed = JSON.stringify([{ action: "save_note", input: { text: "Keep onboarding simple", column: "ideas" } }]);
+const fixtureOptions = () => ({ extension: resolve(root, extensionPath), seed: JSON.parse(seed) });
 const open = (instanceId = "panel") => ({ canvasId: CANVAS_ID, instanceId });
 const action = (actionName, input, instanceId = "panel") => ({
   instanceId, actionName, ...(input === undefined ? {} : { input }),
 });
-const options = { timeout: 20_000 };
+// Generous limits: these tests start real processes, which can be slow while
+// the rest of the suite runs in parallel.
+const options = { timeout: 60_000 };
 
-async function within(promise, milliseconds = 8_000) {
+async function within(promise, milliseconds = 20_000) {
   let timer;
   try {
     return await Promise.race([
@@ -54,7 +63,7 @@ class ObservedTransport extends StdioClientTransport {
 }
 
 async function startFixture(t, { script, expectedExit = 0, connect = true } = {}) {
-  const args = script ? ["--input-type=module", "--eval", script] : [fileURLToPath(hostUrl)];
+  const args = script ? ["--input-type=module", "--eval", script] : [fileURLToPath(hostUrl), resolve(root, extensionPath), "--seed", seed];
   const transport = new ObservedTransport(args);
   const client = new Client({ name: "brainstorm-contract-test", version: "1.0.0" });
   t.after(async () => {
@@ -76,7 +85,7 @@ async function startFixture(t, { script, expectedExit = 0, connect = true } = {}
       }
     }
   });
-  if (connect) await client.connect(transport, { timeout: 5_000 });
+  if (connect) await client.connect(transport, { timeout: 30_000 });
   return {
     client, transport,
     async call(name, arguments_) {
@@ -252,14 +261,14 @@ test("each fresh fixture process starts with exactly the seed and no previous se
 
 test("internal close/reopen uses real HTTP and SSE lifecycle without writing scratch artifacts", options, async (t) => {
   const support = new URL("../evals/support/", import.meta.url);
-  const ownFiles = () => readdirSync(support).filter((name) => name.startsWith("brainstorm")).sort();
+  const ownFiles = () => readdirSync(support).sort();
   const beforeFiles = ownFiles();
-  const fixture = await createBrainstormFixture();
+  const fixture = await createCanvasFixture(fixtureOptions());
   t.after(async () => {
     await within(fixture.close());
     assert.deepEqual(ownFiles(), beforeFiles);
   });
-  await assert.rejects(createBrainstormFixture(), /fresh process/);
+  await assert.rejects(createCanvasFixture(fixtureOptions()), /fresh process/);
   const opened = await fixture.callTool("open_canvas", open());
   const url = fixture.panelUrl("panel");
   assert.deepEqual(await fixture.callTool("open_canvas", open()), opened);
@@ -268,7 +277,7 @@ test("internal close/reopen uses real HTTP and SSE lifecycle without writing scr
   assert.equal(page.status, 200);
   assert.match(await page.text(), /Team brainstorm/);
   const readHttp = async (url) => {
-    const response = await fetch(new URL("/board", url), { signal: AbortSignal.timeout(2_000) });
+    const response = await fetch(new URL("board", url), { signal: AbortSignal.timeout(2_000) });
     assert.equal(response.status, 200);
     return response.json();
   };
@@ -277,7 +286,7 @@ test("internal close/reopen uses real HTTP and SSE lifecycle without writing scr
     id: seed.id, text: seed.text, column: "next",
   }));
   assert.deepEqual(await readHttp(url), saved.board);
-  const events = await fetch(new URL("/events", url), { signal: AbortSignal.timeout(5_000) });
+  const events = await fetch(new URL("events", url), { signal: AbortSignal.timeout(5_000) });
   const reader = events.body.getReader();
   t.after(async () => { await reader.cancel(); });
   assert.match(new TextDecoder().decode((await within(reader.read())).value), /"column":"next"/);
@@ -300,10 +309,10 @@ test("internal close/reopen uses real HTTP and SSE lifecycle without writing scr
 
 function lifecycleScript({ signal, failOpen = false, hangClose = false } = {}) {
   return `
-    import { createBrainstormFixture, runStdio } from ${JSON.stringify(hostUrl.href)};
+    import { createCanvasFixture, runStdio } from ${JSON.stringify(hostUrl.href)};
     import { getRegisteredCanvases } from ${JSON.stringify(sdkUrl.href)};
     await runStdio(async () => {
-      const fixture = await createBrainstormFixture();
+      const fixture = await createCanvasFixture(${JSON.stringify(fixtureOptions())});
       const canvas = getRegisteredCanvases()[0];
       const realOpen = canvas.open;
       const realClose = canvas.onClose;
@@ -361,7 +370,7 @@ test("bootstrap failure exits nonzero instead of serving a fallback", options, a
     script: `import { runStdio } from ${JSON.stringify(hostUrl.href)};
       await runStdio(async () => { throw new Error("deliberate bootstrap failure"); });`,
   });
-  await assert.rejects(fixture.client.connect(fixture.transport, { timeout: 5_000 }));
+  await assert.rejects(fixture.client.connect(fixture.transport, { timeout: 30_000 }));
   assert.equal((await within(fixture.transport.exited)).code, 1);
   assert.match(fixture.transport.diagnostics, /deliberate bootstrap failure/);
   assert.equal(fixture.transport.output, "");

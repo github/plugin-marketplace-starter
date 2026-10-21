@@ -33,7 +33,12 @@ stimuli:
         brainstorm-host:
           type: stdio
           command: node
-          args: ['${BRAINSTORM_HOST}']
+          args:
+            - '${CANVAS_HOST}'
+            - '${BRAINSTORM_EXTENSION}'
+            # Every session starts with one synthetic note.
+            - --seed
+            - '[{"action":"save_note","input":{"text":"Keep onboarding simple","column":"ideas"}}]'
     tags:
       assets:
         - skill:team-brainstorm/team-brainstorm
@@ -79,7 +84,12 @@ stimuli:
         brainstorm-host:
           type: stdio
           command: node
-          args: ['${BRAINSTORM_HOST}']
+          args:
+            - '${CANVAS_HOST}'
+            - '${BRAINSTORM_EXTENSION}'
+            # Every session starts with one synthetic note.
+            - --seed
+            - '[{"action":"save_note","input":{"text":"Keep onboarding simple","column":"ideas"}}]'
     tags:
       assets:
         - skill:team-brainstorm/team-brainstorm

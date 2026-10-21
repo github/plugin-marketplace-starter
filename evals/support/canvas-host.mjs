@@ -1,13 +1,26 @@
 import { register } from "node:module";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
 import Ajv from "ajv";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
-import { CanvasError, getRegisteredCanvases } from "./brainstorm-sdk.mjs";
+import { CanvasError, getRegisteredCanvases } from "./canvas-sdk.mjs";
 
-export const CANVAS_ID = "marketplace-starter-brainstorm";
+// An evaluation-only MCP transport for any canvas extension. It loads the real
+// extension.mjs through a stand-in for @github/copilot-sdk/extension, then
+// exposes three tools that mirror how a host drives a canvas:
+// list_canvas_capabilities, open_canvas, and invoke_canvas_action. The
+// extension's actions, lifecycle, and servers run unchanged. It doesn't render
+// any UI, so it can't prove that a host shows the canvas.
+//
+// Usage in an eval spec (params with a slash become absolute paths):
+//   command: node
+//   args: ['${CANVAS_HOST}', '${MY_EXTENSION}', '--seed', '[{"action":"add_item","input":{"text":"First"}}]']
+// --canvas <id> picks one canvas when the extension registers several.
+// --seed takes a JSON list of { action, input } calls to run before the first
+// tool call, so every eval session starts from the same synthetic state.
 export const LIMITS = Object.freeze({
   panels: 4,
   queuedCalls: 32,
@@ -16,31 +29,44 @@ export const LIMITS = Object.freeze({
   shutdownMs: 5_000,
 });
 
-const sessionId = "brainstorm-eval-session";
-const expectedErrors = new Set([
-  "invalid_input", "invalid_note", "unknown_tool", "unknown_action",
-  "unknown_instance", "panel_limit", "fixture_closed", "fixture_busy",
-]);
+const sessionId = "canvas-eval-session";
 let created = false;
 
+export function hostOptions(args) {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
+    canvas: { type: "string" }, seed: { type: "string" },
+  } });
+  if (positionals.length !== 1) throw new Error("Usage: canvas-host.mjs <path/to/extension.mjs> [--canvas <id>] [--seed <json>]");
+  let seed = [];
+  if (values.seed !== undefined) {
+    try { seed = JSON.parse(values.seed); }
+    catch { throw new Error("--seed must be a JSON list of { action, input } objects."); }
+    if (!Array.isArray(seed) || !seed.every((item) => item && typeof item.action === "string")) {
+      throw new Error("--seed must be a JSON list of { action, input } objects.");
+    }
+  }
+  return { extension: resolve(positionals[0]), canvasId: values.canvas, seed };
+}
+
 function toolDefinitions(canvas) {
-  const canvasId = { type: "string", const: CANVAS_ID };
+  const canvasId = { type: "string", const: canvas.id };
   const instanceId = { type: "string", minLength: 1, maxLength: 128, pattern: "\\S" };
   const object = (properties, required) => ({ type: "object", additionalProperties: false, properties, required });
+  const name = canvas.displayName ?? canvas.id;
   return [
     {
       name: "list_canvas_capabilities",
-      description: "Inspect the real team-brainstorm action contracts in this evaluation-only headless SDK transport. This does not test native Copilot or VS Code rendering.",
+      description: `Inspect the real ${name} canvas action contracts in this evaluation-only headless SDK transport. This does not test native Copilot or VS Code rendering.`,
       inputSchema: object({ canvasId }, ["canvasId"]),
     },
     {
       name: "open_canvas",
-      description: `Open a headless SDK-contract panel using the real extension's HTTP server and lifecycle, not a native UI window. Reusing a handle is idempotent. At most ${LIMITS.panels} panels; no localhost URL is exposed.`,
+      description: `Open a headless SDK-contract panel of ${name} using the real extension's lifecycle, not a native UI window. Reusing a handle is idempotent. At most ${LIMITS.panels} panels; no localhost URL is exposed.`,
       inputSchema: object({ canvasId, instanceId }, ["canvasId", "instanceId"]),
     },
     {
       name: "invoke_canvas_action",
-      description: "Invoke a real registered brainstorm action on an opened headless panel. Read get_board to discover generated note IDs. Use the source action schema for save_note/remove_note; omit input or use null for get_board. Notes persist for this fixture session.",
+      description: `Invoke a real registered ${name} action on an opened headless panel. Use list_canvas_capabilities for each action's input schema; omit input or use null for actions without one. State persists for this fixture session.`,
       inputSchema: object({
         instanceId,
         actionName: { type: "string", enum: canvas.actions.map((action) => action.name) },
@@ -50,16 +76,18 @@ function toolDefinitions(canvas) {
   ];
 }
 
-export async function createBrainstormFixture() {
-  if (created) throw new Error("Start a fresh process for a new brainstorm eval session.");
+export async function createCanvasFixture({ extension, canvasId, seed = [] }) {
+  if (created) throw new Error("Start a fresh process for a new canvas eval session.");
   created = true;
-  register(new URL("./brainstorm-loader.mjs", import.meta.url));
-  await import("../../plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/extension.mjs");
+  register(new URL("./canvas-loader.mjs", import.meta.url));
+  await import(pathToFileURL(extension).href);
   const canvases = getRegisteredCanvases();
-  const canvas = canvases[0];
-  if (canvases.length !== 1 || canvas.id !== CANVAS_ID
-    || typeof canvas.open !== "function" || typeof canvas.onClose !== "function") {
-    throw new Error("The real brainstorm canvas registration is incompatible with this fixture.");
+  const canvas = canvasId ? canvases.find((item) => item.id === canvasId) : canvases.length === 1 ? canvases[0] : undefined;
+  if (!canvas) {
+    throw new Error(`${extension} registers ${canvases.map((item) => item.id).join(", ") || "no canvases"}. ${canvasId ? `None is ${canvasId}.` : "Pass --canvas <id> to pick one."}`);
+  }
+  if (typeof canvas.open !== "function" || typeof canvas.onClose !== "function" || !Array.isArray(canvas.actions)) {
+    throw new Error(`Canvas ${canvas.id} needs open, onClose, and an actions list for this fixture.`);
   }
 
   const ajv = new Ajv({ allErrors: true });
@@ -69,13 +97,11 @@ export async function createBrainstormFixture() {
     if (typeof action.handler !== "function") throw new Error(`Missing real handler: ${action.name}`);
     return [action.name, { ...action, validate: action.inputSchema ? ajv.compile(action.inputSchema) : undefined }];
   }));
-  if (actions.size !== canvas.actions.length || !actions.has("save_note")) {
-    throw new Error("The real brainstorm action registration is incompatible with this fixture.");
+  if (actions.size !== canvas.actions.length) throw new Error(`Canvas ${canvas.id} registers duplicate action names.`);
+  for (const { action, input } of seed) {
+    if (!actions.has(action)) throw new Error(`--seed names unknown action ${action}.`);
+    await actions.get(action).handler({ sessionId, input });
   }
-  await actions.get("save_note").handler({
-    sessionId,
-    input: { text: "Keep onboarding simple", column: "ideas" },
-  });
 
   const panels = new Map();
   let queue = Promise.resolve();
@@ -102,6 +128,7 @@ export async function createBrainstormFixture() {
   }
 
   return {
+    canvasId: canvas.id,
     tools,
     callTool(name, input) {
       return enqueue(async () => {
@@ -170,7 +197,7 @@ export async function createBrainstormFixture() {
   };
 }
 
-export async function runStdio(factory = createBrainstormFixture) {
+export async function runStdio(factory = () => createCanvasFixture(hostOptions(process.argv.slice(2)))) {
   let server;
   let bootstrap;
   let stopping = false;
@@ -178,7 +205,7 @@ export async function runStdio(factory = createBrainstormFixture) {
   const done = new Promise((resolve) => { finish = resolve; });
   const report = (error) => {
     process.exitCode = 1;
-    process.stderr.write(`[brainstorm headless-sdk-contract] ${String(error?.stack ?? error)}\n`);
+    process.stderr.write(`[canvas headless-sdk-contract] ${String(error?.stack ?? error)}\n`);
   };
   const stop = (error) => {
     if (error) report(error);
@@ -229,9 +256,9 @@ export async function runStdio(factory = createBrainstormFixture) {
   try {
     const fixture = await bootstrap;
     if (!stopping) {
-      server = new Server({ name: "team-brainstorm-headless-sdk-contract", version: "1.0.0" }, {
+      server = new Server({ name: `${fixture.canvasId}-headless-sdk-contract`, version: "1.0.0" }, {
         capabilities: { tools: {} },
-        instructions: "Evaluation-only headless SDK contract for the real team-brainstorm asset. It does not render native Copilot or VS Code UI. Discover capabilities, open a stable instanceId, then read the board to obtain note IDs.",
+        instructions: `Evaluation-only headless SDK contract for the real ${fixture.canvasId} canvas. It does not render native Copilot or VS Code UI. Discover capabilities, open a stable instanceId, then use its actions.`,
       });
       server.onclose = onEnd;
       server.onerror = onError;
@@ -241,11 +268,12 @@ export async function runStdio(factory = createBrainstormFixture) {
           const result = await fixture.callTool(params.name, params.arguments);
           return { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result };
         } catch (error) {
-          if (error instanceof CanvasError && expectedErrors.has(error.code)) {
+          // Host checks and CanvasErrors from the extension are tool errors the model can see.
+          if (error instanceof CanvasError) {
             return { isError: true, content: [{ type: "text", text: `${error.code}: ${error.message}` }] };
           }
           setImmediate(() => onError(error));
-          throw new McpError(ErrorCode.InternalError, "Headless brainstorm runtime failed; see stderr.");
+          throw new McpError(ErrorCode.InternalError, "Headless canvas runtime failed; see stderr.");
         }
       });
       await server.connect(new StdioServerTransport(process.stdin, process.stdout, { maxBufferSize: LIMITS.messageBytes }));
