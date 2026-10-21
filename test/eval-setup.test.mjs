@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { checkCoverage, discoverAssets, readEvals, root } from "../scripts/validate-evals.mjs";
+import { readCatalog } from "../scripts/catalog.mjs";
 import { defaultFormatPlugin, defaultRuntime, runtimeArguments, runtimeEntry } from "../scripts/eval-runtime.js";
 import { evalParams, runtimeBridge, runtimeEnvironment, vallyArguments, vallyCliPath, writeActionParams } from "../scripts/evals.mjs";
 import { render, summarize } from "../scripts/eval-report.mjs";
@@ -44,8 +45,9 @@ test("eval-only dependencies stay out of plugins and remote installation stays o
   for (const version of Object.values(manifest.devDependencies)) assert.match(version, /^\d+\.\d+\.\d+$/);
   assert.equal(manifest.engines.node, ">=22.14.0");
   const settings = JSON.parse(await readFile(resolve(root, ".github/copilot/settings.json"), "utf8"));
-  assert.equal(Object.keys(settings.enabledPlugins).length, 6);
-  assert.equal(settings.enabledPlugins["evals@plugin-marketplace-starter"], undefined);
+  const { catalog, localPlugins, remotePlugins } = await readCatalog(root);
+  assert.deepEqual(Object.keys(settings.enabledPlugins).sort(), localPlugins.map((entry) => `${entry.name}@${catalog.name}`).sort());
+  for (const remote of remotePlugins) assert.equal(settings.enabledPlugins[`${remote.name}@${catalog.name}`], undefined);
 });
 
 test("runtime setup uses the pinned full runtime bridge and mounts only the requested hook", () => {

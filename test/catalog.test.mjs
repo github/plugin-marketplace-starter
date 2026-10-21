@@ -3,17 +3,26 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { readCatalog, partitionCatalog, validateRemoteSource } from "../scripts/catalog.mjs";
+import { readCatalog, partitionCatalog, remoteWarnings, validateRemoteSource } from "../scripts/catalog.mjs";
 import { discoverAssets, checkCoverage, root } from "../scripts/validate-evals.mjs";
 
-test("the catalog separates local examples from the opt-in Evals reference", async () => {
+test("the catalog separates local plugins from pinned, opt-in remote references", async () => {
   const { catalog, localPlugins, remotePlugins } = await readCatalog(root);
-  assert.equal(localPlugins.length, 6);
-  assert.equal(remotePlugins.length, 1);
-  assert.equal(remotePlugins[0].name, "evals");
-  assert.deepEqual(remotePlugins[0].source, { source: "github", repo: "github/evals", path: "packages/plugin" });
-  assert.throws(() => partitionCatalog({ ...catalog, plugins: [...catalog.plugins, remotePlugins[0]] }), /Duplicate/);
+  assert.ok(localPlugins.length > 0);
+  assert.equal(localPlugins.length + remotePlugins.length, catalog.plugins.length);
+  const evals = remotePlugins.find((entry) => entry.source.repo === "github/evals");
+  if (evals) {
+    // The catalog name must match upstream's plugin.json name, not its marketplace name.
+    assert.equal(evals.name, "github-copilot");
+    assert.equal(evals.source.path, "packages/plugin");
+    assert.deepEqual(remoteWarnings(evals), []);
+    assert.equal(evals.version, evals.source.ref.replace(/^copilot-evals-v/, ""));
+  }
+  const local = localPlugins[0];
+  assert.throws(() => partitionCatalog({ ...catalog, plugins: [...catalog.plugins, local] }), /Duplicate/);
   assert.throws(() => partitionCatalog({ ...catalog, plugins: [{ name: "escape", source: "./plugins/../outside" }] }), /Local source/);
+  assert.throws(() => partitionCatalog({ ...catalog, plugins: [{ name: "remote", source: { source: "github", repo: "o/r" }, version: "" }] }), /version/);
+  assert.deepEqual(remoteWarnings({ name: "loose", source: { source: "github", repo: "o/r" } }).length, 2);
 });
 
 test("remote references are structurally checked without requiring access to the upstream", () => {

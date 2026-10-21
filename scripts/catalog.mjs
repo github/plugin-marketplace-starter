@@ -46,6 +46,15 @@ export function validateRemoteSource(source) {
   if (source.sha !== undefined) assert.ok(typeof source.sha === "string" && /^[a-fA-F0-9]{40}$/.test(source.sha), "Remote sha must be a full commit ID.");
 }
 
+// Remote entries are valid without a pin, but unpinned sources follow upstream's
+// default branch, which can move or be unbuilt.
+export function remoteWarnings(entry) {
+  const warnings = [];
+  if (entry.source.sha === undefined) warnings.push(`${entry.name}: pin a full commit sha so installs are reproducible.`);
+  if (entry.source.ref === undefined) warnings.push(`${entry.name}: name the upstream release with ref.`);
+  return warnings;
+}
+
 export function partitionCatalog(catalog) {
   assert.equal(typeof catalog?.name, "string");
   assert.match(catalog.name, namePattern);
@@ -64,6 +73,8 @@ export function partitionCatalog(catalog) {
       localPlugins.push(entry);
     } else {
       validateRemoteSource(entry.source);
+      assert.ok(entry.version === undefined || (typeof entry.version === "string" && entry.version.trim()),
+        `${entry.name}: remote version must be nonempty text.`);
       remotePlugins.push(entry);
     }
   }

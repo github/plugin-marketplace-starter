@@ -20,7 +20,7 @@ workflow built on the [Evals Action](https://github.com/github/evals-action).
 | [customization-authoring](plugins/customization-authoring/) | "Create a skill and evals for summarizing a changelog" | A skill that writes a skill and its evals |
 | [code-review](plugins/code-review/) | "Use adversarial-review to review this diff without changing it" | A skill that delegates to a read-only custom agent |
 | [json-configuration](plugins/json-configuration/) | 'Use json-configuration to validate {"port":8443} and look up /port' | A skill backed by a bundled local MCP server |
-| `evals` (remote, optional) | "Create evals for this skill" | Referencing a plugin that lives in another repository |
+| [`github-copilot`](#optional-github-copilot-evals-plugin) (remote, optional) | "Create evals for this skill" | Referencing a plugin that lives in another repository |
 
 ## Make it yours
 
@@ -32,8 +32,8 @@ workflow built on the [Evals Action](https://github.com/github/evals-action).
 3. Keep, rename, or delete the local examples. Update each plugin's manifest, catalog
    entry, any skill or agent metadata, README, changelog, evals, and repository
    settings together. Review the optional remote plugin separately; remove its
-   catalog entry if your team doesn't have upstream access. It isn't enabled by
-   the repository overlay.
+   catalog entry if your team doesn't have upstream access. The repository
+   overlay never enables remote plugins.
 4. If you rename the canvas, update both its ID in the extension and the
    companion skill's reference to it. If you rename the reviewer agent, update
    the review skill that delegates to it.
@@ -100,29 +100,63 @@ continues in chat. The CLI-compatible hook has no separate VS Code variant.
 
 ### Optional GitHub Copilot Evals plugin
 
-The root [marketplace.json](marketplace.json) includes an `evals` entry with this
-remote source:
+The root [marketplace.json](marketplace.json) includes a `github-copilot` entry
+that points at the published GitHub Copilot Evals plugin in
+[github/evals](https://github.com/github/evals). It mirrors the stable entry in
+upstream's own catalog, pinned to a release tag and its full commit SHA:
 
 ```json
 {
-  "source": "github",
-  "repo": "github/evals",
-  "path": "packages/plugin"
+  "name": "github-copilot",
+  "source": {
+    "source": "github",
+    "repo": "github/evals",
+    "ref": "copilot-evals-v0.16.0",
+    "sha": "dd4c5015b5e8fdfcbd17b261d996c85aa92fde5b",
+    "path": "packages/plugin"
+  },
+  "version": "0.16.0"
 }
 ```
 
 After adding this marketplace, install it explicitly:
 
 ```sh
-copilot plugin install evals@plugin-marketplace-starter
+copilot plugin install github-copilot@plugin-marketplace-starter
 ```
 
-[GitHub Copilot Evals](https://github.com/github/evals) provides create, review,
-improve, and run skills. Its source repository is currently private, so each
-installer needs a GitHub account with access. This catalog reference doesn't
-grant access or copy upstream code. Repository installs provide the source
-skills; use upstream release instructions for the prebuilt extension, canvas,
-or MCP tooling.
+You can also skip this catalog and install it straight from upstream, which
+follows upstream's reviewed stable releases:
+
+```sh
+copilot plugin marketplace add github/evals
+copilot plugin install github-copilot@evals
+```
+
+Pick one route. Don't install the same plugin from both marketplaces.
+
+The pinned release is the built plugin. It provides the native `/eval` command
+(`/eval setup`, `create`, `review`, `improve`, `run`, and `compare`) in the CLI
+and Copilot App, a canvas, and six model-invocable skills: setup, create,
+review, improve, run, and compare. Running an eval needs a compatible runner
+and its own approval, and it spends inference credits. See the
+[upstream install guide](https://github.com/github/evals/blob/main/website/src/content/guides/install/plugin.md) for VS Code and
+Copilot App setup.
+
+The `github/evals` repository is currently private, so each installer needs a
+GitHub account with access. This catalog entry doesn't grant access or copy
+upstream code.
+
+A remote entry's `name` must equal the `name` in the upstream plugin's
+`plugin.json`, not the upstream marketplace's name. Upstream publishes a plugin
+called `github-copilot` in a marketplace called `evals`, so its install name
+here is `github-copilot@plugin-marketplace-starter`, and upstream's is
+`github-copilot@evals`.
+
+The repository settings overlay never enables a remote plugin. That's a
+deliberate security rule enforced by `npm run verify`: checking out this
+repository must not activate code fetched from another repository. Each
+developer installs remote plugins themselves.
 
 The local eval tooling works without this optional plugin. Catalog validation
 checks remote metadata only; checks and eval runs don't download or execute
@@ -244,10 +278,14 @@ enablement, tests, and evals. Remote references stay opt-in and aren't subject t
 local asset coverage checks.
 
 To reference a plugin that lives in another repository, add a GitHub source
-object like the `evals` entry. Confirm the install name and plugin directory
-against the upstream manifest. Paths must be repository-relative without
-traversal or backslashes. Optional `ref` and full-commit `sha` fields select an
-upstream revision. Document any private-repository access requirement.
+object like the `github-copilot` entry. Its catalog `name` must match the `name`
+in the upstream `plugin.json`; confirm it and the plugin directory against the
+upstream manifest. Paths must be repository-relative without traversal or
+backslashes. Pin a `ref` and a full 40-character commit `sha` so installs are
+reproducible and immune to tag or branch moves, and refresh them deliberately
+when upstream releases. `npm run verify` warns about remote entries without a
+`sha`. Document any private-repository access requirement. Don't add remote
+plugins to the repository settings overlay; verification rejects that.
 
 ## Evaluate the plugin assets
 

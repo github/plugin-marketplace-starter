@@ -4,7 +4,7 @@ import { resolve, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import Ajv from "ajv/dist/2020.js";
-import { contained, frontmatter, readCatalog } from "./catalog.mjs";
+import { contained, frontmatter, readCatalog, remoteWarnings } from "./catalog.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 const json = async (path) => JSON.parse(await readFile(path, "utf8"));
@@ -113,7 +113,8 @@ export async function validateRepository(directory = root) {
   }, "The repository marketplace must point at this checkout.");
   assert.deepEqual(settings.enabledPlugins, Object.fromEntries(
     [...names].map((name) => [`${name}@${catalog.name}`, true]),
-  ), "Enable every local plugin, but no remote plugins, in the repository overlay.");
+  ), "Enable every local plugin in the repository overlay. Never enable a remote plugin there: "
+    + "checking out this repository must not activate code fetched from another repository, so developers install remote plugins themselves.");
   for (const file of await files(directory)) {
     if (/\.(?:mjs|js)$/.test(file)) {
       const check = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
@@ -128,7 +129,7 @@ export async function validateRepository(directory = root) {
       }
     }
   }
-  return { ...counts, remotePlugins: remotePlugins.length };
+  return { ...counts, remotePlugins: remotePlugins.length, warnings: remotePlugins.flatMap(remoteWarnings) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
@@ -137,4 +138,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   console.log(`Validated ${count(counts.plugins, "local plugin")}: ${count(counts.skills, "skill")}, ${count(counts.agents, "agent")}, `
     + `${count(counts.hooks, "hook event")}, and ${count(counts.mcpServers, "MCP server")}.`);
   console.log(`Validated ${count(counts.remotePlugins, "remote reference")} as metadata only; no upstream code was fetched or run.`);
+  for (const warning of counts.warnings) console.warn(`Warning: ${warning}`);
 }

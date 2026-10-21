@@ -44,9 +44,13 @@ place; don't duplicate them here.
 - When upgrading Vally or Copilot, update the pins, the lockfile, and the
   workflow's `vally-version` together, and verify real custom-agent delegation
   and MCP behavior, not only schema validity.
-- Keep remote plugins opt-in. Validate their catalog metadata without fetching
-  or executing upstream code in checks, and document private-repository access.
-  Don't claim the local evals cover remote assets.
+- Keep remote plugins opt-in. The repository settings overlay must never enable
+  a remote plugin; that's a deliberate security rule, so developers install
+  remote plugins themselves. A remote entry's `name` must match the upstream
+  `plugin.json` name, and its source should pin a `ref` and full `sha`. Validate
+  catalog metadata without fetching or executing upstream code in checks, and
+  document private-repository access. Don't claim the local evals cover remote
+  assets.
 - Keep secrets and token-bearing URLs out of files. Use host authentication
   for private repositories, not embedded credentials. Never copy private
   organizational code into the examples.

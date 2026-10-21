@@ -39,14 +39,17 @@
       "description": "Validate JSON and retrieve configuration values with a local MCP server."
     },
     {
-      "name": "evals",
+      "name": "github-copilot",
       "source": {
         "source": "github",
         "repo": "github/evals",
+        "ref": "copilot-evals-v0.16.0",
+        "sha": "dd4c5015b5e8fdfcbd17b261d996c85aa92fde5b",
         "path": "packages/plugin"
       },
-      "description": "GitHub Copilot Evals skills for creating, reviewing, improving, and running evals.",
-      "homepage": "https://github.com/github/evals"
+      "version": "0.16.0",
+      "description": "Configure native projects with /eval setup, create and save evals with /eval create, save distinct candidates with /eval improve, run with /eval run, review with /eval review, and compare saved runs or explore one skill with /eval compare. Setup is optional; saving and running follow separate host approval policies.",
+      "homepage": "https://github.com/github/evals#installed-skills"
     }
   ]
 }
