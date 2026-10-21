@@ -4,11 +4,16 @@ import { once } from 'node:events';
 import { copyFile, mkdtemp, readdir, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { test } from 'node:test';
+import { test as baseTest } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { MAX_JSON_LENGTH, TOOL_NAMES } from '../plugins/json-configuration/dist/server.mjs';
+import { missing } from '../scripts/examples.mjs';
+
+// Example-only tests: skip every test here when the example's files are gone.
+const skip = missing('plugins/json-configuration/dist/server.mjs');
+const test = skip ? (name) => baseTest(name, { skip }) : baseTest;
+const { MAX_JSON_LENGTH, TOOL_NAMES } = skip ? {} : await import('../plugins/json-configuration/dist/server.mjs');
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const bundle = join(root, 'plugins', 'json-configuration', 'dist', 'server.mjs');

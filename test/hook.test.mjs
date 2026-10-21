@@ -1,10 +1,15 @@
-import test from "node:test";
+import baseTest from "node:test";
 import assert from "node:assert/strict";
 import { lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { missing } from "../scripts/examples.mjs";
+
+// Example-only tests: skip every test here when the example's files are gone.
+const skip = missing("plugins/format-json/com.github.copilot/hooks/format.mjs");
+const test = skip ? (name) => baseTest(name, { skip }) : baseTest;
 
 const hook = fileURLToPath(new URL("../plugins/format-json/com.github.copilot/hooks/format.mjs", import.meta.url));
 function fixture(t) {

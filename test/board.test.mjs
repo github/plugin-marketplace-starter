@@ -1,8 +1,14 @@
-import test from "node:test";
+import baseTest from "node:test";
 import assert from "node:assert/strict";
 import { request } from "node:http";
-import { createBoard } from "../plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/board.mjs";
-import { startServer } from "../plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/server.mjs";
+import { missing } from "../scripts/examples.mjs";
+
+// Example-only tests: skip every test here when the example's files are gone.
+const skip = missing("plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/board.mjs", "plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/server.mjs");
+const test = skip ? (name) => baseTest(name, { skip }) : baseTest;
+const { createBoard } = skip ? {} : await import("../plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/board.mjs");
+const { startServer } = skip ? {} : await import("../plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/server.mjs");
+
 
 test("notes can be added, edited, moved, and deleted without leaking mutable state", () => {
   const board = createBoard();

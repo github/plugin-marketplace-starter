@@ -33,8 +33,9 @@ test("discovery covers every local skill, agent, hook, extension, and advertised
 });
 
 test("the JSON configuration example advertises its two real MCP tools", { skip: !existsSync(resolve(root, "plugins/json-configuration")) }, async () => {
+  // Scoped to this example, so adding your own MCP plugin doesn't change it.
   const assets = await discoverAssets();
-  assert.deepEqual(assets.filter((asset) => asset.kind === "mcp").map((asset) => asset.id).sort(), [
+  assert.deepEqual(assets.filter((asset) => asset.id.startsWith("mcp:json-configuration/")).map((asset) => asset.id).sort(), [
     "mcp:json-configuration/json-configuration/get_json_value",
     "mcp:json-configuration/json-configuration/validate_json",
   ]);

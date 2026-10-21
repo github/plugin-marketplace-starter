@@ -1,10 +1,15 @@
-import test from "node:test";
+import baseTest from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { missing } from "../scripts/examples.mjs";
 
-const html = readFileSync(new URL("../plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/index.html", import.meta.url), "utf8");
-const script = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
+// Example-only tests: skip every test here when the example's files are gone.
+const skip = missing("plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/index.html");
+const test = skip ? (name) => baseTest(name, { skip }) : baseTest;
+
+const html = skip ? "" : readFileSync(new URL("../plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/index.html", import.meta.url), "utf8");
+const script = skip ? "" : html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
 
 // A small DOM contract harness runs the shipped page script without a browser dependency.
 function page() {

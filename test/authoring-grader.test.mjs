@@ -1,4 +1,4 @@
-import test from 'node:test';
+import baseTest from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
@@ -6,8 +6,13 @@ import { parse } from 'yaml';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { gradeAuthoring } from '../evals/graders/dist/authoring.mjs';
 import { evalParams, root as projectRoot, vallyCliPath } from '../scripts/evals.mjs';
+import { missing } from '../scripts/examples.mjs';
+
+// Example-only tests: skip every test here when the example's files are gone.
+const skip = missing('evals/graders/dist/authoring.mjs');
+const test = skip ? (name) => baseTest(name, { skip }) : baseTest;
+const { gradeAuthoring } = skip ? {} : await import('../evals/graders/dist/authoring.mjs');
 
 test('the actual relocated grader rejects missing, misplaced, malformed, and invocation-only artifacts', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'marketplace grader test '));

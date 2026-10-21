@@ -1,12 +1,18 @@
-import test from "node:test";
+import baseTest from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { CANVAS_ID, LIMITS, createBrainstormFixture } from "../evals/support/brainstorm-host.mjs";
-import { resolve as resolveSdk } from "../evals/support/brainstorm-loader.mjs";
-import { noteSchema } from "../plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/board.mjs";
+import { missing } from "../scripts/examples.mjs";
+
+// Example-only tests: skip every test here when the example's files are gone.
+const skip = missing("evals/support/brainstorm-host.mjs", "evals/support/brainstorm-loader.mjs", "plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/board.mjs");
+const test = skip ? (name) => baseTest(name, { skip }) : baseTest;
+const { CANVAS_ID, LIMITS, createBrainstormFixture } = skip ? {} : await import("../evals/support/brainstorm-host.mjs");
+const { resolve: resolveSdk } = skip ? {} : await import("../evals/support/brainstorm-loader.mjs");
+const { noteSchema } = skip ? {} : await import("../plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/board.mjs");
+
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const hostUrl = new URL("../evals/support/brainstorm-host.mjs", import.meta.url);

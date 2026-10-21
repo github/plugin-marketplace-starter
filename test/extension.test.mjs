@@ -1,10 +1,15 @@
-import test from "node:test";
+import baseTest from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { missing } from "../scripts/examples.mjs";
+
+// Example-only tests: skip every test here when the example's files are gone.
+const skip = missing("plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/extension.mjs");
+const test = skip ? (name) => baseTest(name, { skip }) : baseTest;
 
 test("SDK contract: actions, session isolation, idempotent open, close and reopen", (t) => {
   const directory = mkdtempSync(join(tmpdir(), "marketplace-extension-"));

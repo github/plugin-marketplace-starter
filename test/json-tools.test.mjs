@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test as baseTest } from 'node:test';
+import { missing } from '../scripts/examples.mjs';
+
+// Example-only tests: skip every test here when the example's files are gone.
+const skip = missing('plugins/json-configuration/dist/server.mjs');
+const test = skip ? (name) => baseTest(name, { skip }) : baseTest;
 
 const stdinListeners = process.stdin.listenerCount('data');
 const { createServer, getJsonValue, MAX_JSON_LENGTH, TOOL_NAMES, validateJson } =
-  await import('../plugins/json-configuration/dist/server.mjs');
+  skip ? {} : await import('../plugins/json-configuration/dist/server.mjs');
 
 const invalidJson = {
   code: 'INVALID_JSON',
