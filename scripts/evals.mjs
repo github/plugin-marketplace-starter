@@ -35,7 +35,6 @@ export function runtimeEnvironment(base = process.env) {
     ...env,
     PATH: [resolve(root, "node_modules/.bin"), key ? base[key] : ""].filter(Boolean).join(delimiter),
     COPILOT_CLI_PATH: runtimeBridge,
-    MARKETPLACE_VALLY_CLI: vallyCliPath,
     VALLY_TELEMETRY_OPTOUT: "1",
   };
 }

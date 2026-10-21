@@ -37,30 +37,36 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: '24.14.1'
+          node-version: 24
           cache: npm
       # The Action installs only Vally. Graders, the brainstorm MCP host, and the
       # pinned full Copilot runtime for custom-agent delegation come from npm ci.
       - run: npm ci --no-audit --no-fund
-      # The Action can't pass --param, so write gitignored eval.params.yaml files
-      # with this runner's absolute MCP server paths.
+      # The Action can't pass --param, so write gitignored eval-level params files
+      # with this runner's absolute paths from .vally.yaml params.
       - run: node scripts/evals.mjs action-params
-      - uses: github/evals-action@v0.1.0
+      # Fail fast if the runtime bridge the Action forwards can't start the pinned
+      # runtime, instead of reporting confusing eval failures later.
+      - name: Check the runtime bridge
+        run: node "$COPILOT_CLI_PATH" --version
+        env:
+          COPILOT_CLI_PATH: ${{ github.workspace }}/scripts/eval-runtime.js
+      - uses: github/evals-action@83fa12332c3e44ad899f347eaf153a0d9b6432dc # v0.1.0
         env:
           # Vally's SDK executor launches this bridge, which runs the pinned full runtime.
           COPILOT_CLI_PATH: ${{ github.workspace }}/scripts/eval-runtime.js
-          # The authoring grader lints generated files with the pinned Vally CLI.
-          MARKETPLACE_VALLY_CLI: ${{ github.workspace }}/node_modules/@microsoft/vally-cli/dist/index.js
         with:
           working-directory: .
           suite: ${{ inputs.suite || 'smoke' }}
           vally-version: '0.19.0'
           copilot-token: ${{ github.token }}
-          # The Action forwards only allowlisted variables to Vally. These two are
-          # non-secret paths; naming them here is how the Action passes them through.
+          # Workaround: the Action forwards only an allowlist of variables to Vally,
+          # and credential-env is its only way to pass another one, during the run
+          # phase only. COPILOT_CLI_PATH is a non-secret path, not a credential.
+          # Naming anything here turns off automatic token injection, so
+          # copilot-token is set explicitly above.
           credential-env: |
             COPILOT_CLI_PATH
-            MARKETPLACE_VALLY_CLI
           workers: 1
           max-retries: 1
           upload-transcripts: false

@@ -69,7 +69,7 @@ test("runtime setup uses the pinned full runtime bridge and mounts only requeste
   assert.equal(Object.keys(env).filter((name) => name.toLowerCase() === "path").length, 1);
   assert.equal(env.PATH.split(delimiter)[0], resolve(root, "node_modules/.bin"));
   assert.equal(env.COPILOT_CLI_PATH, runtimeBridge);
-  assert.equal(env.MARKETPLACE_VALLY_CLI, vallyCliPath);
+  assert.equal(env.MARKETPLACE_VALLY_CLI, undefined);
   assert.equal(runtimeEntry({}), resolve(root, "node_modules/@github/copilot/npm-loader.js"));
   assert.equal(runtimeEntry({}), defaultRuntime);
   const args = runtimeArguments(["--headless", "--stdio"], env);
@@ -226,7 +226,7 @@ test("deterministic CI stays model-free and behavioral CI uses the Evals Action 
     for (const job of Object.values(workflow.jobs)) {
       for (const step of job.steps) {
         assert.equal(step["continue-on-error"], undefined);
-        if (step.uses?.startsWith("actions/")) assert.match(step.uses, /@[0-9a-f]{40}$/);
+        if (step.uses) assert.match(step.uses, /^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/, `${step.uses}: pin every action to a full commit SHA.`);
         if (step.uses?.startsWith("actions/checkout")) assert.equal(step.with["persist-credentials"], false);
       }
     }
@@ -240,7 +240,12 @@ test("deterministic CI stays model-free and behavioral CI uses the Evals Action 
   assert.deepEqual(job.concurrency, { group: "evals-${{ github.workflow_ref }}", "cancel-in-progress": false });
   const steps = job.steps;
   const action = steps.find((step) => step.uses?.startsWith("github/evals-action@"));
-  assert.equal(action.uses, "github/evals-action@v0.1.0");
+  assert.equal(action.uses, "github/evals-action@83fa12332c3e44ad899f347eaf153a0d9b6432dc");
+  const setupNode = steps.find((step) => step.uses?.startsWith("actions/setup-node@"));
+  assert.ok(automatic.jobs.validate.strategy.matrix.node.includes(setupNode.with["node-version"]), "Use a Node major that validate.yml also tests.");
+  const preflight = steps.find((step) => step.name === "Check the runtime bridge");
+  assert.ok(steps.indexOf(preflight) < steps.indexOf(action));
+  assert.equal(preflight.env.COPILOT_CLI_PATH, action.env.COPILOT_CLI_PATH);
   assert.ok(steps.indexOf(steps.find((step) => step.run?.startsWith("npm ci"))) < steps.indexOf(action));
   assert.ok(steps.indexOf(steps.find((step) => step.run === "node scripts/evals.mjs action-params")) < steps.indexOf(action));
   assert.equal(action.with["working-directory"], ".");
@@ -248,9 +253,9 @@ test("deterministic CI stays model-free and behavioral CI uses the Evals Action 
   assert.equal(action.with["vally-version"], manifest.devDependencies["@microsoft/vally-cli"]);
   assert.equal(action.with["copilot-token"], "${{ github.token }}");
   assert.equal(String(action.with["upload-transcripts"]), "false");
-  assert.deepEqual(action.with["credential-env"].trim().split("\n"), ["COPILOT_CLI_PATH", "MARKETPLACE_VALLY_CLI"]);
+  assert.deepEqual(action.with["credential-env"].trim().split("\n"), ["COPILOT_CLI_PATH"]);
+  assert.deepEqual(Object.keys(action.env), ["COPILOT_CLI_PATH"]);
   assert.equal(action.env.COPILOT_CLI_PATH, "${{ github.workspace }}/scripts/eval-runtime.js");
-  assert.equal(resolve(root, action.env.MARKETPLACE_VALLY_CLI.replace("${{ github.workspace }}/", "")), vallyCliPath);
   assert.ok(manifest.scripts.verify.includes("eval:lint"));
   assert.ok(manifest.scripts.verify.includes("build:check"));
   assert.ok(!manifest.scripts.verify.includes("eval:smoke"));

@@ -21,6 +21,8 @@ paths:
 params:
   BRAINSTORM_HOST: evals/support/brainstorm-host.mjs
   JSON_MCP_SERVER: plugins/json-configuration/dist/server.mjs
+  # The authoring grader lints generated files with the pinned Vally CLI.
+  MARKETPLACE_VALLY_CLI: node_modules/@microsoft/vally-cli/dist/index.js
 suites:
   smoke:
     description: Representative model-backed coverage for every local skill, agent, hook, extension, and MCP tool

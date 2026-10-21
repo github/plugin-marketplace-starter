@@ -15,8 +15,8 @@ test('direct Node execution gets the pinned validator and a normalized executabl
   assert.equal(Object.keys(env).filter(key => key.toLowerCase() === 'path').length, 1);
   assert.equal(env.PATH.split(delimiter)[0], resolve(projectRoot, 'node_modules/.bin'));
   assert.ok(env.PATH.endsWith('/existing/bin'));
-  assert.equal(env.MARKETPLACE_VALLY_CLI, vallyCliPath);
-  assert.ok(isAbsolute(env.MARKETPLACE_VALLY_CLI));
+  assert.equal(evalParams.MARKETPLACE_VALLY_CLI, vallyCliPath);
+  assert.ok(isAbsolute(evalParams.MARKETPLACE_VALLY_CLI));
 });
 
 test('the eval launches the actual shipped MCP bundle independently of the process cwd', { skip: !existsSync(resolve(projectRoot, 'plugins/json-configuration')) }, async () => {

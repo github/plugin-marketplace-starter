@@ -7380,7 +7380,7 @@ function verdict(issues) {
     evidence: issues.length ? issues.join("; ") : "Generated skill and positive/negative evals satisfy the requested contract and strict Vally lint."
   };
 }
-async function gradeAuthoring(workspace) {
+async function gradeAuthoring(workspace, validator) {
   const issues = [];
   const skillPath = resolve(workspace, "skills/change-summary/SKILL.md");
   const evalPath = resolve(workspace, "evals/change-summary/eval.yaml");
@@ -7411,8 +7411,7 @@ async function gradeAuthoring(workspace) {
   const skillPaths = spec.agent_environment?.skills ?? [];
   if (!Array.isArray(skillPaths) || !skillPaths.some((path) => typeof path === "string" && resolve(dirname(evalPath), path) === dirname(skillPath))) issues.push("Eval does not load the generated skill");
   if (!issues.length) {
-    const validator = process.env.MARKETPLACE_VALLY_CLI;
-    if (!validator || !isAbsolute(validator)) throw new Error("MARKETPLACE_VALLY_CLI must identify the pinned validator; use the repository eval launcher.");
+    if (!validator || !isAbsolute(validator)) throw new Error("Pass the pinned Vally CLI as the first argument; the eval supplies it from the MARKETPLACE_VALLY_CLI param.");
     await access(validator);
     const lint = spawnSync(
       process.execPath,
@@ -7432,7 +7431,7 @@ async function gradeAuthoring(workspace) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     if (!process.env.EVALUATE_WORKSPACE) throw new Error("EVALUATE_WORKSPACE is required");
-    console.log(JSON.stringify(await gradeAuthoring(process.env.EVALUATE_WORKSPACE)));
+    console.log(JSON.stringify(await gradeAuthoring(process.env.EVALUATE_WORKSPACE, process.argv[2])));
   } catch (error) {
     console.log(JSON.stringify({
       name: "generated-skill-contract",

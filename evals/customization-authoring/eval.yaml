@@ -40,7 +40,9 @@ stimuli:
       - type: program
         config:
           program: node
-          args: [.grading/authoring.mjs]
+          # The Evals Action passes only allowlisted environment variables, so the
+          # pinned Vally CLI path arrives as an argument from a .vally.yaml param.
+          args: [.grading/authoring.mjs, '${MARKETPLACE_VALLY_CLI}']
           timeout: 60s
   - name: does-not-author-for-factual-question
     prompt: What is the capital of France? Reply with only the city name.

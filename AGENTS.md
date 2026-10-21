@@ -47,7 +47,9 @@ place; don't duplicate them here.
   behavioral quality.
 - When upgrading Vally or Copilot, update the pins, the lockfile, and the
   workflow's `vally-version` together, and verify real custom-agent delegation
-  and MCP behavior, not only schema validity.
+  and MCP behavior, not only schema validity. When you touch the workflows,
+  refresh every action's commit SHA (with its version comment) and keep the
+  evals workflow on a Node major that `validate.yml` tests.
 - Keep remote plugins opt-in. The repository settings overlay must never enable
   a remote plugin; that's a deliberate security rule, so developers install
   remote plugins themselves. A remote entry's `name` must match the upstream

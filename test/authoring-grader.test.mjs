@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { gradeAuthoring } from '../evals/graders/dist/authoring.mjs';
-import { root as projectRoot, vallyCliPath } from '../scripts/evals.mjs';
+import { evalParams, root as projectRoot, vallyCliPath } from '../scripts/evals.mjs';
 
 test('the actual relocated grader rejects missing, misplaced, malformed, and invocation-only artifacts', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'marketplace grader test '));
@@ -77,17 +77,18 @@ stimuli:
 scoring:
   threshold: 1
 `);
-    const env = { ...process.env, EVALUATE_WORKSPACE: dir, MARKETPLACE_VALLY_CLI: vallyCliPath };
+    const env = { ...process.env, EVALUATE_WORKSPACE: dir };
+    delete env.MARKETPLACE_VALLY_CLI;
     for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key];
     env.PATH = '';
-    const run = () => spawnSync(process.execPath, [join(projectRoot, 'evals/graders/dist/authoring.mjs')], {
+    const run = (...args) => spawnSync(process.execPath, [join(projectRoot, 'evals/graders/dist/authoring.mjs'), ...args], {
       env, cwd: dir, encoding: 'utf8', timeout: 60000
     });
-    const valid = run();
+    const valid = run(evalParams.MARKETPLACE_VALLY_CLI);
+    assert.equal(evalParams.MARKETPLACE_VALLY_CLI, vallyCliPath);
     assert.ifError(valid.error);
     assert.equal(valid.status, 0, valid.stdout + valid.stderr);
     assert.equal(JSON.parse(valid.stdout).passed, true);
-    delete env.MARKETPLACE_VALLY_CLI;
     const missing = run();
     assert.equal(missing.status, 1);
     const result = JSON.parse(missing.stdout);

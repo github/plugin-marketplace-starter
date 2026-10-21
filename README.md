@@ -417,9 +417,9 @@ a global plugin installation.
 
 MCP processes don't necessarily start in this checkout, so the launcher reads
 `params` from `.vally.yaml` and passes every value that contains a slash as an
-absolute path. Other params pass through unchanged. It also gives the authoring
-grader the pinned Vally CLI's absolute path through `MARKETPLACE_VALLY_CLI`
-rather than relying on npm having changed `PATH`.
+absolute path. Other params pass through unchanged. The `MARKETPLACE_VALLY_CLI`
+param gives the authoring grader the pinned Vally CLI's absolute path as an
+argument rather than relying on npm having changed `PATH`.
 
 ### MCP-based canvas evaluation
 
@@ -467,13 +467,16 @@ dependencies. You can also run it manually and choose `smoke` or `full`. Fork
 pull requests never get credentialed eval runs, and there's no
 `pull_request_target` trigger.
 
-The workflow uses [`github/evals-action@v0.1.0`](https://github.com/github/evals-action).
-In its default mode the Action lints the whole project, runs the selected suite
-if lint passes, uploads a structured report, and updates one sticky pull request
+The workflow uses [`github/evals-action`](https://github.com/github/evals-action)
+v0.1.0, pinned to its full commit SHA like every other action here. In its
+default mode the Action lints the project, runs the selected suite if lint
+passes, uploads a structured report, and updates one sticky pull request
 comment. The Action installs only Vally, pinned to the same version as
-`package.json`. Before it runs, the workflow:
+`package.json`. Its lint isn't `--strict` and doesn't lint skill directories, so
+`npm run verify` stays the authoritative gate. Before it runs, the workflow:
 
-1. Runs `npm ci` so graders, the brainstorm MCP host, and the pinned full Copilot
+1. Sets up Node.js 24, the newest major that `validate.yml` tests, and runs
+   `npm ci` so graders, the brainstorm MCP host, and the pinned full Copilot
    runtime are available.
 2. Runs `node scripts/evals.mjs action-params`. The Action can't pass `--param`,
    so this writes gitignored eval-level params files (`eval.params.yaml`, or
@@ -482,10 +485,15 @@ comment. The Action installs only Vally, pinned to the same version as
    Generated files start with a header comment. A params file you wrote yourself
    has no header, so action-params stops with an error instead of overwriting it;
    commit such a file with `git add -f`, and keep path params in `.vally.yaml`.
-3. Sets `COPILOT_CLI_PATH` to the runtime bridge and `MARKETPLACE_VALLY_CLI` to
-   the pinned Vally CLI, and names both in `credential-env`. The Action forwards
-   only allowlisted variables to Vally; `credential-env` is how it passes extra
-   variables through. These two hold non-secret paths.
+3. Checks that the runtime bridge starts the pinned runtime, so a broken install
+   fails fast with a clear error.
+4. Sets `COPILOT_CLI_PATH` to the runtime bridge and names it in
+   `credential-env`. That's a workaround: the Action forwards only an allowlist
+   of variables to Vally, and `credential-env` is its only way to pass another
+   one. It forwards those names to the run phase only, not to lint. The value is
+   a non-secret path. Every other path, including the pinned Vally CLI for the
+   authoring grader, travels through `.vally.yaml` params instead. If a future
+   Action release adds a way to pass non-secret variables, switch to it.
 
 Because `credential-env` is set, the workflow passes `copilot-token` explicitly.
 The job token needs `copilot-requests: write` for inference and
