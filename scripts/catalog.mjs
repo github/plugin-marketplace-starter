@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseDocument } from "yaml";
+
+const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 
 export const namePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -119,4 +122,38 @@ export function evalFilenameMatcher(patterns) {
 export function paramsFileName(evalFileName) {
   const ext = extname(evalFileName);
   return `${basename(evalFileName, ext)}.params${ext}`;
+}
+
+const globRegExp = (glob) => new RegExp(`^${glob.replace(/[.+^$|()[\]{}]/g, "\\$&").replaceAll("**/", "\u0000").replaceAll("*", "[^/]*").replaceAll("\u0000", "(?:.*/)?")}$`);
+
+// Selects the cases a saved run should contain, using the same suite
+// definitions and eval file names as .vally.yaml.
+export function expectedCases(specs, config, { suite, evalSpecs, directory = repositoryRoot } = {}) {
+  let selected = specs;
+  if (evalSpecs?.length) {
+    const wanted = evalSpecs.map((path) => resolve(directory, path));
+    for (const path of wanted) if (!specs.some((item) => item.path === path)) throw new Error(`No eval spec at ${path}.`);
+    selected = specs.filter((item) => wanted.includes(item.path));
+  }
+  const name = suite ?? (evalSpecs?.length ? undefined : "full");
+  let filter = {};
+  if (name) {
+    const definition = config?.suites?.[name];
+    if (!definition) throw new Error(`Unknown suite ${name}. Configured suites: ${Object.keys(config?.suites ?? {}).join(", ") || "none"}.`);
+    filter = definition.filter ?? {};
+    if (definition.evals) {
+      const globs = asList(definition.evals).map(globRegExp);
+      selected = selected.filter((item) => globs.some((glob) => glob.test(relative(directory, item.path).split(sep).join("/"))));
+    }
+  }
+  const expected = new Set();
+  for (const { spec } of selected) {
+    for (const stimulus of spec.stimuli) {
+      if (!Object.entries(filter).every(([key, value]) => asList(value).some((item) => asList(stimulus.tags?.[key]).includes(item)))) continue;
+      if (expected.has(stimulus.name)) throw new Error(`Duplicate case: ${stimulus.name}`);
+      expected.add(stimulus.name);
+    }
+  }
+  if (!expected.size) throw new Error("The selected suite or eval specs contain no cases.");
+  return expected;
 }

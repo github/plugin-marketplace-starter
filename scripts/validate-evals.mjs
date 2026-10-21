@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { contained, evalFilenameMatcher, evalFilenames, frontmatter, parseYaml, readCatalog, readVallyConfig } from "./catalog.mjs";
+import { contained, evalFilenameMatcher, evalFilenames, expectedCases, frontmatter, parseYaml, readCatalog, readVallyConfig } from "./catalog.mjs";
 import { Problems, relativePath, runCli } from "./problems.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
@@ -283,6 +283,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const kinds = Object.entries(Object.groupBy(assets, (asset) => asset.kind)).map(([kind, items]) => `${items.length} ${kind}`).join(", ");
     console.log(`Validated ${specs.length} eval specs and ${count} cases covering ${assets.length} local assets (${kinds}).`);
     for (const asset of assets) console.log(`  ${asset.id}`);
+    // Each case is at least one real Copilot session, so this is the size of a paid run.
+    const size = (suite) => { try { return expectedCases(specs, config, { suite }).size; } catch { return 0; } };
+    const sizes = Object.keys(config?.suites ?? {}).map((suite) => `${suite}: ${size(suite)} cases`);
+    if (sizes.length) console.log(`Suite sizes (each case runs at least one Copilot session): ${sizes.join(", ")}.`);
     if (assets.some((asset) => asset.kind === "extension")) {
       console.log("Extensions are evaluated through a headless MCP/SDK contract, not native UI rendering.");
     }

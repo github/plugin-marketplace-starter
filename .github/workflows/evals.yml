@@ -1,6 +1,13 @@
 name: Behavioral evals
+# Off by default, because evals run real Copilot sessions and spend AI credits.
+# Pull requests run evals only after you set the repository variable
+# ENABLE_EVALS to true. Manual runs work either way. The repository variable
+# EVALS_RUNNER picks the job: unset or "action" uses the private
+# github/evals-action; "npm" runs the pinned Vally CLI from package.json, for
+# organizations without access to that Action. See docs/ci.md.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - plugins/**
       - evals/**
@@ -20,8 +27,16 @@ on:
 permissions:
   contents: read
 jobs:
+  # Runner "action". A separate job, because a job downloads every action it
+  # names before it starts, even ones in skipped steps.
   evals:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    # Manual runs always run. Pull requests run only when ENABLE_EVALS is true,
+    # the branch is in this repository (never a fork), and the PR isn't a draft.
+    if: >-
+      vars.EVALS_RUNNER != 'npm' && (github.event_name == 'workflow_dispatch' ||
+      (vars.ENABLE_EVALS == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -39,14 +54,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      # The Action installs only Vally. Graders, the brainstorm MCP host, and the
-      # pinned full Copilot runtime for custom-agent delegation come from npm ci.
+      # The Action installs only Vally. Graders, eval MCP hosts, and the pinned
+      # full Copilot runtime for custom-agent delegation come from npm ci.
       - run: npm ci --no-audit --no-fund
       # The Action can't pass --param, so write gitignored eval-level params files
       # with this runner's absolute paths from .vally.yaml params.
       - run: node scripts/evals.mjs action-params
       # Fail fast if the runtime bridge the Action forwards can't start the pinned
-      # runtime, instead of reporting confusing eval failures later.
+      # runtime, instead of reporting confusing eval failures later. It prints
+      # the pinned package version and the version that actually runs.
       - name: Check the runtime bridge
         run: node "$COPILOT_CLI_PATH" --version
         env:
@@ -70,3 +86,52 @@ jobs:
           workers: 1
           max-retries: 1
           upload-transcripts: false
+
+  # Runner "npm": the same launcher contributors use locally, with the job token.
+  evals-npm:
+    if: >-
+      vars.EVALS_RUNNER == 'npm' && (github.event_name == 'workflow_dispatch' ||
+      (vars.ENABLE_EVALS == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      copilot-requests: write
+    concurrency:
+      group: evals-${{ github.workflow_ref }}
+      cancel-in-progress: false
+    env:
+      SUITE: ${{ inputs.suite || 'smoke' }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Check the runtime bridge
+        run: node scripts/eval-runtime.js --version
+      # --require-pass fails the job on a failed verdict, like the Action does.
+      # The launcher uses one worker and one bounded retry.
+      - name: Run evals
+        run: node scripts/evals.mjs eval --suite "$SUITE" --require-pass
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      # Prints the report and adds it to the job summary. It fails on an
+      # incomplete run or an infrastructure error.
+      - name: Report eval results
+        if: ${{ !cancelled() }}
+        run: node scripts/eval-report.mjs --suite "$SUITE"
+      # Results include transcripts, which can contain prompts, model output, and
+      # code, so they're uploaded only when EVALS_UPLOAD_RESULTS is true.
+      - name: Upload eval results
+        if: ${{ !cancelled() && vars.EVALS_UPLOAD_RESULTS == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: eval-results
+          path: vally-results/
+          retention-days: 7

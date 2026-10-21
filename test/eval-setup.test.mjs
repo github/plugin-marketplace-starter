@@ -215,7 +215,7 @@ test("the source validator accepts CRLF changelog headings and excludes generate
   assert.ok(script.includes('"vally-results"'));
 });
 
-test("deterministic CI stays model-free and behavioral CI uses the Evals Action on trusted code", async () => {
+test("deterministic CI stays model-free, and opt-in behavioral CI uses the Evals Action or the npm runner on trusted code", async () => {
   const automatic = parse(await readFile(resolve(root, ".github/workflows/validate.yml"), "utf8"));
   const evals = parse(await readFile(resolve(root, ".github/workflows/evals.yml"), "utf8"));
   const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
@@ -233,16 +233,28 @@ test("deterministic CI stays model-free and behavioral CI uses the Evals Action 
   }
   assert.ok(!("pull_request_target" in evals.on));
   assert.deepEqual(Object.keys(evals.on).sort(), ["pull_request", "workflow_dispatch"]);
+  assert.deepEqual(evals.on.pull_request.types, ["opened", "synchronize", "reopened", "ready_for_review"]);
   assert.deepEqual(evals.permissions, { contents: "read" });
+  assert.deepEqual(Object.keys(evals.jobs).sort(), ["evals", "evals-npm"]);
+  for (const [name, job] of Object.entries(evals.jobs)) {
+    // Opt-in, never on forks or drafts, and only one runner job at a time.
+    assert.match(job.if, /github\.event_name == 'workflow_dispatch' \|\|/, name);
+    assert.match(job.if, /vars\.ENABLE_EVALS == 'true' &&/, name);
+    assert.match(job.if, /head\.repo\.full_name == github\.repository/, name);
+    assert.match(job.if, /!github\.event\.pull_request\.draft/, name);
+    assert.deepEqual(job.concurrency, { group: "evals-${{ github.workflow_ref }}", "cancel-in-progress": false });
+    const setupNode = job.steps.find((step) => step.uses?.startsWith("actions/setup-node@"));
+    assert.ok(automatic.jobs.validate.strategy.matrix.node.includes(setupNode.with["node-version"]), "Use a Node major that validate.yml also tests.");
+    const preflight = job.steps.find((step) => step.name === "Check the runtime bridge");
+    assert.ok(job.steps.indexOf(job.steps.find((step) => step.run?.startsWith("npm ci"))) < job.steps.indexOf(preflight));
+  }
+  assert.match(evals.jobs.evals.if, /^vars\.EVALS_RUNNER != 'npm' &&/);
+  assert.match(evals.jobs["evals-npm"].if, /^vars\.EVALS_RUNNER == 'npm' &&/);
   const job = evals.jobs.evals;
-  assert.match(job.if, /head\.repo\.full_name == github\.repository/);
   assert.deepEqual(job.permissions, { contents: "read", "copilot-requests": "write", "pull-requests": "write" });
-  assert.deepEqual(job.concurrency, { group: "evals-${{ github.workflow_ref }}", "cancel-in-progress": false });
   const steps = job.steps;
   const action = steps.find((step) => step.uses?.startsWith("github/evals-action@"));
   assert.equal(action.uses, "github/evals-action@83fa12332c3e44ad899f347eaf153a0d9b6432dc");
-  const setupNode = steps.find((step) => step.uses?.startsWith("actions/setup-node@"));
-  assert.ok(automatic.jobs.validate.strategy.matrix.node.includes(setupNode.with["node-version"]), "Use a Node major that validate.yml also tests.");
   const preflight = steps.find((step) => step.name === "Check the runtime bridge");
   assert.ok(steps.indexOf(preflight) < steps.indexOf(action));
   assert.equal(preflight.env.COPILOT_CLI_PATH, action.env.COPILOT_CLI_PATH);
@@ -256,6 +268,18 @@ test("deterministic CI stays model-free and behavioral CI uses the Evals Action 
   assert.deepEqual(action.with["credential-env"].trim().split("\n"), ["COPILOT_CLI_PATH"]);
   assert.deepEqual(Object.keys(action.env), ["COPILOT_CLI_PATH"]);
   assert.equal(action.env.COPILOT_CLI_PATH, "${{ github.workspace }}/scripts/eval-runtime.js");
+  const npmJob = evals.jobs["evals-npm"];
+  assert.deepEqual(npmJob.permissions, { contents: "read", "copilot-requests": "write" });
+  assert.ok(!npmJob.steps.some((step) => step.uses?.startsWith("github/evals-action@")), "The npm runner must not need the private Action.");
+  const runStep = npmJob.steps.find((step) => step.name === "Run evals");
+  assert.equal(runStep.run, 'node scripts/evals.mjs eval --suite "$SUITE" --require-pass');
+  assert.deepEqual(runStep.env, { GITHUB_TOKEN: "${{ github.token }}" });
+  assert.match(npmJob.env.SUITE, /'smoke'/);
+  const report = npmJob.steps.find((step) => step.name === "Report eval results");
+  assert.ok(npmJob.steps.indexOf(runStep) < npmJob.steps.indexOf(report));
+  assert.match(report.if, /!cancelled\(\)/);
+  const upload = npmJob.steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+  assert.match(upload.if, /vars\.EVALS_UPLOAD_RESULTS == 'true'/, "Transcripts upload only when someone opts in.");
   assert.ok(manifest.scripts.verify.includes("eval:lint"));
   assert.ok(manifest.scripts.verify.includes("build:check"));
   assert.ok(!manifest.scripts.verify.includes("eval:smoke"));
