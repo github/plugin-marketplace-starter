@@ -16,7 +16,10 @@
     "eval:smoke": "node scripts/evals.mjs eval --suite smoke",
     "eval": "node scripts/evals.mjs eval --suite full",
     "eval:grade": "node scripts/evals.mjs grade",
-    "eval:report": "node scripts/eval-report.mjs"
+    "eval:report": "node scripts/eval-report.mjs",
+    "new-plugin": "node scripts/new-plugin.mjs",
+    "remove-plugin": "node scripts/remove-plugin.mjs",
+    "remove-example": "node scripts/remove-plugin.mjs --example"
   },
   "devDependencies": {
     "@github/copilot": "1.0.98",
