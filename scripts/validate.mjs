@@ -19,6 +19,23 @@ async function files(path) {
     .map((entry) => entry.isDirectory() ? files(resolve(path, entry.name)) : resolve(path, entry.name)))).flat();
 }
 
+// Event names from the Copilot hooks reference:
+// https://docs.github.com/en/copilot/reference/hooks-reference#hook-events
+export const hookEvents = Object.freeze([
+  "agentStop", "errorOccurred", "notification", "permissionRequest", "postToolUse", "postToolUseFailure", "preCompact",
+  "preToolUse", "sessionEnd", "sessionStart", "subagentStart", "subagentStop", "userPromptSubmitted", "userPromptTransformed",
+]);
+
+// Relative link targets in Markdown, ignoring fenced code blocks, inline code,
+// web URLs, mailto links, and same-page anchors.
+export function markdownLinks(text) {
+  const prose = text
+    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[^\n]*$|(?![\s\S]))/gm, "")
+    .replace(/(`+)[^\n]*?\1/g, "");
+  return [...prose.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1])
+    .filter((link) => !/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(link));
+}
+
 export async function validateMcpConfig(directory, label) {
   const config = await json(resolve(directory, "mcp.json"));
   assert.ok(validateMcp(config), `${label}: ${ajv.errorsText(validateMcp.errors)}`);
@@ -107,13 +124,13 @@ export async function validateRepository(directory = root) {
         assert.equal(hooks.version, 1);
         assert.ok(hooks.hooks && Object.keys(hooks.hooks).length);
         for (const [event, commands] of Object.entries(hooks.hooks)) {
-          assert.ok(["preToolUse", "postToolUse"].includes(event), `Unsupported starter hook event: ${event}`);
+          assert.ok(hookEvents.includes(event), `Unsupported hook event: ${event}. Use a documented event name: ${hookEvents.join(", ")}.`);
           assert.ok(Array.isArray(commands) && commands.length);
           for (const hook of commands) {
             assert.equal(hook.type, "command");
             assert.ok(Number.isFinite(hook.timeoutSec) && hook.timeoutSec > 0);
-            const script = hook.command.match(/^node "\$\{PLUGIN_ROOT\}\/([^"]+)"$/)?.[1];
-            assert.ok(script, "Hook must use a quoted plugin-relative script.");
+            const script = hook.command?.match(/^node "\$\{PLUGIN_ROOT\}\/([^"]+)"(?:\s+\S.*)?$/)?.[1];
+            assert.ok(script, `${entry.name}: run hooks as node "\${PLUGIN_ROOT}/<script>", optionally followed by arguments.`);
             await contained(source, script);
           }
           counts.hooks++;
@@ -143,11 +160,10 @@ export async function validateRepository(directory = root) {
       assert.equal(check.status, 0, check.stderr || check.error?.message);
     }
     if (file.endsWith(".md")) {
-      for (const match of (await readFile(file, "utf8")).matchAll(/\]\(([^)\s]+)\)/g)) {
-        if (/^(?:https?:|#)/.test(match[1])) continue;
-        const target = resolve(file, "..", match[1].split("#")[0]);
+      for (const link of markdownLinks(await readFile(file, "utf8"))) {
+        const target = resolve(file, "..", link.split("#")[0]);
         try { await stat(target); }
-        catch { throw new Error(`${relative(directory, file)}: broken relative link ${match[1]}`); }
+        catch { throw new Error(`${relative(directory, file)}: broken relative link ${link}`); }
       }
     }
   }

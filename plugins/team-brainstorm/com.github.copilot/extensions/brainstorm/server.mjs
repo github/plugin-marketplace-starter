@@ -4,14 +4,18 @@ import { BoardError } from "./board.mjs";
 
 const page = await readFile(new URL("./index.html", import.meta.url));
 
+// Collects raw bytes and decodes once, so a multibyte character split across
+// network chunks isn't corrupted, and the size limit counts actual bytes.
 async function readInput(request) {
-  let body = "";
+  const chunks = [];
+  let size = 0;
   for await (const chunk of request) {
-    body += chunk;
-    if (Buffer.byteLength(body) > 4096) throw new BoardError("Request is too large.");
+    size += chunk.length;
+    if (size > 4096) throw new BoardError("Request is too large.");
+    chunks.push(chunk);
   }
   try {
-    return JSON.parse(body);
+    return JSON.parse(Buffer.concat(chunks, size).toString("utf8"));
   } catch {
     throw new BoardError("Send a valid JSON request.");
   }

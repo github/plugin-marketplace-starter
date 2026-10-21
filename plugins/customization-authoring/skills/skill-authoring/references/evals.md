@@ -24,7 +24,7 @@ stimuli:
       - type: file-matches
         config:
           path: result.json
-          pattern: '"status"\\s*:\\s*"ready"'
+          pattern: '"status"\s*:\s*"ready"'
   - name: unrelated-question
     prompt: What is the capital of France?
     graders:

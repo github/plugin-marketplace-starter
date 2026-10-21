@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { copyFile, mkdtemp, readdir, rm, symlink } from 'node:fs/promises';
+import { copyFile, mkdtemp, readdir, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -57,7 +57,8 @@ test('the relocated standalone bundle implements the real stdio MCP protocol', {
   assert.ok(transport.pid > 0, 'the SDK must launch an actual child process');
 
   await t.test('initialization and listing expose the complete annotated tool contract', async () => {
-    assert.deepEqual(client.getServerVersion(), { name: 'json-configuration', version: '0.1.0' });
+    const manifest = JSON.parse(await readFile(new URL('../plugins/json-configuration/plugin.json', import.meta.url), 'utf8'));
+    assert.deepEqual(client.getServerVersion(), { name: 'json-configuration', version: manifest.version });
     assert.ok(client.getServerCapabilities().tools);
     const { tools } = await client.listTools();
     assert.deepEqual(tools.map(tool => tool.name).sort(), [...TOOL_NAMES].sort());

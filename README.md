@@ -273,7 +273,9 @@ extensions belong in `com.github.copilot/`.
    development dependency at runtime. If an MCP server needs dependencies, write
    it as `src/server.ts` in the plugin. [scripts/build.mjs](scripts/build.mjs)
    finds every `plugins/*/src/server.ts` and bundles it into `dist/server.mjs` with
-   its license notices; eval graders in `evals/graders/src/` are bundled the same way.
+   its license notices. It replaces `__PLUGIN_VERSION__` with the version in
+   `plugin.json`, so the server reports the release you ship. Eval graders in
+   `evals/graders/src/` are bundled the same way.
 5. In-repo MCP servers must start offline, without credentials, network access,
    or a database. `npm run verify` launches each one to read its real tool list
    for eval coverage. Put anything that needs a secret behind a tool call, not

@@ -46,9 +46,12 @@ test("SDK contract: actions, session isolation, idempotent open, close and reope
     if (specifier === "@github/copilot-sdk/extension") return {url:${JSON.stringify(sdkUrl)}, shortCircuit:true};
     return next(specifier, context);
   }`);
+  const register = join(directory, "register.mjs");
+  writeFileSync(register, `import { register } from "node:module";\nregister(${JSON.stringify(pathToFileURL(loader).href)});\n`);
   const extension = fileURLToPath(new URL("../plugins/team-brainstorm/com.github.copilot/extensions/brainstorm/extension.mjs", import.meta.url));
-  const result = spawnSync(process.execPath, ["--experimental-loader", pathToFileURL(loader).href, extension], {
+  const result = spawnSync(process.execPath, ["--import", pathToFileURL(register).href, extension], {
     encoding: "utf8", timeout: 15_000,
   });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.doesNotMatch(result.stderr, /experimental-loader|ExperimentalWarning: `--experimental-loader`/);
 });

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { parse } from 'yaml';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -96,5 +98,20 @@ scoring:
     assert.match(result.evidence, /MARKETPLACE_VALLY_CLI/);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+const reference = join(projectRoot, 'plugins/customization-authoring/skills/skill-authoring/references/evals.md');
+test('the authoring reference example parses to regexes that accept correct output and reject wrong output', { skip: !existsSync(reference) }, async () => {
+  const text = await readFile(reference, 'utf8');
+  const block = text.match(/```yaml\r?\n([\s\S]*?)```/)?.[1];
+  assert.ok(block, 'the reference keeps a YAML example');
+  const spec = parse(block);
+  const graders = spec.stimuli.flatMap((stimulus) => stimulus.graders ?? []);
+  const patterns = graders.filter((grader) => grader.type === 'file-matches').map((grader) => new RegExp(grader.config.pattern));
+  assert.ok(patterns.length);
+  for (const pattern of patterns) {
+    for (const good of ['{"status":"ready"}', '{ "status" : "ready" }', '{\n  "status": "ready"\n}']) assert.ok(pattern.test(good), `${pattern} should match ${good}`);
+    for (const bad of ['{"status":"draft"}', '{"state":"ready"}']) assert.ok(!pattern.test(bad), `${pattern} should reject ${bad}`);
   }
 });

@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { contained, frontmatter, parseYaml, readCatalog, readVallyConfig } from "../scripts/catalog.mjs";
 import { checkCoverage, discoverAssets, readEvals, root, suiteTags } from "../scripts/validate-evals.mjs";
-import { validateMcpConfig, validateRepository } from "../scripts/validate.mjs";
+import { hookEvents, markdownLinks, validateMcpConfig, validateRepository } from "../scripts/validate.mjs";
 
 async function names(path) {
   try { return (await readdir(path)).sort(); }
@@ -216,4 +216,55 @@ test("vendored schemas keep their Apache-2.0 license and attribution", async () 
   assert.match(notice, /plugin\.schema\.json/);
   assert.match(notice, /mcp\.schema\.json/);
   assert.match(await readFile(resolve(root, "schemas/LICENSE-APACHE-2.0.txt"), "utf8"), /Apache License/);
+});
+
+test("Markdown link checks ignore code, web, mailto, and anchor links", () => {
+  const text = [
+    "See [the guide](docs/guide.md#setup) and [home](https://example.com) or [mail](mailto:security@example.com).",
+    "Jump to [a section](#section). Inline `[x](not/a/link.md)` stays code.",
+    "```js", "const pattern = /\\]\\((broken)\\)/; // [y](also/not/a/link.md)", "```",
+    "~~~", "[z](fenced/tilde.md)", "~~~",
+    "Then [real](plugins/a/README.md).",
+  ].join("\n");
+  assert.deepEqual(markdownLinks(text), ["docs/guide.md#setup", "plugins/a/README.md"]);
+  assert.deepEqual(markdownLinks("```\n[open](unclosed.md)\n"), []);
+  assert.deepEqual(markdownLinks("```\r\n[x](crlf.md)\r\n```\r\n[y](after.md)\r\n"), ["after.md"]);
+});
+
+test("hooks may use any documented event and pass arguments to their plugin script", async () => {
+  assert.ok(["sessionStart", "userPromptSubmitted", "postToolUseFailure", "errorOccurred"].every((event) => hookEvents.includes(event)));
+  const directory = await mkdtemp(join(tmpdir(), "starter-hooks-"));
+  const plugin = join(directory, "plugins/guard");
+  const hooks = (value) => writeFile(join(plugin, "com.github.copilot/hooks/hooks.json"), JSON.stringify(value));
+  try {
+    await mkdir(join(plugin, "com.github.copilot/hooks"), { recursive: true });
+    await writeFile(join(plugin, "com.github.copilot/hooks/check.mjs"), "");
+    await writeFile(join(plugin, "plugin.json"), JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "guard", version: "1.0.0", description: "Guard fixture.",
+    }));
+    await writeFile(join(plugin, "README.md"), "# Guard\n");
+    await writeFile(join(plugin, "CHANGELOG.md"), "# Changelog\n\n## 1.0.0\n");
+    await writeFile(join(directory, "marketplace.json"), JSON.stringify({ name: "hooks-fixture", owner: { name: "Test" },
+      plugins: [{ name: "guard", source: "./plugins/guard", version: "1.0.0", description: "Guard fixture." }] }));
+    await mkdir(join(directory, ".github/copilot"), { recursive: true });
+    await writeFile(join(directory, ".github/copilot/settings.json"), JSON.stringify({
+      extraKnownMarketplaces: { "hooks-fixture": { source: { source: "directory", path: "." } } },
+      enabledPlugins: { "guard@hooks-fixture": true },
+    }));
+    await writeFile(join(directory, ".vally.yaml"), "paths:\n  skills: []\n");
+    const command = (text) => ({ type: "command", command: text, timeoutSec: 5 });
+    await hooks({ version: 1, hooks: {
+      sessionStart: [command('node "${PLUGIN_ROOT}/com.github.copilot/hooks/check.mjs"')],
+      postToolUse: [command('node "${PLUGIN_ROOT}/com.github.copilot/hooks/check.mjs" --mode strict')],
+    } });
+    assert.equal((await validateRepository(directory)).hooks, 2);
+    await hooks({ version: 1, hooks: { onSave: [command('node "${PLUGIN_ROOT}/com.github.copilot/hooks/check.mjs"')] } });
+    await assert.rejects(validateRepository(directory), /Unsupported hook event: onSave/);
+    await hooks({ version: 1, hooks: { postToolUse: [command('node "${PLUGIN_ROOT}/../outside.mjs" --x')] } });
+    await assert.rejects(validateRepository(directory), /escapes|ENOENT/);
+    await hooks({ version: 1, hooks: { postToolUse: [command("node check.mjs")] } });
+    await assert.rejects(validateRepository(directory), /PLUGIN_ROOT/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

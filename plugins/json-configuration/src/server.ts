@@ -6,6 +6,10 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
+// Replaced at build time with the version in plugin.json, so the MCP handshake
+// always reports the shipped release.
+declare const __PLUGIN_VERSION__: string;
+
 export const MAX_JSON_LENGTH = 1_048_576;
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -182,7 +186,7 @@ const toolDefinitions = [
 export const TOOL_NAMES = Object.freeze(toolDefinitions.map(tool => tool.name));
 
 export function createServer(): McpServer {
-  const server = new McpServer({ name: 'json-configuration', version: '0.1.0' });
+  const server = new McpServer({ name: 'json-configuration', version: __PLUGIN_VERSION__ });
   for (const tool of toolDefinitions) tool.register(server);
   return server;
 }

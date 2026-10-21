@@ -68,6 +68,40 @@ test("HTTP page and mutations work; invalid and cross-origin requests are reject
   assert.equal((await fetch(new URL("/missing", server.url))).status, 404);
 });
 
+test("UTF-8 split across request chunks round-trips, and the size limit counts bytes", async (t) => {
+  const board = createBoard();
+  const server = await startServer(board);
+  t.after(() => server.close());
+  const send = (parts) => new Promise((resolve, reject) => {
+    const req = request(new URL("/notes", server.url), { method: "POST", headers: { "Content-Type": "application/json" } }, (res) => {
+      const body = [];
+      res.on("data", (chunk) => body.push(chunk));
+      res.on("end", () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(body).toString("utf8")) }));
+    });
+    req.on("error", reject);
+    (async () => {
+      for (const [index, part] of parts.entries()) {
+        req.write(part);
+        if (index < parts.length - 1) await new Promise((wait) => setTimeout(wait, 50));
+      }
+      req.end();
+    })().catch(reject);
+  });
+  const bytes = Buffer.from(JSON.stringify({ text: "café ☕ notes", column: "ideas" }), "utf8");
+  const split = bytes.indexOf(Buffer.from("é")) + 1;
+  assert.equal(bytes[split - 1], 0xc3, "the split lands inside the two-byte é");
+  const saved = await send([bytes.subarray(0, split), bytes.subarray(split)]);
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.notes[0].text, "café ☕ notes");
+  assert.equal(board.read().notes[0].text, "café ☕ notes");
+  const oversized = Buffer.from(JSON.stringify({ text: "é".repeat(2100), column: "ideas" }), "utf8");
+  assert.ok(oversized.length > 4096 && JSON.stringify({ text: "é".repeat(2100), column: "ideas" }).length < 4096);
+  const rejected = await send([oversized]);
+  assert.equal(rejected.status, 400);
+  assert.match(rejected.body.error, /too large/);
+  assert.equal(board.read().notes.length, 1);
+});
+
 test("event stream receives agent-side changes", async (t) => {
   const board = createBoard();
   const server = await startServer(board);
