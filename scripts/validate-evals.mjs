@@ -6,13 +6,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { contained, evalFilenameMatcher, evalFilenames, frontmatter, parseYaml, readCatalog, readVallyConfig } from "./catalog.mjs";
+import { Problems, relativePath, runCli } from "./problems.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 const json = async (path) => JSON.parse(await readFile(path, "utf8"));
 const list = (value) => value === undefined ? [] : Array.isArray(value) ? value : [value];
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const matches = (pattern, value) => typeof pattern === "string" && new RegExp(pattern).test(value);
-const outcomeGraders = ["program", "output-matches", "output-contains", "file-matches", "file-exists", "prompt", "panel"];
+// Graders that check what happened, not only that something was invoked. One of
+// these makes a positive case count as outcome coverage.
+export const outcomeGraders = Object.freeze(["program", "output-matches", "output-contains", "file-matches", "file-exists", "prompt", "panel"]);
 async function entries(path) {
   try { return await readdir(path, { withFileTypes: true }); }
   catch (error) { if (error.code === "ENOENT") return []; throw error; }
@@ -148,12 +151,12 @@ function checkPositive(asset, stimulus, spec, path, directory) {
   const env = { ...spec.agent_environment?.env, ...stimulus.agent_environment?.env };
   const mcpServers = { ...spec.agent_environment?.mcpServers, ...stimulus.agent_environment?.mcpServers };
   assert.ok(graders.some((grader) => outcomeGraders.includes(grader.type) || grader.type === "tool-calls" && asset.kind === "mcp"),
-    `${stimulus.name}: invocation alone is not outcome coverage.`);
+    `${id}: invocation alone isn't outcome coverage. Add an outcome grader: ${outcomeGraders.join(", ")}${asset.kind === "mcp" ? ", or a tool-calls rule with the tool's result" : ""}.`);
   if (asset.kind === "skill") {
     const skills = [...list(spec.agent_environment?.skills), ...list(stimulus.agent_environment?.skills)];
-    assert.ok(skills.some((skill) => resolve(dirname(path), skill) === asset.path), `${id}: load the actual skill.`);
+    assert.ok(skills.some((skill) => resolve(dirname(path), skill) === asset.path), `${id}: load the actual skill. List its directory in agent_environment.skills, relative to the eval file, for example ../../${relativePath(directory, asset.path)}.`);
     assert.ok(graders.some((grader) => grader.type === "skill-invocation" && list(grader.config?.required).includes(asset.name)),
-      `${id}: assert actual skill invocation.`);
+      `${id}: assert actual skill invocation with a skill-invocation grader whose config.required lists ${asset.name}.`);
   } else if (asset.kind === "agent") {
     const files = [...list(spec.agent_environment?.files), ...list(stimulus.agent_environment?.files)];
     assert.ok(files.some((file) => typeof file.src === "string"
@@ -189,7 +192,10 @@ function checkPositive(asset, stimulus, spec, path, directory) {
 
 // A negative control must assert something observable. For an MCP tool that's
 // either an asserted error or result from a real call, or the tool being disallowed.
+// A skill-invocation grader that disallows the skill also counts for a skill,
+// since that is the non-trigger assertion the authoring skill teaches.
 function checkNegative(asset, graders) {
+  if (asset.kind === "skill" && graders.some((grader) => grader.type === "skill-invocation" && list(grader.config?.disallowed).includes(asset.name))) return true;
   if (asset.kind !== "mcp") return graders.some((grader) => outcomeGraders.includes(grader.type) || grader.type === "tool-calls");
   return graders.some((grader) => grader.type === "tool-calls" && (
     list(grader.config?.required).some((rule) => typeof rule === "object"
@@ -197,52 +203,88 @@ function checkNegative(asset, graders) {
     || list(grader.config?.disallowed).some((rule) => matches(typeof rule === "object" ? rule?.name : rule, asset.name))));
 }
 
+const negativeHint = (asset) => asset.kind === "mcp"
+  ? `a tool-calls rule that requires a real ${asset.name} call with an asserted result or error, or one that disallows ${asset.name}`
+  : `one of ${asset.kind === "skill" ? `a skill-invocation grader with config.disallowed: [${asset.name}], ` : ""}tool-calls, ${outcomeGraders.join(", ")}`;
+
 export function checkCoverage(assets, specs, { directory = root, suites = new Set(["smoke"]), smokeSuite = "smoke" } = {}) {
-  assert.ok(suites.has(smokeSuite), `.vally.yaml needs a "${smokeSuite}" suite that filters on tags.suite.`);
+  const problems = new Problems(directory);
+  if (!suites.has(smokeSuite)) {
+    problems.add(".vally.yaml", `needs a "${smokeSuite}" suite that filters on tags.suite.`);
+    problems.throwIfAny();
+  }
   const byId = new Map(assets.map((asset) => [asset.id, asset]));
   const covered = new Set();
   const smoke = new Set();
   const negative = new Set();
+  const weakNegatives = new Map();
   const names = new Set();
   for (const { path, spec } of specs) {
-    assert.ok(Array.isArray(spec?.stimuli) && spec.stimuli.length, `${path}: stimuli are required.`);
+    const file = relativePath(directory, path);
+    if (!Array.isArray(spec?.stimuli) || !spec.stimuli.length) {
+      problems.add(file, "stimuli are required.");
+      continue;
+    }
     for (const stimulus of spec.stimuli) {
-      assert.ok(stimulus.name && !names.has(stimulus.name), `Missing/duplicate stimulus name: ${stimulus.name}`);
-      names.add(stimulus.name);
-      const ids = list(stimulus.tags?.assets);
-      assert.ok(ids.length, `${stimulus.name}: declare covered assets.`);
-      assert.ok(["positive", "negative"].includes(stimulus.tags?.control), `${stimulus.name}: set tags.control to positive or negative.`);
+      const where = `${file} (${stimulus?.name ?? "unnamed stimulus"})`;
+      if (!stimulus?.name) problems.add(where, "every stimulus needs a name.");
+      else if (names.has(stimulus.name)) problems.add(where, "stimulus names must be unique across all eval files so saved results map to one case. Prefix it with the skill or plugin name.");
+      names.add(stimulus?.name);
+      const ids = list(stimulus?.tags?.assets);
+      if (!ids.length) {
+        problems.add(where, 'declare the assets this case covers in tags.assets, for example tags: { assets: ["skill:<plugin>/<skill>"], control: positive, suite: smoke }.');
+        continue;
+      }
+      if (!["positive", "negative"].includes(stimulus.tags?.control)) {
+        problems.add(where, "set tags.control to positive or negative.");
+        continue;
+      }
       for (const suite of list(stimulus.tags?.suite)) {
-        assert.ok(suites.has(suite), `${stimulus.name}: tags.suite "${suite}" isn't a configured suite filter in .vally.yaml (${[...suites].join(", ")}).`);
+        if (!suites.has(suite)) problems.add(where, `tags.suite "${suite}" isn't a configured suite filter in .vally.yaml (${[...suites].join(", ")}).`);
       }
       for (const id of ids) {
         const asset = byId.get(id);
-        assert.ok(asset, `${stimulus.name}: unknown asset ${id}`);
-        if (stimulus.tags.control === "negative") {
-          if (checkNegative(asset, stimulus.graders ?? [])) negative.add(id);
+        if (!asset) {
+          problems.add(where, `unknown asset ${id}. Known assets: ${[...byId.keys()].join(", ") || "none"}.`);
           continue;
         }
-        checkPositive(asset, stimulus, spec, path, directory);
+        if (stimulus.tags.control === "negative") {
+          if (checkNegative(asset, stimulus.graders ?? [])) negative.add(id);
+          else weakNegatives.set(id, [...(weakNegatives.get(id) ?? []), where]);
+          continue;
+        }
+        const before = problems.list.length;
+        problems.checkSync(where, () => checkPositive(asset, stimulus, spec, path, directory));
+        if (problems.list.length !== before) continue;
         covered.add(id);
         if (list(stimulus.tags.suite).includes(smokeSuite)) smoke.add(id);
       }
     }
   }
-  for (const id of byId.keys()) {
-    assert.ok(covered.has(id), `${id}: missing positive behavioral coverage.`);
-    assert.ok(smoke.has(id), `${id}: missing ${smokeSuite} coverage.`);
-    assert.ok(negative.has(id), `${id}: missing negative control with an observable assertion.`);
+  for (const [id, asset] of byId) {
+    if (!covered.has(id)) problems.add(id, `missing positive behavioral coverage. Add a case with tags.assets: ${id} and tags.control: positive that loads the actual asset and asserts both its invocation and its outcome.`);
+    else if (!smoke.has(id)) problems.add(id, `missing ${smokeSuite} coverage. Add tags.suite: ${smokeSuite} to one of its positive cases.`);
+    if (!negative.has(id)) {
+      const weak = weakNegatives.get(id);
+      problems.add(id, `missing negative control with an observable assertion. Add a case with tags.assets: ${id} and tags.control: negative that uses ${negativeHint(asset)}.`
+        + (weak ? ` These negative cases don't assert anything observable for it: ${weak.join("; ")}.` : ""));
+    }
   }
+  problems.throwIfAny();
   return names.size;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const config = await readVallyConfig(root);
-  const assets = await discoverAssets();
-  const specs = await readEvals(root, config);
-  const count = checkCoverage(assets, specs, { suites: suiteTags(config) });
-  const kinds = Object.entries(Object.groupBy(assets, (asset) => asset.kind)).map(([kind, items]) => `${items.length} ${kind}`).join(", ");
-  console.log(`Validated ${specs.length} eval specs and ${count} cases covering ${assets.length} local assets (${kinds}).`);
-  for (const asset of assets) console.log(`  ${asset.id}`);
-  console.log("Canvas interaction is evaluated through a headless MCP/SDK contract, not native UI rendering.");
+  await runCli(async () => {
+    const config = await readVallyConfig(root);
+    const assets = await discoverAssets();
+    const specs = await readEvals(root, config);
+    const count = checkCoverage(assets, specs, { suites: suiteTags(config) });
+    const kinds = Object.entries(Object.groupBy(assets, (asset) => asset.kind)).map(([kind, items]) => `${items.length} ${kind}`).join(", ");
+    console.log(`Validated ${specs.length} eval specs and ${count} cases covering ${assets.length} local assets (${kinds}).`);
+    for (const asset of assets) console.log(`  ${asset.id}`);
+    if (assets.some((asset) => asset.kind === "extension")) {
+      console.log("Extensions are evaluated through a headless MCP/SDK contract, not native UI rendering.");
+    }
+  });
 }

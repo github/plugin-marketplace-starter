@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { contained, frontmatter, parseYaml, readCatalog, readVallyConfig } from "../scripts/catalog.mjs";
 import { checkCoverage, discoverAssets, readEvals, root, suiteTags } from "../scripts/validate-evals.mjs";
-import { hookEvents, markdownLinks, validateMcpConfig, validateRepository } from "../scripts/validate.mjs";
+import { hookEvents, markdownLinks, pluginMentions, staleReferenceWarnings, validateMcpConfig, validateRepository } from "../scripts/validate.mjs";
 
 async function names(path) {
   try { return (await readdir(path)).sort(); }
@@ -73,6 +73,48 @@ test("coverage rejects unknown, unloaded, invocation-free, negative-free, and sm
   assert.doesNotThrow(() => checkCoverage(only, modify((spec) => { spec.stimuli[1].tags.suite = "pr"; }), { suites: new Set(["smoke", "pr"]) }));
   assert.throws(() => checkCoverage(only, [author], { suites: new Set(["ci"]) }), /needs a "smoke" suite/);
   assert.throws(() => checkCoverage(only, modify((spec) => { delete spec.stimuli[1].tags.control; })), /tags\.control/);
+});
+
+test("coverage problems are all reported, name the spec and case, and say how to fix them", () => {
+  const assets = [{ id: "skill:fixture/fixture-skill", kind: "skill", name: "fixture-skill", path: resolve(root, "plugins/fixture/skills/fixture-skill") }];
+  const spec = (graders, negative) => [{ path: resolve(root, "evals/fixture/eval.yaml"), spec: {
+    agent_environment: { skills: ["../../plugins/fixture/skills/fixture-skill"] },
+    stimuli: [
+      { name: "fixture-does-it", tags: { assets: assets[0].id, control: "positive", suite: "smoke" }, graders },
+      { name: "fixture-skips-it", tags: { assets: assets[0].id, control: "negative" }, graders: negative },
+    ],
+  } }];
+  const invoked = { type: "skill-invocation", config: { required: ["fixture-skill"] } };
+  // A disallowed skill-invocation grader is an observable non-trigger assertion for a skill.
+  assert.equal(checkCoverage(assets, spec([invoked, { type: "output-contains", config: { substring: "ok" } }],
+    [{ type: "completed" }, { type: "skill-invocation", config: { disallowed: ["fixture-skill"] } }])), 2);
+  let error;
+  try { checkCoverage(assets, spec([invoked], [{ type: "completed" }])); } catch (caught) { error = caught; }
+  assert.ok(error?.problems?.length >= 3, "Every problem is reported in one run.");
+  assert.match(error.message, /evals\/fixture\/eval\.yaml \(fixture-does-it\): skill:fixture\/fixture-skill: invocation alone isn't outcome coverage\. Add an outcome grader: program, output-matches, output-contains/);
+  assert.match(error.message, /skill:fixture\/fixture-skill: missing positive behavioral coverage/);
+  assert.match(error.message, /missing negative control.*skill-invocation grader with config\.disallowed: \[fixture-skill\].*evals\/fixture\/eval\.yaml \(fixture-skips-it\)/);
+  assert.throws(() => checkCoverage(assets, [{ ...spec([invoked], [])[0], spec: { stimuli: [{ name: "untagged" }] } }]),
+    /evals\/fixture\/eval\.yaml \(untagged\): declare the assets this case covers in tags\.assets/);
+});
+
+test("verify warns about template names and prose that mentions missing plugins", async () => {
+  assert.deepEqual(pluginMentions("See `plugins/gone/` and [kept](../plugins/kept/README.md).\n/abs/path/to/plugins/other\nplugins/<name>"), [
+    { line: 1, name: "gone" }, { line: 1, name: "kept" },
+  ]);
+  const directory = await mkdtemp(join(tmpdir(), "starter-stale-"));
+  try {
+    await mkdir(join(directory, "plugins/kept"), { recursive: true });
+    await writeFile(join(directory, "package.json"), JSON.stringify({ name: "plugin-marketplace-starter" }));
+    const readme = join(directory, "README.md");
+    await writeFile(readme, "# Ours\n\nUse `plugins/kept` and `plugins/gone`.\n");
+    const warnings = await staleReferenceWarnings(directory, { name: "plugin-marketplace-starter", owner: { name: "GitHub" } }, [readme]);
+    assert.equal(warnings.length, 4);
+    assert.match(warnings.join("\n"), /README\.md:3: mentions plugins\/gone, which doesn't exist/);
+    assert.deepEqual(await staleReferenceWarnings(directory, { name: "ours", owner: { name: "Us" } }, []), [warnings[2]]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("MCP coverage requires the configured server, an asserted tool result, and observable negative controls", async () => {
