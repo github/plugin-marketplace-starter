@@ -1,6 +1,7 @@
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
 
 const pathFields = {
   create: "path",
@@ -8,6 +9,40 @@ const pathFields = {
   create_file: "filePath",
   replace_string_in_file: "filePath",
 };
+
+const maxMessage = 500;
+
+// Node's JSON.parse messages can quote part of the input, which may hold
+// secrets. Diagnostics name only the position, never the content.
+export function jsonError(error, text) {
+  if (!(error instanceof SyntaxError)) return error;
+  const position = Number(error.message.match(/at position (\d+)/)?.[1]);
+  if (!Number.isInteger(position) || typeof text !== "string") return new Error("Isn't valid JSON.");
+  const before = text.slice(0, position).split(/\r\n|\r|\n/);
+  return new Error(`Isn't valid JSON (line ${before.length}, column ${before.at(-1).length + 1}).`);
+}
+
+function parseJson(text, label) {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const safe = jsonError(error, text);
+    throw label ? new Error(`${label}: ${safe.message}`) : safe;
+  }
+}
+
+// --indent N sets the indentation, from 1 to 10 spaces. Anything else is
+// rejected rather than ignored, so a typo in hooks.json can't pass silently.
+export function options(args) {
+  let values;
+  try {
+    ({ values } = parseArgs({ args, options: { indent: { type: "string", default: "2" } }, strict: true, allowPositionals: false }));
+  } catch {
+    throw new Error("Unsupported arguments. format-json accepts only --indent N, where N is 1 to 10.");
+  }
+  if (!/^(?:[1-9]|10)$/.test(values.indent)) throw new Error("--indent must be a whole number from 1 to 10.");
+  return { indent: Number(values.indent) };
+}
 
 function filePath(value) {
   if (typeof value !== "string" || !value.trim()) throw new Error("Expected a non-empty file path.");
@@ -35,7 +70,7 @@ function patchPaths(patch) {
 
 function affectedPaths(name, args) {
   if (typeof args === "string" && !(name === "apply_patch" && args.startsWith("*** Begin Patch"))) {
-    args = JSON.parse(args);
+    args = parseJson(args, "toolArgs");
   }
   if (name === "apply_patch") return patchPaths(typeof args === "string" ? args : args?.input ?? args?.patch);
   if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("Expected toolArgs object.");
@@ -46,15 +81,15 @@ function affectedPaths(name, args) {
   return [filePath(args[pathFields[name]])];
 }
 
-export function format(event, diagnostic = console.error) {
+export function format(event, diagnostic = console.error, { indent = 2 } = {}) {
   const messages = [];
   const report = (message) => {
-    const text = `format-json: ${message}`;
+    const text = `format-json: ${message}`.slice(0, maxMessage);
     messages.push(text);
     diagnostic(text);
   };
   try {
-    if (!event || typeof event.toolName !== "string") throw new Error("Expected a shared-runtime tool event.");
+    if (!event || typeof event.toolName !== "string") throw new Error("Expected a Copilot CLI tool event with toolName.");
     const name = event.toolName;
     if (!Object.hasOwn(pathFields, name) && !["multi_replace_string_in_file", "apply_patch"].includes(name)) return {};
     if (event.toolResult?.resultType !== "success") return {};
@@ -69,7 +104,7 @@ export function format(event, diagnostic = console.error) {
         const actual = relative(realpathSync(event.cwd), realpathSync(path));
         if (isAbsolute(actual) || actual.split(sep).includes("..")) throw new Error("File resolves outside the session working directory.");
         const before = readFileSync(path, "utf8");
-        const after = `${JSON.stringify(JSON.parse(before), null, 2)}\n`;
+        const after = `${JSON.stringify(parseJson(before), null, indent)}\n`;
         if (before !== after) {
           writeFileSync(path, after);
           messages.push(`format-json: Formatted ${path}. Re-read it before further edits.`);
@@ -87,9 +122,10 @@ export function format(event, diagnostic = console.error) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   let result;
   try {
-    result = format(JSON.parse(readFileSync(0, "utf8")));
+    const settings = options(process.argv.slice(2));
+    result = format(parseJson(readFileSync(0, "utf8"), "Hook input"), console.error, settings);
   } catch (error) {
-    const message = `format-json: Invalid hook input: ${error.message}`;
+    const message = `format-json: ${error.message}`.slice(0, maxMessage);
     console.error(message);
     result = { additionalContext: message };
   }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Describe the server's access accurately: the handlers don't use files, credentials, or the network, but the process runs with your permissions.
+
 ## 0.1.3
 
 - Replace the starter-specific install values in the README with generic ones.

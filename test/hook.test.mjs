@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse } from "yaml";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { missing } from "../scripts/examples.mjs";
@@ -20,8 +21,8 @@ function fixture(t) {
 const event = (cwd, toolName = "edit", toolArgs = { path: "sample.json" }, resultType = "success") => ({
   cwd, toolName, toolArgs, toolResult: { resultType },
 });
-function processHook(input) {
-  const result = spawnSync(process.execPath, [hook], {
+function processHook(input, args = []) {
+  const result = spawnSync(process.execPath, [hook, ...args], {
     input: JSON.stringify(input), encoding: "utf8", timeout: 10_000,
   });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
@@ -156,4 +157,51 @@ test("relative paths use event cwd, including paths with spaces", (t) => {
   writeFileSync(join(cwd, "sample.json"), before);
   processHook(event(cwd));
   assert.equal(readFileSync(join(cwd, "sample.json"), "utf8"), after);
+});
+
+test("diagnostics never echo the contents of malformed JSON, hook input, or tool arguments", (t) => {
+  const cwd = fixture(t);
+  const secret = "SYNTHETIC_SECRET_NOT_REAL_123";
+  writeFileSync(join(cwd, "bad.json"), `{\n  "token": ${secret}\n}`);
+  const { output, stderr } = processHook(event(cwd, "edit", { path: "bad.json" }));
+  assert.equal(readFileSync(join(cwd, "bad.json"), "utf8"), `{\n  "token": ${secret}\n}`);
+  assert.match(output.additionalContext, /bad\.json: Isn't valid JSON/);
+  for (const text of [output.additionalContext, stderr]) assert.doesNotMatch(text, /SYNTHETIC/);
+  const args = processHook(event(cwd, "edit", `{"path": ${secret}`));
+  assert.match(args.output.additionalContext, /toolArgs: Isn't valid JSON/);
+  assert.doesNotMatch(args.output.additionalContext + args.stderr, /SYNTHETIC/);
+  const raw = spawnSync(process.execPath, [hook], { input: `{"cwd": ${secret}`, encoding: "utf8", timeout: 10_000 });
+  assert.equal(raw.status, 0);
+  assert.match(JSON.parse(raw.stdout).additionalContext, /^format-json: Hook input: Isn't valid JSON/);
+  assert.doesNotMatch(raw.stdout + raw.stderr, /SYNTHETIC/);
+});
+
+test("--indent sets the indentation; bad or unknown arguments are reported, not ignored", (t) => {
+  const cwd = fixture(t);
+  const path = join(cwd, "sample.json");
+  writeFileSync(path, before);
+  processHook(event(cwd), ["--indent", "4"]);
+  assert.equal(readFileSync(path, "utf8"), `${JSON.stringify(JSON.parse(before), null, 4)}\n`);
+  assert.deepEqual(processHook(event(cwd), ["--indent=4"]).output, {}, "Already formatted at four spaces.");
+  for (const args of [["--indent", "0"], ["--indent", "11"], ["--indent", "two"], ["--tabs"], ["extra"]]) {
+    writeFileSync(path, before);
+    const { output } = processHook(event(cwd), args);
+    assert.match(output.additionalContext, /^format-json: (--indent must|Unsupported arguments)/, args.join(" "));
+    assert.equal(readFileSync(path, "utf8"), before, args.join(" "));
+  }
+});
+
+test("the packaged hooks.json command and the eval grader agree on the indentation", (t) => {
+  const plugin = fileURLToPath(new URL("../plugins/format-json/", import.meta.url));
+  const command = JSON.parse(readFileSync(join(plugin, "com.github.copilot/hooks/hooks.json"), "utf8")).hooks.postToolUse[0].command;
+  const configured = command.match(/^node "\$\{PLUGIN_ROOT\}\/[^"]+"(.*)$/)[1].trim().split(/\s+/).filter(Boolean);
+  const cwd = fixture(t);
+  writeFileSync(join(cwd, "sample.json"), before);
+  processHook(event(cwd), configured);
+  const formatted = readFileSync(join(cwd, "sample.json"), "utf8");
+  const spec = parse(readFileSync(fileURLToPath(new URL("../evals/format-json/eval.yaml", import.meta.url)), "utf8"));
+  const grader = spec.stimuli.find((stimulus) => stimulus.name === "format-json-runs-after-compact-edit").graders.find((item) => item.type === "program");
+  const indent = Number(grader.config.args[2] ?? 2);
+  assert.equal(formatted, `${JSON.stringify(JSON.parse(before), null, indent)}\n`,
+    "Change the grader's indent argument in evals/format-json/eval.yaml when you change --indent in hooks.json.");
 });

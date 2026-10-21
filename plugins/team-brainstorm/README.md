@@ -34,7 +34,10 @@ Node.js 22.12+ and a Copilot host with SDK canvas presentation are required.
 The runtime resolves `@github/copilot-sdk/extension`; do not install it into the
 plugin. Hosts without canvas presentation can still use the skill in chat.
 The loopback server binds only to `127.0.0.1`, rejects foreign Host/Origin
-headers, and closes when the runtime closes its instance.
+headers, serves the board only under a random path for each panel, and closes
+when the runtime closes its instance. These checks stop web pages and casual
+local requests, not software that runs as your account, so don't put secrets or
+sensitive data on the board. Copilot and its model also read every note.
 
 ## Structure
 

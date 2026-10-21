@@ -36714,7 +36714,7 @@ var toolDefinitions = [
 ];
 var TOOL_NAMES = Object.freeze(toolDefinitions.map((tool) => tool.name));
 function createServer() {
-  const server = new McpServer({ name: "json-configuration", version: "0.1.3" });
+  const server = new McpServer({ name: "json-configuration", version: "0.1.4" });
   for (const tool of toolDefinitions) tool.register(server);
   return server;
 }

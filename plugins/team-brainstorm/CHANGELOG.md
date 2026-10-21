@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0
+
+- Serve each panel under a random path, so other local processes can't reach the board by port alone.
+- Say plainly that the board isn't protected from software running as you, and keep sensitive data off it.
+
 ## 1.0.3
 
 - Replace the starter-specific install values in the README with generic ones.

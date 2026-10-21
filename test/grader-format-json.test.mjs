@@ -38,6 +38,11 @@ test("formatter grader requires a compact agent edit, an actual hook receipt, an
   ]), dir, "format")));
   const manual = patch.replace('+{"enabled":true,"count":2}', '+{\n+  "enabled": true,\n+  "count": 2\n+}');
   assert.ok(!passes(assessFormatting(trajectory("", tool("apply_patch", manual, receipt)), dir, "format")));
+  // A different configured indentation expects different bytes.
+  assert.ok(!passes(assessFormatting(trajectory("", compact), dir, "format", 4)));
+  writeFileSync(join(dir, "input.json"), '{\n    "enabled": true,\n    "count": 2\n}\n');
+  assert.ok(passes(assessFormatting(trajectory("", compact), dir, "format", 4)));
+  assert.throws(() => assessFormatting(trajectory("", compact), dir, "format", 0), /indent/);
 });
 
 test("formatter invalid-input grade rejects silent repairs and missing diagnostics", { skip }, (t) => {

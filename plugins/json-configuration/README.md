@@ -27,8 +27,12 @@ The committed bundle includes its dependencies, so installed copies don't run
 `npm install`. Its third-party licenses are in
 [dist/THIRD_PARTY_NOTICES.txt](dist/THIRD_PARTY_NOTICES.txt).
 
-The tools are read-only. They have no network, filesystem, or credential access
-and don't persist the JSON you send. Input is limited to 1,048,576 characters.
+The tool handlers only work on the JSON you pass them: they don't read files,
+use credentials, make network requests, or save the JSON. That describes this
+code, not a sandbox. The server is an ordinary Node.js process with your
+account's permissions, so review any change to its bundle, and remember that
+Copilot and its model see the JSON you send and the results. Input is limited
+to 1,048,576 characters, and parse errors don't quote the input.
 Numbers follow finite JavaScript number rules; overflowing values are rejected
 instead of becoming `null`. Represent exact large integers or decimals as JSON
 strings.

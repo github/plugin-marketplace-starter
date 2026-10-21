@@ -11,13 +11,13 @@
     {
       "name": "team-brainstorm",
       "source": "./plugins/team-brainstorm",
-      "version": "1.0.3",
+      "version": "1.1.0",
       "description": "Brainstorm together on a small, session-only canvas."
     },
     {
       "name": "format-json",
       "source": "./plugins/format-json",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "description": "Format affected JSON files after successful agent edits."
     },
     {
@@ -35,7 +35,7 @@
     {
       "name": "json-configuration",
       "source": "./plugins/json-configuration",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "description": "Validate JSON and retrieve configuration values with a local MCP server."
     },
     {

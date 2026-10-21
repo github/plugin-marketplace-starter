@@ -101,7 +101,7 @@
         remove.onclick = async () => {
           remove.disabled = true;
           try {
-            await mutate("/remove", { id: note.id });
+            await mutate("remove", { id: note.id });
             if (editing === note.id) reset();
             message("Note deleted."); text.focus();
           } catch (error) { message(error.message, true); remove.disabled = false; }
@@ -118,12 +118,12 @@
   form.onsubmit = async (event) => {
     event.preventDefault(); submit.disabled = true;
     try {
-      await mutate("/notes", { ...(editing ? { id: editing } : {}), text: text.value, column: column.value });
+      await mutate("notes", { ...(editing ? { id: editing } : {}), text: text.value, column: column.value });
       reset(); message("Note saved."); text.focus();
     } catch (error) { message(error.message, true); }
     finally { submit.disabled = false; }
   };
-  const events = new EventSource("/events");
+  const events = new EventSource("events");
   events.onopen = () => message("Connected. Add a note, or ask Copilot to contribute.");
   events.onmessage = (event) => render(JSON.parse(event.data));
   events.onerror = () => message("Board disconnected. Reconnecting; if the session ended, reopen the canvas.", true);

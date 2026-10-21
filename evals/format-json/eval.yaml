@@ -37,7 +37,9 @@ stimuli:
       - type: program
         config:
           program: node
-          args: [.grading/format-json.mjs, format]
+          # The last argument is the indentation. Keep it equal to --indent in
+          # plugins/format-json/com.github.copilot/hooks/hooks.json (2 by default).
+          args: [.grading/format-json.mjs, format, '2']
     artifacts:
       include: [input.json]
   - name: format-json-leaves-invalid-fixture-unchanged

@@ -2,10 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { calls, check, isMain, matchesTool, normalize, runGrade } from "./common.mjs";
 
-export function assessFormatting(trajectory, workspace, scenario) {
+// `indent` must match the --indent argument in the plugin's hooks.json (2 by default).
+export function assessFormatting(trajectory, workspace, scenario, indent = 2) {
   if (!["format", "invalid"].includes(scenario)) throw new Error(`Unknown formatter scenario: ${scenario}`);
+  if (!Number.isInteger(indent) || indent < 1 || indent > 10) throw new Error("Expected an indent from 1 to 10.");
   const compact = scenario === "format" ? '{"enabled":true,"count":2}' : '{"enabled":}';
-  const expected = scenario === "format" ? '{\n  "enabled": true,\n  "count": 2\n}\n' : `${compact}\n`;
+  const expected = scenario === "format" ? `${JSON.stringify(JSON.parse(compact), null, indent)}\n` : `${compact}\n`;
   const edits = calls(trajectory).filter((call) => call.success
     && ["apply_patch", "create", "edit", "create_file", "replace_string_in_file", "multi_replace_string_in_file"].some((name) => matchesTool(call.event.data.toolName, name)));
   const patchKind = (call) => {
@@ -28,7 +30,7 @@ export function assessFormatting(trajectory, workspace, scenario) {
     check("The agent must make a real, compact apply_patch edit of input.json.", compactEdits.length > 0),
     check("The agent must not format the file itself or edit other files.", edits.every((call) => patchKind(call))),
     check("The agent must not invoke shell commands or delegate the edit.", !unsafe),
-    check(scenario === "format" ? "The hook must produce two-space JSON with a final LF." : "Invalid JSON must remain unchanged.",
+    check(scenario === "format" ? `The hook must produce ${indent}-space JSON with a final LF.` : "Invalid JSON must remain unchanged.",
       scenario === "format" ? contents === expected : typeof contents === "string" && normalize(contents) === expected),
   ];
   const hookEvidence = compactEdits.map((call) => JSON.stringify(call.result)).join("\n");
@@ -43,5 +45,5 @@ export function assessFormatting(trajectory, workspace, scenario) {
 }
 
 if (isMain(import.meta.url)) {
-  await runGrade("formatter-integration", (trajectory, workspace) => assessFormatting(trajectory, workspace, process.argv[2]));
+  await runGrade("formatter-integration", (trajectory, workspace) => assessFormatting(trajectory, workspace, process.argv[2], Number(process.argv[3] ?? 2)));
 }

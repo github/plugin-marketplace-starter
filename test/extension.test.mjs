@@ -36,7 +36,7 @@ test("SDK contract: actions, session isolation, idempotent open, close and reope
         await assert.rejects(action("save_note", {text:"", column:"ideas"}), error => error.code === "invalid_note");
         await canvas.onClose(ctx);
         const reopened = await canvas.open(ctx);
-        assert.equal((await (await fetch(new URL("/board", reopened.url))).json()).notes[0].text, "Think together");
+        assert.equal((await (await fetch(new URL("board", reopened.url))).json()).notes[0].text, "Think together");
         await action("save_note", {id:saved.notes[0].id,text:"Act on it",column:"next"});
         assert.equal((await action("get_board")).notes[0].column, "next");
         await action("remove_note", {id:saved.notes[0].id});

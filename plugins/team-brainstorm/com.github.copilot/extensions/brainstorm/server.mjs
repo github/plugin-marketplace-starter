@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { BoardError } from "./board.mjs";
@@ -23,6 +24,11 @@ async function readInput(request) {
 
 export async function startServer(board, log = console.error) {
   const streams = new Set();
+  // A random path prefix per panel, so another local process can't reach the
+  // board just by finding the port. It isn't protection from software that
+  // runs as your account and can read this process's memory.
+  const token = randomBytes(16).toString("hex");
+  const prefix = `/${token}/`;
   const server = createServer((request, response) => {
     const json = (status, value) => {
       response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -34,9 +40,10 @@ export async function startServer(board, log = console.error) {
       // Check both Host and Origin to reject rebinding and cross-site writes.
       if (request.headers.host !== `127.0.0.1:${address.port}`
         || (request.headers.origin && request.headers.origin !== origin)) {
-        return json(403, { error: "Only the board's own page may access this server." });
+        return json(403, { error: "Requests must come from this board's own page." });
       }
-      const path = request.url;
+      if (!request.url.startsWith(prefix)) return json(404, { error: "Not found." });
+      const path = `/${request.url.slice(prefix.length)}`;
       if (request.method === "GET" && path === "/") {
         response.writeHead(200, {
           "Content-Type": "text/html; charset=utf-8",
@@ -86,7 +93,7 @@ export async function startServer(board, log = console.error) {
     server.listen(0, "127.0.0.1", resolve);
   });
   return {
-    url: `http://127.0.0.1:${server.address().port}/`,
+    url: `http://127.0.0.1:${server.address().port}${prefix}`,
     async close() {
       for (const stream of streams) stream.end();
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

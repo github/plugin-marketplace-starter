@@ -52,14 +52,14 @@ test("HTTP page and mutations work; invalid and cross-origin requests are reject
   const post = (path, body, headers = {}) => fetch(new URL(path, server.url), {
     method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body),
   });
-  const response = await post("/notes", { text: "<script>alert(1)</script>", column: "ideas" });
+  const response = await post("notes", { text: "<script>alert(1)</script>", column: "ideas" });
   assert.equal(response.status, 200);
   const { notes } = await response.json();
   assert.equal(notes[0].text, "<script>alert(1)</script>");
-  assert.equal((await post("/notes", { text: "bad", column: "elsewhere" })).status, 400);
-  assert.equal((await post("/notes", { text: "foreign", column: "ideas" }, { Origin: "https://example.com" })).status, 403);
+  assert.equal((await post("notes", { text: "bad", column: "elsewhere" })).status, 400);
+  assert.equal((await post("notes", { text: "foreign", column: "ideas" }, { Origin: "https://example.com" })).status, 403);
   const foreignHostStatus = await new Promise((resolve, reject) => {
-    const req = request(new URL("/board", server.url), { headers: { Host: "example.com" } }, (res) => {
+    const req = request(new URL("board", server.url), { headers: { Host: "example.com" } }, (res) => {
       res.resume();
       resolve(res.statusCode);
     });
@@ -67,11 +67,17 @@ test("HTTP page and mutations work; invalid and cross-origin requests are reject
     req.end();
   });
   assert.equal(foreignHostStatus, 403);
-  assert.equal((await post("/remove", { id: notes[0].id })).status, 200);
+  assert.equal((await post("remove", { id: notes[0].id })).status, 200);
   assert.deepEqual(board.read(), { notes: [] });
-  assert.equal((await post("/notes", { text: "x", column: "ideas" }, { "Content-Type": "text/plain" })).status, 415);
-  assert.equal((await fetch(new URL("/notes", server.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{" })).status, 400);
-  assert.equal((await fetch(new URL("/missing", server.url))).status, 404);
+  assert.equal((await post("notes", { text: "x", column: "ideas" }, { "Content-Type": "text/plain" })).status, 415);
+  assert.equal((await fetch(new URL("notes", server.url), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{" })).status, 400);
+  assert.equal((await fetch(new URL("missing", server.url))).status, 404);
+  // Knowing the port isn't enough: every path outside the panel's random prefix is refused.
+  assert.match(server.url, /^http:\/\/127\.0\.0\.1:\d+\/[a-f0-9]{32}\/$/);
+  for (const path of ["/", "/board", "/events"]) assert.equal((await fetch(new URL(path, server.url))).status, 404);
+  const other = await startServer(createBoard());
+  t.after(() => other.close());
+  assert.notEqual(new URL(other.url).pathname, new URL(server.url).pathname);
 });
 
 test("UTF-8 split across request chunks round-trips, and the size limit counts bytes", async (t) => {
@@ -79,7 +85,7 @@ test("UTF-8 split across request chunks round-trips, and the size limit counts b
   const server = await startServer(board);
   t.after(() => server.close());
   const send = (parts) => new Promise((resolve, reject) => {
-    const req = request(new URL("/notes", server.url), { method: "POST", headers: { "Content-Type": "application/json" } }, (res) => {
+    const req = request(new URL("notes", server.url), { method: "POST", headers: { "Content-Type": "application/json" } }, (res) => {
       const body = [];
       res.on("data", (chunk) => body.push(chunk));
       res.on("end", () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(body).toString("utf8")) }));
@@ -113,7 +119,7 @@ test("event stream receives agent-side changes", async (t) => {
   const server = await startServer(board);
   t.after(() => server.close());
   const abort = new AbortController();
-  const response = await fetch(new URL("/events", server.url), { signal: abort.signal });
+  const response = await fetch(new URL("events", server.url), { signal: abort.signal });
   const reader = response.body.getReader();
   assert.match(new TextDecoder().decode((await reader.read()).value), /"notes":\[\]/);
   board.save({ text: "From the agent", column: "next" });
