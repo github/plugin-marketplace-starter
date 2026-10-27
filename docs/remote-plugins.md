@@ -11,23 +11,24 @@ run upstream code, and the local evals don't cover remote plugins: `evals/` is
 for the plugins under `plugins/`, and the coverage check rejects asset IDs that
 aren't local. Evaluate an upstream plugin in its own repository.
 
-<!-- plugin:github-copilot -->
+<!-- plugin:eval -->
 ## The GitHub Copilot Evals plugin
 
-[marketplace.json](../marketplace.json) includes a `github-copilot` entry that
-points at the published GitHub Copilot Evals plugin in
-[github/evals](https://github.com/github/evals). It mirrors the stable entry in
-upstream's own catalog: the `copilot-evals-v0.16.0` release, pinned to the full
-SHA of its built commit.
+<!-- TODO: github/evals-dist isn't public yet. Make it public before this
+repository is, or remove the entry with npm run remove-plugin -- eval. -->
+[marketplace.json](../marketplace.json) includes an `eval` entry that points at
+the published GitHub Copilot Evals plugin in `github/evals-dist`. It mirrors
+the entry in upstream's own catalog: the `copilot-evals-v0.20.3` release,
+pinned to the full SHA of its commit.
 
 After adding this marketplace, install it explicitly with
-`copilot plugin install github-copilot@MARKETPLACE`, where `MARKETPLACE` is the
+`copilot plugin install eval@MARKETPLACE`, where `MARKETPLACE` is the
 `name` in `marketplace.json`. Or skip this catalog and install it from
-upstream, which follows upstream's reviewed stable releases:
+upstream, which follows upstream's releases:
 
 ```sh
-copilot plugin marketplace add github/evals
-copilot plugin install github-copilot@evals
+copilot plugin marketplace add github/evals-dist
+copilot plugin install eval@github-copilot-evals-dist
 ```
 
 Pick one route. Don't install the same plugin from both marketplaces.
@@ -36,15 +37,14 @@ The pinned release is the built plugin. It provides the native `/eval` command
 (`/eval setup`, `create`, `review`, `improve`, `run`, and `compare`) in the CLI
 and Copilot App, a canvas, and six model-invocable skills. Running an eval
 needs a compatible runner and its own approval, and it spends AI credits. See
-the [upstream install guide](https://github.com/github/evals/blob/main/website/src/content/guides/install/plugin.md)
-for VS Code and Copilot App setup. This repository's eval tooling works without
-it.
+the [GitHub Copilot Evals docs](https://aka.ms/evals/site) for VS Code and
+Copilot App setup. This repository's eval tooling works without it.
 
-The `github/evals` repository is currently private, so each installer needs a
+The `github/evals-dist` repository isn't public yet, so each installer needs a
 GitHub account with access. This catalog entry doesn't grant access or copy
 upstream code. If your team doesn't have access, remove the entry with
-`npm run remove-plugin -- github-copilot`.
-<!-- /plugin:github-copilot -->
+`npm run remove-plugin -- eval`.
+<!-- /plugin:eval -->
 
 ## Add a remote plugin
 

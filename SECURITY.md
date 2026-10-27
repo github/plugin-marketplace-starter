@@ -4,6 +4,41 @@
 
 Don't report security problems in public issues, discussions, or pull requests.
 
+<!-- template-only -->
+### In this template
+
+Thanks for helping make GitHub safe for everyone. GitHub takes the security of
+its software products and services seriously, including all of the open source
+code repositories managed through its GitHub organizations, such as
+[GitHub](https://github.com/GitHub).
+
+If you believe you've found a security vulnerability in this template,
+`github/plugin-marketplace-starter`, or in any other GitHub-owned repository,
+report it to GitHub through coordinated disclosure. Send an email to
+opensource-security[@]github.com.
+
+Include as much of the following as you can. It helps GitHub understand and
+triage your report more quickly.
+
+- The type of issue, such as command injection, path traversal, or cross-site
+  scripting
+- Full paths of the source files related to the issue
+- The location of the affected source code: a tag, branch, commit, or direct
+  URL
+- Any special configuration needed to reproduce the issue
+- Step-by-step instructions to reproduce the issue
+- Proof-of-concept or exploit code, if possible
+- The impact of the issue, including how an attacker might exploit it
+
+Open source repositories are
+[outside the scope of GitHub's bug bounty program](https://bounty.github.com/index.html#scope),
+so they aren't eligible for bounty rewards, but GitHub will make sure your
+finding reaches the right maintainers. See
+[GitHub's Safe Harbor Policy](https://docs.github.com/en/site-policy/security-policies/github-bug-bounty-program-legal-safe-harbor#1-safe-harbor-terms).
+
+### In a marketplace made from this template
+
+<!-- /template-only -->
 <!-- Replace this section with your team's reporting channel before you ship. -->
 Use this repository's **Security** tab to
 [report a vulnerability privately](https://docs.github.com/en/code-security/security-advisories/working-with-repository-security-advisories/configuring-private-vulnerability-reporting-for-a-repository),

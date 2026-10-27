@@ -10,8 +10,8 @@ paths:
     - plugins/json-configuration/skills
   evals:
     - evals
-  # eval.yaml is this repository's convention; *.eval.yaml is the upstream
-  # github/evals convention. Both work.
+  # eval.yaml is this repository's convention; *.eval.yaml is the GitHub
+  # Copilot Evals convention (https://aka.ms/evals/site). Both work.
   evalFilenames:
     - eval.yaml
     - "*.eval.yaml"

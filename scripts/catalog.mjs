@@ -48,7 +48,7 @@ export function validateRemoteSource(source, name = "remote plugin") {
   assert.ok(!unknown.length, fail(`unknown source field ${unknown.join(", ")}. Use only source, repo, path, ref, and sha.`));
   assert.equal(source.source, "github", fail('only "source": "github" remote references are supported.'));
   assert.ok(typeof source.repo === "string" && /^[A-Za-z0-9][A-Za-z0-9-]*\/(?!\.{1,2}$)[A-Za-z0-9_.-]+$/.test(source.repo),
-    fail('"repo" must be OWNER/REPO, such as "github/evals", not a URL.'));
+    fail('"repo" must be OWNER/REPO, such as "my-org/plugins", not a URL.'));
   if (source.path !== undefined) {
     assert.ok(relativePath(source.path), fail(`"path" must be a directory relative to the repository root, such as "packages/plugin", without a leading "./" or "/", "..", or backslashes. Omit "path" when plugin.json is at the repository root.`));
   }

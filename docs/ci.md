@@ -39,9 +39,9 @@ organization:
 
 - `validate.yml` works as it is, and it's all you need to keep the marketplace
   consistent. It never calls a model.
-- To run behavioral evals in CI, set the repository variable `EVALS_RUNNER` to
-  `npm`. The default runner uses a private Action that only repositories in the
-  GitHub organization can use, so without this the eval job fails.
+- To run behavioral evals in CI, leave the repository variable `EVALS_RUNNER`
+  unset or set it to `npm`. The `action` runner uses an Action that isn't
+  public yet, so it fails outside the GitHub organization.
 - Copilot usage from the job's token is
   [billed to your own Copilot plan](https://docs.github.com/en/copilot/concepts/agent-capabilities/agent-powered-workflows-and-operations/copilot-cli-in-github-actions).
   Each plan includes a monthly allowance of AI credits; see
@@ -69,9 +69,10 @@ turn it on.
 ### Turn it on
 
 1. Check the [requirements](#requirements) below.
-2. Pick a runner (see the next section). If you use the npm runner, create the
-   repository variable `EVALS_RUNNER` with the value `npm`. Any value other
-   than `action`, `npm`, or nothing fails the workflow instead of guessing.
+2. Pick a runner (see the next section). The npm runner is the default. To use
+   the Evals Action instead, create the repository variable `EVALS_RUNNER`
+   with the value `action`. Any value other than `action`, `npm`, or nothing
+   fails the workflow instead of guessing.
 3. Decide who approves runs. Both eval jobs use an environment named `evals`,
    which GitHub creates the first time a job uses it. To make a person approve
    each run before it gets a token, add required reviewers to it in
@@ -96,23 +97,27 @@ Pull request runs start only when all of these hold:
 - It touches plugins, evals, schemas, scripts, `.vally.yaml`, the package
   files, or the workflow itself.
 
-Runs don't cancel each other, because the Evals Action requires that, so each
-push to an open pull request queues one more run. Keep work-in-progress pull
-requests as drafts.
+Runs don't cancel each other, which the Evals Action requires, so each push to
+an open pull request queues one more run. Keep work-in-progress pull requests
+as drafts.
 
 ### Pick a runner
 
-| | `action` (default) | `npm` |
+| | `npm` (default) | `action` |
 |---|---|---|
-| Set `EVALS_RUNNER` to | nothing, or `action` | `npm` |
-| Runs | [`github/evals-action`](https://github.com/github/evals-action) v0.1.0 | `node scripts/evals.mjs eval --suite <suite> --require-pass` |
-| Who can use it | Repositories in the GitHub organization. The Action is private and shared only there, so other organizations can't use it. | Any repository |
-| Report | Structured report and one sticky pull request comment | The job summary |
-| Job token permissions | `contents: read`, `copilot-requests: write`, `pull-requests: write` | `contents: read`, `copilot-requests: write` |
+| Set `EVALS_RUNNER` to | nothing, or `npm` | `action` |
+| Runs | `node scripts/evals.mjs eval --suite <suite> --require-pass` | The GitHub Copilot Evals Action, `github/evals-action` v0.1.0 |
+| Who can use it | Any repository | Repositories in the GitHub organization, for now. The Action isn't public yet, so other organizations can't use it. |
+| Report | The job summary | Structured report and one sticky pull request comment |
+| Job token permissions | `contents: read`, `copilot-requests: write` | `contents: read`, `copilot-requests: write`, `pull-requests: write` |
+
+<!-- TODO: github/evals-action isn't public yet. When it is, drop "for now"
+above, link to it, and move the pin in evals.yml to the release that ships its
+third-party notices. -->
 
 The two runners are separate jobs, because a job downloads every action it
-names before it starts, even ones in skipped steps. With `EVALS_RUNNER=npm`, the
-private Action is never downloaded.
+names before it starts, even ones in skipped steps. With the npm runner, the
+Evals Action is never downloaded.
 
 Both fail the job on a failed verdict, an incomplete run, or an infrastructure
 error, unlike the report-only default of `npm run eval:report` locally. Both use
@@ -175,7 +180,7 @@ repository variable `EVALS_UPLOAD_RESULTS` to `true`.
   Both jobs use `ubuntu-latest`.
 - **Actions policy.** If your organization restricts which actions can run,
   allow the actions the workflow pins: `actions/checkout`, `actions/setup-node`,
-  `actions/upload-artifact`, and, for the default runner, `github/evals-action`.
+  `actions/upload-artifact`, and, for the `action` runner, `github/evals-action`.
 
 ## Cost
 

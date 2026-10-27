@@ -9,10 +9,10 @@ import { discoverAssets, checkCoverage, root } from "../scripts/validate-evals.m
 test("the catalog separates local plugins from pinned, opt-in remote references", async () => {
   const { catalog, localPlugins, remotePlugins } = await readCatalog(root);
   assert.equal(localPlugins.length + remotePlugins.length, catalog.plugins.length);
-  const evals = remotePlugins.find((entry) => entry.source.repo === "github/evals");
+  const evals = remotePlugins.find((entry) => entry.source.repo === "github/evals-dist");
   if (evals) {
     // The catalog name must match upstream's plugin.json name, not its marketplace name.
-    assert.equal(evals.name, "github-copilot");
+    assert.equal(evals.name, "eval");
     assert.equal(evals.source.path, "packages/plugin");
     assert.deepEqual(remoteWarnings(evals), []);
     assert.equal(evals.version, evals.source.ref.replace(/^copilot-evals-v/, ""));
@@ -37,7 +37,7 @@ test("an empty catalog is valid, and catalog errors are plain sentences", () => 
 test("remote references must pin a full sha, and errors name the entry", () => {
   const sha = "a".repeat(40);
   for (const source of [
-    { source: "github", repo: "github/evals", path: "packages/plugin", sha },
+    { source: "github", repo: "example/evals", path: "packages/plugin", sha },
     { source: "github", repo: "example/plugin", ref: "v1.0.0", sha },
     { source: "github", repo: "example/plugin", sha },
   ]) assert.doesNotThrow(() => validateRemoteSource(source, "fixture"));

@@ -180,6 +180,10 @@ export const scaffoldText = Object.freeze([
 // repository, plugins included. Its MIT notice stays in anything you keep; see
 // Licensing in README.md.
 export const templateLicenseHolder = "GitHub, Inc.";
+// The template's own maintainers in .github/CODEOWNERS and its conduct contact
+// in CODE_OF_CONDUCT.md. A marketplace made from the template names its own.
+export const templateCodeOwners = "@github/code-ai-evals";
+export const templateConductContact = "opensource@github.com";
 const read = async (path) => { try { return await readFile(path, "utf8"); } catch (error) { if (error.code === "ENOENT") return undefined; throw error; } };
 
 // Every holder named on a "Copyright" line in a license file.
@@ -234,6 +238,12 @@ async function adoptionWarnings(directory, catalog, allFiles) {
   const owners = await read(resolve(directory, ".github/CODEOWNERS"));
   if (owners !== undefined && !owners.split(/\r?\n/).some((line) => line.trim() && !line.trim().startsWith("#"))) {
     warnings.push(".github/CODEOWNERS: every rule is commented out. Name real owners, then require their review in a ruleset.");
+  }
+  if (owners?.split(/\r?\n/).some((line) => !line.trim().startsWith("#") && line.split(/\s+/).includes(templateCodeOwners))) {
+    warnings.push(`.github/CODEOWNERS: still names the template's maintainers, ${templateCodeOwners}. Name your own owners, then require their review in a ruleset.`);
+  }
+  if ((await read(resolve(directory, "CODE_OF_CONDUCT.md")))?.includes(templateConductContact)) {
+    warnings.push(`CODE_OF_CONDUCT.md: still names the template's contact, ${templateConductContact}. Replace it with your own enforcement contact.`);
   }
   return warnings;
 }
