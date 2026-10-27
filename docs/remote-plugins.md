@@ -36,10 +36,8 @@ and Copilot App, a canvas, and six model-invocable skills. Running an eval
 needs a compatible runner and its own approval, and it spends AI credits.
 This repository's eval tooling works without it.
 
-The `github/evals` repository isn't public yet, so each installer needs a
-GitHub account with access. This catalog entry doesn't grant access or copy
-upstream code. If your team doesn't have access, remove the entry with
-`npm run remove-plugin -- github-copilot`.
+This catalog entry doesn't copy upstream code. If you don't want it, remove the
+entry with `npm run remove-plugin -- github-copilot`.
 <!-- /plugin:github-copilot -->
 
 ## Add a remote plugin

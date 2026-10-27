@@ -106,8 +106,8 @@ You need Node.js 22.14 or newer.
    at all.
    <!-- plugin:github-copilot -->
 5. Decide whether to keep the remote `github-copilot` plugin, GitHub Copilot
-   Evals, in the catalog. It installs from `github/evals`, which isn't public
-   yet; see [Remote plugins](docs/remote-plugins.md). Remove it with
+   Evals, in the catalog. It installs from `github/evals`; see
+   [Remote plugins](docs/remote-plugins.md). Remove it with
    `npm run remove-plugin -- github-copilot`.
    <!-- /plugin:github-copilot -->
 6. Replace what's meant for you before you ship:
@@ -264,10 +264,9 @@ pull requests until you set the repository variable `ENABLE_EVALS` to `true`,
 and you can always run it by hand. Each run can wait for a reviewer's approval
 through the `evals` environment. By default it runs the same evals with the
 pinned Vally CLI and the job's token, so it works in any repository, including
-one on a personal account. Repositories that can use the GitHub Copilot Evals
-Action, which isn't public yet, can set the repository variable `EVALS_RUNNER`
-to `action` instead. On a personal account, usage is
-billed to your own Copilot plan. [Continuous integration](docs/ci.md) covers
+one on a personal account. To use the GitHub Copilot Evals Action instead, set
+the repository variable `EVALS_RUNNER` to `action`. On a personal account,
+usage is billed to your own Copilot plan. [Continuous integration](docs/ci.md) covers
 setup, personal accounts, billing, cost, and security.
 
 ## Repository layout

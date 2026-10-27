@@ -40,8 +40,7 @@ organization:
 - `validate.yml` works as it is, and it's all you need to keep the marketplace
   consistent. It never calls a model.
 - To run behavioral evals in CI, leave the repository variable `EVALS_RUNNER`
-  unset or set it to `npm`. The `action` runner uses an Action that isn't
-  public yet, so it fails outside the GitHub organization.
+  unset or set it to `npm`, or set it to `action` to use the Evals Action.
 - Copilot usage from the job's token is
   [billed to your own Copilot plan](https://docs.github.com/en/copilot/concepts/agent-capabilities/agent-powered-workflows-and-operations/copilot-cli-in-github-actions).
   Each plan includes a monthly allowance of AI credits; see
@@ -106,14 +105,10 @@ as drafts.
 | | `npm` (default) | `action` |
 |---|---|---|
 | Set `EVALS_RUNNER` to | nothing, or `npm` | `action` |
-| Runs | `node scripts/evals.mjs eval --suite <suite> --require-pass` | The GitHub Copilot Evals Action, `github/evals-action` v0.1.0 |
-| Who can use it | Any repository | Repositories in the GitHub organization, for now. The Action isn't public yet, so other organizations can't use it. |
+| Runs | `node scripts/evals.mjs eval --suite <suite> --require-pass` | The GitHub Copilot Evals Action, [`github/evals-action`](https://github.com/github/evals-action) v0.1.0 |
+| Who can use it | Any repository | Any repository |
 | Report | The job summary | Structured report and one sticky pull request comment |
 | Job token permissions | `contents: read`, `copilot-requests: write` | `contents: read`, `copilot-requests: write`, `pull-requests: write` |
-
-<!-- TODO: github/evals-action isn't public yet. When it is, drop "for now"
-above, link to it, and move the pin in evals.yml to the release that ships its
-third-party notices. -->
 
 The two runners are separate jobs, because a job downloads every action it
 names before it starts, even ones in skipped steps. With the npm runner, the

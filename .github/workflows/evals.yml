@@ -4,9 +4,9 @@ name: Behavioral evals
 # ENABLE_EVALS to true. Manual runs work either way. The repository variable
 # EVALS_RUNNER picks the job: unset or "npm" runs the pinned Vally CLI from
 # package.json, which works in any repository; "action" uses the GitHub Copilot
-# Evals Action (github/evals-action), which isn't public yet. Any other value
-# fails. Both eval jobs use the "evals" environment, so you can require a
-# reviewer to approve each run before it gets a token. See docs/ci.md.
+# Evals Action (github/evals-action). Any other value fails. Both eval jobs use
+# the "evals" environment, so you can require a reviewer to approve each run
+# before it gets a token. See docs/ci.md.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -85,8 +85,6 @@ jobs:
         run: node "$COPILOT_CLI_PATH" --version
         env:
           COPILOT_CLI_PATH: ${{ github.workspace }}/scripts/eval-runtime.js
-      # TODO: github/evals-action isn't public yet. When it is, move this pin to
-      # the release that ships its third-party notices.
       - uses: github/evals-action@83fa12332c3e44ad899f347eaf153a0d9b6432dc # v0.1.0
         env:
           # Vally's SDK executor launches this bridge, which runs the pinned full runtime.
