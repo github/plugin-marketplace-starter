@@ -11,24 +11,21 @@ run upstream code, and the local evals don't cover remote plugins: `evals/` is
 for the plugins under `plugins/`, and the coverage check rejects asset IDs that
 aren't local. Evaluate an upstream plugin in its own repository.
 
-<!-- plugin:eval -->
+<!-- plugin:github-copilot -->
 ## The GitHub Copilot Evals plugin
 
-<!-- TODO: github/evals-dist isn't public yet. Make it public before this
-repository is, or remove the entry with npm run remove-plugin -- eval. -->
-[marketplace.json](../marketplace.json) includes an `eval` entry that points at
-the published GitHub Copilot Evals plugin in `github/evals-dist`. It mirrors
-the entry in upstream's own catalog: the `copilot-evals-v0.20.3` release,
-pinned to the full SHA of its commit.
+[marketplace.json](../marketplace.json) includes a `github-copilot` entry that
+points at the published GitHub Copilot Evals plugin in `github/evals`. It's
+the `copilot-evals-v0.16.0` release, pinned to the full SHA of its built
+commit.
 
 After adding this marketplace, install it explicitly with
-`copilot plugin install eval@MARKETPLACE`, where `MARKETPLACE` is the
-`name` in `marketplace.json`. Or skip this catalog and install it from
-upstream, which follows upstream's releases:
+`copilot plugin install github-copilot@MARKETPLACE`, where `MARKETPLACE` is the
+`name` in `marketplace.json`. Or skip this catalog and add upstream's own
+marketplace, which follows upstream's releases:
 
 ```sh
-copilot plugin marketplace add github/evals-dist
-copilot plugin install eval@github-copilot-evals-dist
+copilot plugin marketplace add github/evals
 ```
 
 Pick one route. Don't install the same plugin from both marketplaces.
@@ -39,11 +36,11 @@ and Copilot App, a canvas, and six model-invocable skills. Running an eval
 needs a compatible runner and its own approval, and it spends AI credits.
 This repository's eval tooling works without it.
 
-The `github/evals-dist` repository isn't public yet, so each installer needs a
+The `github/evals` repository isn't public yet, so each installer needs a
 GitHub account with access. This catalog entry doesn't grant access or copy
 upstream code. If your team doesn't have access, remove the entry with
-`npm run remove-plugin -- eval`.
-<!-- /plugin:eval -->
+`npm run remove-plugin -- github-copilot`.
+<!-- /plugin:github-copilot -->
 
 ## Add a remote plugin
 
