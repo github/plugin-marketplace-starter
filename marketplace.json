@@ -48,8 +48,7 @@
         "path": "packages/plugin"
       },
       "version": "0.20.3",
-      "description": "GitHub Copilot Evals: set up a project with /eval setup, create and save evals with /eval create, save revised copies with /eval improve, run with /eval run, review with /eval review, and compare saved runs or explore one skill with /eval compare. Setup is optional; saving and running need separate approval.",
-      "homepage": "https://aka.ms/evals/site"
+      "description": "GitHub Copilot Evals: set up a project with /eval setup, create and save evals with /eval create, save revised copies with /eval improve, run with /eval run, review with /eval review, and compare saved runs or explore one skill with /eval compare. Setup is optional; saving and running need separate approval."
     }
   ]
 }

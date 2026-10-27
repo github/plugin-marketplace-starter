@@ -358,5 +358,4 @@ to everyone who's contributed since.
 - [Hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference)
 - [VS Code agent plugins](https://code.visualstudio.com/docs/agent-customization/agent-plugins)
 - [Agent Skills specification](https://agentskills.io/specification)
-- [Vally](https://microsoft.github.io/vally/) and the
-  [GitHub Copilot Evals docs](https://aka.ms/evals/site)
+- [Vally](https://microsoft.github.io/vally/)

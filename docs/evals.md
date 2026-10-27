@@ -84,9 +84,9 @@ and check your billing dashboard after a run to learn what your suite costs.
 ## Write an eval
 
 1. Create `evals/<plugin>/eval.yaml` with realistic tasks, expected outcomes,
-   and at least one negative or non-trigger case. The
-   [GitHub Copilot Evals](https://aka.ms/evals/site) convention,
-   `<name>.eval.yaml`, works too; `evalFilenames` in `.vally.yaml` lists both.
+   and at least one negative or non-trigger case. The GitHub
+   Copilot Evals convention, `<name>.eval.yaml`, works too; `evalFilenames`
+   in `.vally.yaml` lists both.
    Keep private production data out of fixtures and expected answers out of
    agent-visible inputs. Put grader programs and answer keys in
    `grading_environment`.

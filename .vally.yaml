@@ -11,7 +11,7 @@ paths:
   evals:
     - evals
   # eval.yaml is this repository's convention; *.eval.yaml is the GitHub
-  # Copilot Evals convention (https://aka.ms/evals/site). Both work.
+  # Copilot Evals convention. Both work.
   evalFilenames:
     - eval.yaml
     - "*.eval.yaml"

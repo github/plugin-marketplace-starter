@@ -14,10 +14,8 @@ Don't report security problems in public issues. Follow
 [SECURITY.md](SECURITY.md) instead.
 
 <!-- template-only -->
-For questions about GitHub Copilot Evals itself, see the
-[GitHub Copilot Evals docs](https://aka.ms/evals/site). For problems with
-Copilot CLI, the GitHub Copilot app, or the GitHub Copilot Chat VS Code
-extension, rather than with this template, use
+For problems with Copilot CLI, the GitHub Copilot app, or the GitHub Copilot
+Chat VS Code extension, rather than with this template, use
 [GitHub Community discussions](https://github.com/orgs/community/discussions/categories/copilot-conversations)
 or [GitHub Support](https://support.github.com/).
 

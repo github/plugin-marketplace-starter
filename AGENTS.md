@@ -104,8 +104,7 @@ Consult the relevant contract before changing package or catalog fields:
 - [Creating Copilot plugins](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-creating).
 - [Creating a team marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace).
 - [CLI plugin and catalog reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference).
-- [Vally eval schema](https://microsoft.github.io/vally/reference/eval-spec/) and
-  [GitHub Copilot Evals docs](https://aka.ms/evals/site).
+- [Vally eval schema](https://microsoft.github.io/vally/reference/eval-spec/).
 
 The README's [references](README.md#references) cover skills, hooks, VS Code,
 and this repository's guides.
