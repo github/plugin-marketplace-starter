@@ -15,17 +15,19 @@ aren't local. Evaluate an upstream plugin in its own repository.
 ## The GitHub Copilot Evals plugin
 
 [marketplace.json](../marketplace.json) includes a `github-copilot` entry that
-points at the published GitHub Copilot Evals plugin in `github/evals`. It's
-the `copilot-evals-v0.16.0` release, pinned to the full SHA of its built
-commit.
+points at the published GitHub Copilot Evals plugin in
+[github/evals](https://github.com/github/evals). It mirrors the stable entry in
+upstream's own catalog: the `copilot-evals-v0.16.0` release, pinned to the full
+SHA of its built commit.
 
 After adding this marketplace, install it explicitly with
 `copilot plugin install github-copilot@MARKETPLACE`, where `MARKETPLACE` is the
-`name` in `marketplace.json`. Or skip this catalog and add upstream's own
-marketplace, which follows upstream's releases:
+`name` in `marketplace.json`. Or skip this catalog and install it from
+upstream, which follows upstream's reviewed stable releases:
 
 ```sh
 copilot plugin marketplace add github/evals
+copilot plugin install github-copilot@evals
 ```
 
 Pick one route. Don't install the same plugin from both marketplaces.

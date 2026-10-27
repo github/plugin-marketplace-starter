@@ -6,14 +6,11 @@ explains how everything fits together.
 
 Contributions to this project are
 [released](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service#6-contributions-under-repository-license)
-to the public under the [project's open source license](LICENSE). This project
-is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By
-participating in it, you agree to abide by its terms.
+to the public under the [project's open source license](LICENSE).
 
-<!-- template-only -->
-You may need to agree to a contributor agreement before your pull request can
-be merged.
-<!-- /template-only -->
+Please note that this project is released with a
+[Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating in this
+project you agree to abide by its terms.
 
 ## Before you start
 

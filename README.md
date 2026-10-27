@@ -105,8 +105,7 @@ You need Node.js 22.14 or newer.
    [Add a plugin](#add-a-plugin). `npm run verify` passes even with no plugins
    at all.
    <!-- plugin:github-copilot -->
-5. Decide whether to keep the remote `github-copilot` plugin, GitHub Copilot
-   Evals, in the catalog. It installs from `github/evals`; see
+5. Decide whether to keep the remote `github-copilot` plugin in the catalog. See
    [Remote plugins](docs/remote-plugins.md). Remove it with
    `npm run remove-plugin -- github-copilot`.
    <!-- /plugin:github-copilot -->
@@ -115,11 +114,9 @@ You need Node.js 22.14 or newer.
      one file covers the whole repository, including every plugin. See
      [Licensing](#licensing).
    - The title and introduction of this README.
-   - Real owners in [.github/CODEOWNERS](.github/CODEOWNERS), in place of the
-     template's maintainers. On a personal account, that can be just you.
-   - Your reporting channel in [SECURITY.md](SECURITY.md), your enforcement
-     contact in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and how people get
-     help in [SUPPORT.md](SUPPORT.md).
+   - Real owners in [.github/CODEOWNERS](.github/CODEOWNERS). On a personal
+     account, that can be just you.
+   - Your reporting channel in [SECURITY.md](SECURITY.md).
    - Your process in [CONTRIBUTING.md](CONTRIBUTING.md), the
      [pull request template](.github/PULL_REQUEST_TEMPLATE.md), and the
      [new plugin issue form](.github/ISSUE_TEMPLATE/new-plugin.yml).
@@ -262,11 +259,11 @@ marketplace consistent.
 [evals.yml](.github/workflows/evals.yml) runs behavioral evals. It's off for
 pull requests until you set the repository variable `ENABLE_EVALS` to `true`,
 and you can always run it by hand. Each run can wait for a reviewer's approval
-through the `evals` environment. By default it runs the same evals with the
-pinned Vally CLI and the job's token, so it works in any repository, including
-one on a personal account. To use the GitHub Copilot Evals Action instead, set
-the repository variable `EVALS_RUNNER` to `action`. On a personal account,
-usage is billed to your own Copilot plan. [Continuous integration](docs/ci.md) covers
+through the `evals` environment. By default it uses
+[`github/evals-action`](https://github.com/github/evals-action). Set the
+repository variable `EVALS_RUNNER` to `npm` to run
+the same evals with the pinned Vally CLI. On a personal account, usage is
+billed to your own Copilot plan. [Continuous integration](docs/ci.md) covers
 setup, personal accounts, billing, cost, and security.
 
 ## Repository layout
@@ -357,4 +354,5 @@ to everyone who's contributed since.
 - [Hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference)
 - [VS Code agent plugins](https://code.visualstudio.com/docs/agent-customization/agent-plugins)
 - [Agent Skills specification](https://agentskills.io/specification)
-- [Vally](https://microsoft.github.io/vally/)
+- [Vally](https://microsoft.github.io/vally/) and the
+  [Evals Action](https://github.com/github/evals-action)

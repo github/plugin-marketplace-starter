@@ -2,11 +2,10 @@ name: Behavioral evals
 # Off by default, because evals run real Copilot sessions and spend AI credits.
 # Pull requests run evals only after you set the repository variable
 # ENABLE_EVALS to true. Manual runs work either way. The repository variable
-# EVALS_RUNNER picks the job: unset or "npm" runs the pinned Vally CLI from
-# package.json, which works in any repository; "action" uses the GitHub Copilot
-# Evals Action (github/evals-action). Any other value fails. Both eval jobs use
-# the "evals" environment, so you can require a reviewer to approve each run
-# before it gets a token. See docs/ci.md.
+# EVALS_RUNNER picks the job: unset or "action" uses github/evals-action;
+# "npm" runs the pinned Vally CLI from package.json. Any other value fails. Both eval
+# jobs use the "evals" environment, so you can require a reviewer to approve
+# each run before it gets a token. See docs/ci.md.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -41,13 +40,13 @@ jobs:
         env:
           EVALS_RUNNER: ${{ vars.EVALS_RUNNER }}
 
-  # Runner "action", opt-in. A separate job, because a job downloads every
-  # action it names before it starts, even ones in skipped steps.
+  # Runner "action". A separate job, because a job downloads every action it
+  # names before it starts, even ones in skipped steps.
   evals:
     # Manual runs always run. Pull requests run only when ENABLE_EVALS is true,
     # the branch is in this repository (never a fork), and the PR isn't a draft.
     if: >-
-      vars.EVALS_RUNNER == 'action' && (github.event_name == 'workflow_dispatch' ||
+      (vars.EVALS_RUNNER == '' || vars.EVALS_RUNNER == 'action') && (github.event_name == 'workflow_dispatch' ||
       (vars.ENABLE_EVALS == 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       !github.event.pull_request.draft))
@@ -107,11 +106,10 @@ jobs:
           max-retries: 1
           upload-transcripts: false
 
-  # Runner "npm", the default: the same launcher contributors use locally, with
-  # the job token.
+  # Runner "npm": the same launcher contributors use locally, with the job token.
   evals-npm:
     if: >-
-      (vars.EVALS_RUNNER == '' || vars.EVALS_RUNNER == 'npm') && (github.event_name == 'workflow_dispatch' ||
+      vars.EVALS_RUNNER == 'npm' && (github.event_name == 'workflow_dispatch' ||
       (vars.ENABLE_EVALS == 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       !github.event.pull_request.draft))

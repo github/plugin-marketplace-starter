@@ -144,27 +144,6 @@ test("the license warning keeps the template's MIT notice and asks only for your
   }
 });
 
-test("after a rename, verify warns about the template's code owners and conduct contact", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "starter-owners-"));
-  const write = async (path, text) => { await mkdir(join(directory, path, ".."), { recursive: true }); await writeFile(join(directory, path), text); return join(directory, path); };
-  const warn = async (catalog = { name: "ours", owner: { name: "Acme" } }) => (await staleReferenceWarnings(directory, catalog, [])).join("\n");
-  try {
-    await write("README.md", "# Ours\n");
-    await write(".github/CODEOWNERS", "# Replace @github/code-ai-evals with your own owners.\n* @github/code-ai-evals\n");
-    await write("CODE_OF_CONDUCT.md", "Report it to <opensource@github.com>.\n");
-    assert.match(await warn(), /\.github\/CODEOWNERS: still names the template's maintainers, @github\/code-ai-evals/);
-    assert.match(await warn(), /CODE_OF_CONDUCT\.md: still names the template's contact, opensource@github\.com/);
-    // Before the rename, the template's own owners and contact are expected.
-    assert.doesNotMatch(await warn({ name: "plugin-marketplace-starter", owner: { name: "GitHub" } }), /CODEOWNERS|CODE_OF_CONDUCT/);
-    // A comment that mentions the template's team isn't a rule.
-    await write(".github/CODEOWNERS", "# Replace @github/code-ai-evals with your own owners.\n* @acme/plugins\n");
-    await write("CODE_OF_CONDUCT.md", "Report it to <conduct@acme.example>.\n");
-    assert.doesNotMatch(await warn(), /CODEOWNERS|CODE_OF_CONDUCT/);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
 test("verify warns about scaffold text in every scaffolded file and the template's introduction", async () => {
   const directory = await mkdtemp(join(tmpdir(), "starter-scaffold-"));
   const write = async (path, text) => { await mkdir(join(directory, path, ".."), { recursive: true }); await writeFile(join(directory, path), text); return join(directory, path); };

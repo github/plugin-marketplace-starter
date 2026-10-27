@@ -2,28 +2,14 @@
 
 ## How to file issues and get help
 
-This project uses GitHub issues to track bugs and feature requests. Search the
-existing issues before you file a new one, to avoid duplicates. For a new bug
-or feature request, file a new issue. To propose a plugin, use the
-**New plugin** issue form.
+This project uses GitHub issues to track bugs and feature requests. Please search the existing issues before filing new issues to avoid duplicates. For new issues, file your bug or feature request as a new issue.
 
-For help or questions about using this marketplace, open an issue or ask the
-maintainers listed in [.github/CODEOWNERS](.github/CODEOWNERS).
-
-Don't report security problems in public issues. Follow
-[SECURITY.md](SECURITY.md) instead.
+For help or questions about using this project, please open an issue.
 
 <!-- template-only -->
-For problems with Copilot CLI, the GitHub Copilot app, or the GitHub Copilot
-Chat VS Code extension, rather than with this template, use
-[GitHub Community discussions](https://github.com/orgs/community/discussions/categories/copilot-conversations)
-or [GitHub Support](https://support.github.com/).
-
-This template is under active development and maintained by GitHub staff and
-the community. We'll do our best to respond to support, feature requests, and
-community questions in a timely manner.
+The plugin marketplace starter is under active development and maintained by GitHub staff and the community. We will do our best to respond to support, feature requests, and community questions in a timely manner.
 <!-- /template-only -->
 
-## Support policy
+## GitHub Support Policy
 
 Support for this project is limited to the resources listed above.

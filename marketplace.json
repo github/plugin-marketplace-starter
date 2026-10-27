@@ -49,7 +49,7 @@
       },
       "version": "0.16.0",
       "description": "Configure native projects with /eval setup, create and save evals with /eval create, save distinct candidates with /eval improve, run with /eval run, review with /eval review, and compare saved runs or explore one skill with /eval compare. Setup is optional; saving and running follow separate host approval policies.",
-      "homepage": "https://github.com/github/evals"
+      "homepage": "https://github.com/github/evals#installed-skills"
     }
   ]
 }

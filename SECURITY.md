@@ -5,40 +5,33 @@
 Don't report security problems in public issues, discussions, or pull requests.
 
 <!-- template-only -->
-### In this template
+Thanks for helping make GitHub safe for everyone.
 
-Thanks for helping make GitHub safe for everyone. GitHub takes the security of
-its software products and services seriously, including all of the open source
-code repositories managed through its GitHub organizations, such as
-[GitHub](https://github.com/GitHub).
+GitHub takes the security of our software products and services seriously, including all of the open source code repositories managed through our GitHub organizations, such as [GitHub](https://github.com/GitHub).
 
-If you believe you've found a security vulnerability in this template,
-`github/plugin-marketplace-starter`, or in any other GitHub-owned repository,
-report it to GitHub through coordinated disclosure. Send an email to
-opensource-security[@]github.com.
+Even though [open source repositories are outside of the scope of our bug bounty program](https://bounty.github.com/index.html#scope) and therefore not eligible for bounty rewards, we will ensure that your finding gets passed along to the appropriate maintainers for remediation.
 
-Include as much of the following as you can. It helps GitHub understand and
-triage your report more quickly.
+If you believe you have found a security vulnerability in any GitHub-owned repository, please report it to us through coordinated disclosure.
 
-- The type of issue, such as command injection, path traversal, or cross-site
-  scripting
-- Full paths of the source files related to the issue
-- The location of the affected source code: a tag, branch, commit, or direct
-  URL
-- Any special configuration needed to reproduce the issue
-- Step-by-step instructions to reproduce the issue
-- Proof-of-concept or exploit code, if possible
-- The impact of the issue, including how an attacker might exploit it
+**Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.**
 
-Open source repositories are
-[outside the scope of GitHub's bug bounty program](https://bounty.github.com/index.html#scope),
-so they aren't eligible for bounty rewards, but GitHub will make sure your
-finding reaches the right maintainers. See
-[GitHub's Safe Harbor Policy](https://docs.github.com/en/site-policy/security-policies/github-bug-bounty-program-legal-safe-harbor#1-safe-harbor-terms).
+Instead, please send an email to opensource-security[@]github.com.
 
-### In a marketplace made from this template
+Please include as much of the information listed below as you can to help us better understand and resolve the issue:
 
+  * The type of issue (e.g., buffer overflow, SQL injection, or cross-site scripting)
+  * Full paths of source file(s) related to the manifestation of the issue
+  * The location of the affected source code (tag/branch/commit or direct URL)
+  * Any special configuration required to reproduce the issue
+  * Step-by-step instructions to reproduce the issue
+  * Proof-of-concept or exploit code (if possible)
+  * Impact of the issue, including how an attacker might exploit the issue
+
+This information will help us triage your report more quickly.
+
+See [GitHub's Safe Harbor Policy](https://docs.github.com/en/site-policy/security-policies/github-bug-bounty-program-legal-safe-harbor#1-safe-harbor-terms)
 <!-- /template-only -->
+
 <!-- Replace this section with your team's reporting channel before you ship. -->
 Use this repository's **Security** tab to
 [report a vulnerability privately](https://docs.github.com/en/code-security/security-advisories/working-with-repository-security-advisories/configuring-private-vulnerability-reporting-for-a-repository),
