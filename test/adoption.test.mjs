@@ -187,7 +187,7 @@ test("an empty or remote-only marketplace passes verify, and new plugins scaffol
   const setup = (await readFile(join(directory, "README.md"), "utf8")).match(/## Make it yours\n[\s\S]*?\n## /)?.[0];
   if (setup) {
     if (present.length) assert.doesNotMatch(setup, /remove-example/);
-    assert.doesNotMatch(setup, /github-copilot/);
+    assert.doesNotMatch(setup, /plugin:eval\b|remove-plugin -- eval\b/);
     const numbers = [...setup.matchAll(/^(\d+)\. /gm)].map((match) => Number(match[1]));
     assert.deepEqual(numbers, numbers.map((_, index) => index + 1));
   }

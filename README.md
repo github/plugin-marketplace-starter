@@ -43,10 +43,10 @@ Two terms come up a lot:
 | [code-review](plugins/code-review/) | "Use adversarial-review to review this diff without changing it" | A skill that delegates to a read-only custom agent |
 | [json-configuration](plugins/json-configuration/) | 'Use json-configuration to validate {"port":8443} and look up /port' | A skill backed by a bundled local MCP server |
 
-<!-- plugin:github-copilot -->
+<!-- plugin:eval -->
 The catalog also has an optional reference to the GitHub Copilot Evals plugin,
 which lives in another repository. See [Remote plugins](docs/remote-plugins.md).
-<!-- /plugin:github-copilot -->
+<!-- /plugin:eval -->
 <!-- examples -->
 [Examples](docs/examples.md) explains what each example shows and which files
 it owns.
@@ -104,11 +104,11 @@ You need Node.js 22.14 or newer.
 4. Add your first plugin with `npm run new-plugin -- <name>`. See
    [Add a plugin](#add-a-plugin). `npm run verify` passes even with no plugins
    at all.
-   <!-- plugin:github-copilot -->
-5. Decide whether to keep the remote `github-copilot` plugin in the catalog. See
+   <!-- plugin:eval -->
+5. Decide whether to keep the remote `eval` plugin in the catalog. See
    [Remote plugins](docs/remote-plugins.md). Remove it with
-   `npm run remove-plugin -- github-copilot`.
-   <!-- /plugin:github-copilot -->
+   `npm run remove-plugin -- eval`.
+   <!-- /plugin:eval -->
 6. Replace what's meant for you before you ship:
    - Your own copyright line in [LICENSE](LICENSE), beside the template's. That
      one file covers the whole repository, including every plugin. See

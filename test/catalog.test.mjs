@@ -12,7 +12,7 @@ test("the catalog separates local plugins from pinned, opt-in remote references"
   const evals = remotePlugins.find((entry) => entry.source.repo === "github/evals");
   if (evals) {
     // The catalog name must match upstream's plugin.json name, not its marketplace name.
-    assert.equal(evals.name, "github-copilot");
+    assert.equal(evals.name, "eval");
     assert.equal(evals.source.path, "packages/plugin");
     assert.deepEqual(remoteWarnings(evals), []);
     assert.equal(evals.version, evals.source.ref.replace(/^copilot-evals-v/, ""));
