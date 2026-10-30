@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.7
+
+- Rebuild the bundled server with fast-uri 3.1.9, which fixes four URI
+  parsing advisories.
+
 ## 0.1.6
 
 - Remove the plugin's own `LICENSE`. The plugin is still MIT licensed, under
