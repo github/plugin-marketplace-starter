@@ -84,9 +84,10 @@ and check your billing dashboard after a run to learn what your suite costs.
 ## Write an eval
 
 1. Create `evals/<plugin>/eval.yaml` with realistic tasks, expected outcomes,
-   and at least one negative or non-trigger case. The upstream
-   [github/evals](https://github.com/github/evals) convention,
-   `<name>.eval.yaml`, works too; `evalFilenames` in `.vally.yaml` lists both.
+   and at least one negative or non-trigger case. `eval.yaml` is
+   [Vally's default file name](https://microsoft.github.io/vally/reference/eval-spec/).
+   `<name>.eval.yaml` works too, so one folder can hold several specs;
+   `evalFilenames` in `.vally.yaml` lists both.
    Keep private production data out of fixtures and expected answers out of
    agent-visible inputs. Put grader programs and answer keys in
    `grading_environment`.
@@ -218,8 +219,8 @@ them. Test them by hand in the hosts you support.
 ## Suites
 
 Suites are conventions, not fixed names. This repository's `smoke` suite
-selects cases tagged `suite: smoke`, and `full` runs every spec. Upstream
-github/evals examples filter on `lane: ci` instead. A `tags.suite` value must
+selects cases tagged `suite: smoke`, and `full` runs every spec. You can
+filter on any tag, such as `lane: ci`. A `tags.suite` value must
 match a suite filter in `.vally.yaml`, and every asset needs a case in `smoke`
 because CI runs it by default.
 

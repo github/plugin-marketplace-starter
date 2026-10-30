@@ -31,8 +31,8 @@ create or turn on an automation. See VS Code's
 
 `lsp.json` is checked against the fields in the plugin reference:
 `lspServers`, a launch command, and `fileExtensions`. The reference's component
-table doesn't list extensions; this repository and the published GitHub Copilot
-Evals plugin both ship them in `com.github.copilot/extensions/`.
+table doesn't list extensions; this repository ships them in
+`com.github.copilot/extensions/`.
 
 ## Where each type works
 
