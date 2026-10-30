@@ -39,8 +39,6 @@ organization:
 
 - `validate.yml` works as it is, and it's all you need to keep the marketplace
   consistent. It never calls a model.
-- To run behavioral evals in CI, set the repository variable `EVALS_RUNNER` to
-  `npm`.
 - Copilot usage from the job's token is
   [billed to your own Copilot plan](https://docs.github.com/en/copilot/concepts/agent-capabilities/agent-powered-workflows-and-operations/copilot-cli-in-github-actions).
   Each plan includes a monthly allowance of AI credits; see
@@ -68,10 +66,7 @@ turn it on.
 ### Turn it on
 
 1. Check the [requirements](#requirements) below.
-2. Pick a runner (see the next section). If you use the npm runner, create the
-   repository variable `EVALS_RUNNER` with the value `npm`. Any value other
-   than `action`, `npm`, or nothing fails the workflow instead of guessing.
-3. Decide who approves runs. Both eval jobs use an environment named `evals`,
+2. Decide who approves runs. The eval job uses an environment named `evals`,
    which GitHub creates the first time a job uses it. To make a person approve
    each run before it gets a token, add required reviewers to it in
    **Settings** > **Environments** > **evals**. On GitHub Free, Pro, and Team
@@ -79,10 +74,10 @@ turn it on.
    repositories need GitHub Enterprise. See
    [deployment protection rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#required-reviewers),
    and [Security](#security) for what this does and doesn't stop.
-4. Try a manual run first: **Actions** > **Behavioral evals** > **Run
+3. Try a manual run first: **Actions** > **Behavioral evals** > **Run
    workflow**, and choose `smoke`. Manual runs work whether or not evals are
    turned on for pull requests.
-5. To run the `smoke` suite on pull requests, create the repository variable
+4. To run the `smoke` suite on pull requests, create the repository variable
    `ENABLE_EVALS` with the value `true`. Repository variables live in
    **Settings** > **Secrets and variables** > **Actions** > **Variables**.
 
@@ -95,66 +90,34 @@ Pull request runs start only when all of these hold:
 - It touches plugins, evals, schemas, scripts, `.vally.yaml`, the package
   files, or the workflow itself.
 
-Runs don't cancel each other, because the Evals Action requires that, so each
-push to an open pull request queues one more run. Keep work-in-progress pull
+Runs don't cancel each other, so a paid run never stops halfway. Each push to
+an open pull request queues one more run, so keep work-in-progress pull
 requests as drafts.
 
-### Pick a runner
+### What the job does
 
-| | `action` (default) | `npm` |
-|---|---|---|
-| Set `EVALS_RUNNER` to | nothing, or `action` | `npm` |
-| Runs | [`github/evals-action`](https://github.com/github/evals-action) v0.1.0 | `node scripts/evals.mjs eval --suite <suite> --require-pass` |
-| Who can use it | Any repository | Any repository |
-| Report | Structured report and one sticky pull request comment | The job summary |
-| Job token permissions | `contents: read`, `copilot-requests: write`, `pull-requests: write` | `contents: read`, `copilot-requests: write` |
-
-The two runners are separate jobs, because a job downloads every action it
-names before it starts, even ones in skipped steps. With `EVALS_RUNNER=npm`, the
-Action is never downloaded.
-
-Both fail the job on a failed verdict, an incomplete run, or an infrastructure
-error, unlike the report-only default of `npm run eval:report` locally. Both use
-one worker and one bounded retry, and both start by printing the pinned Copilot
-CLI version and the version that actually runs.
-
-#### The Evals Action
-
-In its default mode the Action lints the project, runs the selected suite if
-lint passes, uploads a structured report, and updates one sticky pull request
-comment. It installs only Vally, pinned to the same version as `package.json`.
-Its lint isn't `--strict` and doesn't lint skill directories, so
-`npm run verify` stays the authoritative gate. Before it runs, the job:
-
-1. Sets up Node.js 24 and runs `npm ci`, so graders, eval MCP hosts, and the
-   pinned full Copilot runtime are available.
-2. Runs `node scripts/evals.mjs action-params`. The Action can't pass
-   `--param`, so this writes gitignored eval-level params files
-   (`eval.params.yaml`, or `<name>.eval.params.yaml` beside a
-   `<name>.eval.yaml`) with the runner's absolute paths. Vally merges them over
-   the relative `.vally.yaml` defaults. A params file you wrote yourself has no
-   generated header, so `action-params` stops instead of overwriting it.
-3. Checks that the runtime bridge starts the pinned runtime.
-4. Sets `COPILOT_CLI_PATH` to the runtime bridge and names it in
-   `credential-env`. That's a workaround: the Action forwards only an allowlist
-   of variables to Vally, and `credential-env` is its only way to pass another
-   one, during the run phase. The value is a non-secret path. Because
-   `credential-env` is set, the workflow passes `copilot-token` explicitly.
-
-`upload-transcripts` stays `false` because raw transcripts can contain prompts,
-model output, and code. Set it to `true` temporarily when you need to debug a
-run, and review who can read workflow artifacts. `npm run verify` warns while
-it's `true`, so it doesn't stay on by accident. See the Action's README for
-separate lint, run, and report jobs if you need narrower permissions.
-
-#### The npm runner
-
-The npm runner uses the same launcher you use locally, with the job's
-`GITHUB_TOKEN` passed to the Copilot runtime, as
+The job uses the same launcher you use locally, with the pinned
+[Vally CLI](https://microsoft.github.io/vally/) from `package.json` and the
+job's `GITHUB_TOKEN` passed to the Copilot runtime, as
 [Vally's CI guide](https://microsoft.github.io/vally/get-started/add-to-ci/)
-describes. It writes the report to the job summary. Its results include
-transcripts, so it uploads them as an artifact only when you set the
-repository variable `EVALS_UPLOAD_RESULTS` to `true`.
+describes. The job:
+
+1. Sets up Node.js 24 and runs `npm ci`, so Vally, graders, eval MCP hosts, and
+   the pinned full Copilot runtime are available.
+2. Checks that the runtime bridge starts the pinned runtime. It prints the
+   pinned Copilot CLI version and the version that actually runs.
+3. Runs `node scripts/evals.mjs eval --suite <suite> --require-pass`, with one
+   worker and one bounded retry.
+4. Runs `node scripts/eval-report.mjs` and adds the report to the job summary.
+
+The job fails on a failed verdict, an incomplete run, or an infrastructure
+error, unlike the report-only default of `npm run eval:report` locally. Its
+token has `contents: read` and `copilot-requests: write`.
+
+Results include transcripts, which can contain prompts, model output, and code.
+The job uploads them as an artifact only when you set the repository variable
+`EVALS_UPLOAD_RESULTS` to `true`. Set it temporarily when you need to debug a
+run, review who can read workflow artifacts, and unset it when you're done.
 
 ## Requirements
 
@@ -170,11 +133,10 @@ repository variable `EVALS_UPLOAD_RESULTS` to `true`.
 - **`copilot-requests: write`.** The workflow grants this job permission so the
   token can make Copilot requests. See
   [using Copilot CLI in GitHub Actions with GITHUB_TOKEN](https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli-in-actions).
-- **Runners.** The Evals Action supports Linux x64 GitHub-hosted runners only.
-  Both jobs use `ubuntu-latest`.
+- **Runners.** The job uses `ubuntu-latest`. Other runners aren't verified.
 - **Actions policy.** If your organization restricts which actions can run,
   allow the actions the workflow pins: `actions/checkout`, `actions/setup-node`,
-  `actions/upload-artifact`, and, for the default runner, `github/evals-action`.
+  and `actions/upload-artifact`.
 
 ## Cost
 
@@ -192,7 +154,7 @@ After your first manual run, check the dashboard to learn what a run costs.
 
 Same-repository pull requests run their own versions of plugin hooks, MCP
 servers, graders, and scripts with the eval job's token, which can make billed
-Copilot requests (and, for the Action runner, write pull request comments).
+Copilot requests.
 Merge review doesn't protect this: the code runs when the pull request is
 opened or updated, before anyone reviews it. Fork pull requests never get these
 runs.
@@ -220,7 +182,7 @@ Before you turn on `ENABLE_EVALS`:
 - Every action is pinned to a full commit SHA, and checkout doesn't persist
   credentials. Keep it that way.
 
-[Security and data handling](security.md#data-flow) lists what each runner
+[Security and data handling](security.md#data-flow) lists what the job
 writes, who can read it, and for how long.
 
 ## Turn evals off

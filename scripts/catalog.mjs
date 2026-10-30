@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, realpath } from "node:fs/promises";
-import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseDocument } from "yaml";
 
@@ -48,7 +48,7 @@ export function validateRemoteSource(source, name = "remote plugin") {
   assert.ok(!unknown.length, fail(`unknown source field ${unknown.join(", ")}. Use only source, repo, path, ref, and sha.`));
   assert.equal(source.source, "github", fail('only "source": "github" remote references are supported.'));
   assert.ok(typeof source.repo === "string" && /^[A-Za-z0-9][A-Za-z0-9-]*\/(?!\.{1,2}$)[A-Za-z0-9_.-]+$/.test(source.repo),
-    fail('"repo" must be OWNER/REPO, such as "github/evals", not a URL.'));
+    fail('"repo" must be OWNER/REPO, such as "octo-org/plugins", not a URL.'));
   if (source.path !== undefined) {
     assert.ok(relativePath(source.path), fail(`"path" must be a directory relative to the repository root, such as "packages/plugin", without a leading "./" or "/", "..", or backslashes. Omit "path" when plugin.json is at the repository root.`));
   }
@@ -125,12 +125,6 @@ export function evalFilenameMatcher(patterns) {
     return new RegExp(`^${pattern.replace(/[.+^$|]/g, "\\$&").replaceAll("*", "[^/]*").replaceAll("?", ".")}$`);
   });
   return (name) => regexes.some((regex) => regex.test(name));
-}
-
-// Vally reads eval-level params from <basename>.params<ext> beside the eval.
-export function paramsFileName(evalFileName) {
-  const ext = extname(evalFileName);
-  return `${basename(evalFileName, ext)}.params${ext}`;
 }
 
 const globRegExp = (glob) => new RegExp(`^${glob.replace(/[.+^$|()[\]{}]/g, "\\$&").replaceAll("**/", "\u0000").replaceAll("*", "[^/]*").replaceAll("\u0000", "(?:.*/)?")}$`);

@@ -43,10 +43,6 @@ Two terms come up a lot:
 | [code-review](plugins/code-review/) | "Use adversarial-review to review this diff without changing it" | A skill that delegates to a read-only custom agent |
 | [json-configuration](plugins/json-configuration/) | 'Use json-configuration to validate {"port":8443} and look up /port' | A skill backed by a bundled local MCP server |
 
-<!-- plugin:eval -->
-The catalog also has an optional reference to the GitHub Copilot Evals plugin,
-which lives in another repository. See [Remote plugins](docs/remote-plugins.md).
-<!-- /plugin:eval -->
 <!-- examples -->
 [Examples](docs/examples.md) explains what each example shows and which files
 it owns.
@@ -104,12 +100,7 @@ You need Node.js 22.14 or newer.
 4. Add your first plugin with `npm run new-plugin -- <name>`. See
    [Add a plugin](#add-a-plugin). `npm run verify` passes even with no plugins
    at all.
-   <!-- plugin:eval -->
-5. Decide whether to keep the remote `eval` plugin in the catalog. See
-   [Remote plugins](docs/remote-plugins.md). Remove it with
-   `npm run remove-plugin -- eval`.
-   <!-- /plugin:eval -->
-6. Replace what's meant for you before you ship:
+5. Replace what's meant for you before you ship:
    - Your own copyright line in [LICENSE](LICENSE), beside the template's. That
      one file covers the whole repository, including every plugin. See
      [Licensing](#licensing).
@@ -123,15 +114,15 @@ You need Node.js 22.14 or newer.
    - Your maintenance rules in
      [.github/copilot-instructions.md](.github/copilot-instructions.md) and
      [AGENTS.md](AGENTS.md).
-7. Run `npm run verify`. It fails on anything inconsistent and warns about
+6. Run `npm run verify`. It fails on anything inconsistent and warns about
    leftovers, such as the template's name or introduction, a `LICENSE` that
    doesn't name you yet, scaffold text you haven't replaced, or a mention of a
    plugin you removed.
-8. Push, then turn on branch protection or a ruleset for your default branch.
+7. Push, then turn on branch protection or a ruleset for your default branch.
    Rulesets are available for public repositories on every plan. Behavioral
    evals stay off in CI until you turn them on; see
    [Continuous integration](#continuous-integration).
-9. [Test installation](docs/local-development.md#test-installation-without-publishing)
+8. [Test installation](docs/local-development.md#test-installation-without-publishing)
    locally, then from your GitHub repository, before you share it.
 
 For agent-assisted setup and maintenance, see [AGENTS.md](AGENTS.md).
@@ -259,11 +250,9 @@ marketplace consistent.
 [evals.yml](.github/workflows/evals.yml) runs behavioral evals. It's off for
 pull requests until you set the repository variable `ENABLE_EVALS` to `true`,
 and you can always run it by hand. Each run can wait for a reviewer's approval
-through the `evals` environment. By default it uses
-[`github/evals-action`](https://github.com/github/evals-action). Set the
-repository variable `EVALS_RUNNER` to `npm` to run
-the same evals with the pinned Vally CLI. On a personal account, usage is
-billed to your own Copilot plan. [Continuous integration](docs/ci.md) covers
+through the `evals` environment. It runs the same launcher you use locally,
+with the pinned Vally CLI. On a personal account, usage is billed to your own
+Copilot plan. [Continuous integration](docs/ci.md) covers
 setup, personal accounts, billing, cost, and security.
 
 ## Repository layout
@@ -354,5 +343,6 @@ to everyone who's contributed since.
 - [Hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference)
 - [VS Code agent plugins](https://code.visualstudio.com/docs/agent-customization/agent-plugins)
 - [Agent Skills specification](https://agentskills.io/specification)
-- [Vally](https://microsoft.github.io/vally/) and the
-  [Evals Action](https://github.com/github/evals-action)
+- [Vally](https://microsoft.github.io/vally/), its
+  [eval schema](https://microsoft.github.io/vally/reference/eval-spec/), and
+  [CI guide](https://microsoft.github.io/vally/get-started/add-to-ci/)

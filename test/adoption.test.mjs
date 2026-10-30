@@ -124,7 +124,7 @@ test("a team can rename the marketplace, drop examples and the remote entry, and
   assert.match(coverage, new RegExp(`agent:${fixture}-tools/${fixture}-tools-specialist`));
   assert.match(coverage, new RegExp(`mcp:${fixture}-tools/${fixture}-tools/echo`));
   for (const name of dropped) assert.doesNotMatch(coverage, new RegExp(`:${name}/`));
-  const params = await ok(directory, "scripts/evals.mjs", "action-params");
+  const params = JSON.stringify(parse(await readFile(join(directory, ".vally.yaml"), "utf8")).params ?? {});
   for (const name of dropped) assert.doesNotMatch(params, new RegExp(name));
 
   // Scaffolding refuses names that would collide or aren't valid plugin names.
@@ -183,11 +183,10 @@ test("an empty or remote-only marketplace passes verify, and new plugins scaffol
   assert.ok((await json(join(directory, "marketplace.json"))).plugins.every((entry) => typeof entry.source === "string"));
   const empty = await verify(directory, { tests: false });
   if (!ownPlugins.length) assert.match(empty.coverage, /nothing to cover/);
-  // The setup steps about examples and the remote plugin go with them, and the list stays numbered in order.
+  // The setup steps about examples go with them, and the list stays numbered in order.
   const setup = (await readFile(join(directory, "README.md"), "utf8")).match(/## Make it yours\n[\s\S]*?\n## /)?.[0];
   if (setup) {
     if (present.length) assert.doesNotMatch(setup, /remove-example/);
-    assert.doesNotMatch(setup, /plugin:eval\b|remove-plugin -- eval\b/);
     const numbers = [...setup.matchAll(/^(\d+)\. /gm)].map((match) => Number(match[1]));
     assert.deepEqual(numbers, numbers.map((_, index) => index + 1));
   }

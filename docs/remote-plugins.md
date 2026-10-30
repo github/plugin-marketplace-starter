@@ -11,36 +11,6 @@ run upstream code, and the local evals don't cover remote plugins: `evals/` is
 for the plugins under `plugins/`, and the coverage check rejects asset IDs that
 aren't local. Evaluate an upstream plugin in its own repository.
 
-<!-- plugin:eval -->
-## The GitHub Copilot Evals plugin
-
-[marketplace.json](../marketplace.json) includes an `eval` entry that
-points at the published GitHub Copilot Evals plugin in
-[github/evals](https://github.com/github/evals). It mirrors the stable entry in
-upstream's own catalog: the `copilot-evals-v0.20.3` release, pinned to the full
-SHA of its built commit.
-
-After adding this marketplace, install it explicitly with
-`copilot plugin install eval@MARKETPLACE`, where `MARKETPLACE` is the
-`name` in `marketplace.json`. Or skip this catalog and install it from
-upstream, which follows upstream's reviewed stable releases:
-
-```sh
-copilot plugin marketplace add github/evals
-copilot plugin install eval@github-copilot-evals-dist
-```
-
-Pick one route. Don't install the same plugin from both marketplaces.
-
-The pinned release is the built plugin. It provides the native `/eval` command
-(`/eval setup`, `create`, `review`, `improve`, `run`, and `compare`) in the CLI
-and Copilot App, a canvas, and six model-invocable skills. Running an eval
-needs a compatible runner and its own approval, and it spends AI credits.
-This repository's eval tooling works without it.
-
-This catalog entry doesn't copy upstream code. If you don't want it, remove the
-entry with `npm run remove-plugin -- eval`.
-<!-- /plugin:eval -->
 
 ## Add a remote plugin
 

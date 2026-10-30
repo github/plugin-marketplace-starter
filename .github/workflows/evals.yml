@@ -1,11 +1,10 @@
 name: Behavioral evals
 # Off by default, because evals run real Copilot sessions and spend AI credits.
 # Pull requests run evals only after you set the repository variable
-# ENABLE_EVALS to true. Manual runs work either way. The repository variable
-# EVALS_RUNNER picks the job: unset or "action" uses github/evals-action;
-# "npm" runs the pinned Vally CLI from package.json. Any other value fails. Both eval
-# jobs use the "evals" environment, so you can require a reviewer to approve
-# each run before it gets a token. See docs/ci.md.
+# ENABLE_EVALS to true. Manual runs work either way. The job runs the pinned
+# Vally CLI from package.json through the same launcher contributors use
+# locally. It uses the "evals" environment, so you can require a reviewer to
+# approve each run before it gets a token. See docs/ci.md.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -28,91 +27,14 @@ on:
 permissions:
   contents: read
 jobs:
-  # Fails fast on a mistyped EVALS_RUNNER instead of silently picking a runner.
-  check-runner:
-    if: vars.EVALS_RUNNER != '' && vars.EVALS_RUNNER != 'action' && vars.EVALS_RUNNER != 'npm'
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-      - run: |
-          echo "::error::EVALS_RUNNER is '$EVALS_RUNNER'. Set it to action, npm, or nothing. See docs/ci.md."
-          exit 1
-        env:
-          EVALS_RUNNER: ${{ vars.EVALS_RUNNER }}
-
-  # Runner "action". A separate job, because a job downloads every action it
-  # names before it starts, even ones in skipped steps.
   evals:
     # Manual runs always run. Pull requests run only when ENABLE_EVALS is true,
     # the branch is in this repository (never a fork), and the PR isn't a draft.
     if: >-
-      (vars.EVALS_RUNNER == '' || vars.EVALS_RUNNER == 'action') && (github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'workflow_dispatch' ||
       (vars.ENABLE_EVALS == 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      !github.event.pull_request.draft))
-    runs-on: ubuntu-latest
-    # Add required reviewers to this environment to approve each run before it starts.
-    environment: evals
-    timeout-minutes: 30
-    env:
-      VALLY_TELEMETRY_OPTOUT: '1'
-    permissions:
-      contents: read
-      copilot-requests: write
-      pull-requests: write
-    concurrency:
-      group: evals-${{ github.workflow_ref }}
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 24
-          cache: npm
-      # The Action installs only Vally. Graders, eval MCP hosts, and the pinned
-      # full Copilot runtime for custom-agent delegation come from npm ci.
-      - run: npm ci --no-audit --no-fund
-      # The Action can't pass --param, so write gitignored eval-level params files
-      # with this runner's absolute paths from .vally.yaml params.
-      - run: node scripts/evals.mjs action-params
-      # Fail fast if the runtime bridge the Action forwards can't start the pinned
-      # runtime, instead of reporting confusing eval failures later. It prints
-      # the pinned package version and the version that actually runs.
-      - name: Check the runtime bridge
-        run: node "$COPILOT_CLI_PATH" --version
-        env:
-          COPILOT_CLI_PATH: ${{ github.workspace }}/scripts/eval-runtime.js
-      - uses: github/evals-action@83fa12332c3e44ad899f347eaf153a0d9b6432dc # v0.1.0
-        env:
-          # Vally's SDK executor launches this bridge, which runs the pinned full runtime.
-          COPILOT_CLI_PATH: ${{ github.workspace }}/scripts/eval-runtime.js
-        with:
-          working-directory: .
-          suite: ${{ inputs.suite || 'smoke' }}
-          vally-version: '0.19.0'
-          copilot-token: ${{ github.token }}
-          # Workaround: the Action forwards only an allowlist of variables to Vally,
-          # and credential-env is its only way to pass another one, during the run
-          # phase only. COPILOT_CLI_PATH is a non-secret path, not a credential.
-          # Naming anything here turns off automatic token injection, so
-          # copilot-token is set explicitly above.
-          # VALLY_TELEMETRY_OPTOUT turns off Vally's telemetry during the run phase.
-          credential-env: |
-            COPILOT_CLI_PATH
-            VALLY_TELEMETRY_OPTOUT
-          workers: 1
-          max-retries: 1
-          upload-transcripts: false
-
-  # Runner "npm": the same launcher contributors use locally, with the job token.
-  evals-npm:
-    if: >-
-      vars.EVALS_RUNNER == 'npm' && (github.event_name == 'workflow_dispatch' ||
-      (vars.ENABLE_EVALS == 'true' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      !github.event.pull_request.draft))
+      !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     # Add required reviewers to this environment to approve each run before it starts.
     environment: evals
@@ -137,7 +59,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Check the runtime bridge
         run: node scripts/eval-runtime.js --version
-      # --require-pass fails the job on a failed verdict, like the Action does.
+      # --require-pass fails the job on a failed verdict.
       # The launcher uses one worker and one bounded retry.
       - name: Run evals
         run: node scripts/evals.mjs eval --suite "$SUITE" --require-pass

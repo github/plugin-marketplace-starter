@@ -5,7 +5,7 @@ import { resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import Ajv from "ajv/dist/2020.js";
-import { contained, frontmatter, parseYaml, readCatalog, readVallyConfig, remoteWarnings } from "./catalog.mjs";
+import { contained, frontmatter, readCatalog, readVallyConfig, remoteWarnings } from "./catalog.mjs";
 import { Problems, runCli } from "./problems.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
@@ -148,18 +148,6 @@ export async function staleReferenceWarnings(directory, catalog, allFiles) {
     }
   }
   warnings.push(...await adoptionWarnings(directory, catalog, allFiles));
-  // Debugging a run with transcripts is fine, but they can hold prompts, model
-  // output, and code, so a merged workflow shouldn't keep uploading them.
-  const evalsWorkflow = await read(resolve(directory, ".github/workflows/evals.yml"));
-  if (evalsWorkflow) {
-    let parsed;
-    try { parsed = parseYaml(evalsWorkflow, ".github/workflows/evals.yml"); } catch { parsed = undefined; }
-    for (const [name, job] of Object.entries(parsed?.jobs ?? {})) {
-      if ((job?.steps ?? []).some((step) => String(step?.with?.["upload-transcripts"]) === "true")) {
-        warnings.push(`.github/workflows/evals.yml: job ${name} uploads transcripts. Set upload-transcripts back to false once you've finished debugging; see docs/ci.md.`);
-      }
-    }
-  }
   return warnings;
 }
 
