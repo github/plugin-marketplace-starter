@@ -32,7 +32,7 @@ plugins.
 | Local eval results in `vally-results/`: results, a report, JUnit, and session evidence with transcripts | Your disk | Gitignored. Delete them when you're done. |
 | npm runner in CI: Vally's log and the report in the job summary | The workflow run | Anyone who can read the repository's Actions runs. Logs follow the repository's [retention setting](https://docs.github.com/en/organizations/managing-organization-settings/configuring-the-retention-period-for-github-actions-artifacts-and-logs-in-your-organization) (90 days by default). |
 | npm runner results artifact, which includes transcripts | A workflow artifact | Only when `EVALS_UPLOAD_RESULTS` is `true`. Kept for 7 days. |
-| Evals Action report and pull request comment | The workflow run and the pull request | Anyone who can read them. The report and comment hold case names, verdicts, and grader evidence. Raw transcript upload is off. The Action is private, and this template doesn't document its internals. |
+| Evals Action report and pull request comment | The workflow run and the pull request | Anyone who can read them. The report and comment hold case names, verdicts, and grader evidence. Raw transcript upload is off. This template doesn't document the Action's internals. |
 | Vally telemetry | Vally's telemetry service, unless turned off | `VALLY_TELEMETRY_OPTOUT=1` is set by `validate.yml`, the local launcher, and both eval jobs. The Action job also forwards it to Vally's run phase; whether the Action's lint and report phases honor it isn't verified. |
 | Copilot CLI telemetry | GitHub | Set by Copilot's own settings and policies, not by this template. |
 

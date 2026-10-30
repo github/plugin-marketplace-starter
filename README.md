@@ -6,6 +6,11 @@ A GitHub template for building, evaluating, and sharing AI customizations
 works for a team in an organization and for one person with a personal
 account.
 
+<!-- template-only -->
+**Status:** active development. GitHub maintains this template; see
+[Maintainers](#maintainers) and [Support](#support).
+<!-- /template-only -->
+
 It gives you:
 
 <!-- examples -->
@@ -38,14 +43,40 @@ Two terms come up a lot:
 | [code-review](plugins/code-review/) | "Use adversarial-review to review this diff without changing it" | A skill that delegates to a read-only custom agent |
 | [json-configuration](plugins/json-configuration/) | 'Use json-configuration to validate {"port":8443} and look up /port' | A skill backed by a bundled local MCP server |
 
-<!-- plugin:github-copilot -->
+<!-- plugin:eval -->
 The catalog also has an optional reference to the GitHub Copilot Evals plugin,
 which lives in another repository. See [Remote plugins](docs/remote-plugins.md).
-<!-- /plugin:github-copilot -->
+<!-- /plugin:eval -->
 <!-- examples -->
 [Examples](docs/examples.md) explains what each example shows and which files
 it owns.
 <!-- /examples -->
+
+<!-- template-only -->
+## Background
+
+Most shared Copilot customizations ship as loose files, without a catalog,
+checks, or evals, because teams have to piece that setup together from docs.
+This template puts the whole setup in one repository, so a new skill, agent,
+hook, or MCP server arrives with a catalog entry, a model-free check, and an
+eval that shows it works.
+
+Planned work and known gaps are in the
+[open issues](https://github.com/github/plugin-marketplace-starter/issues).
+Contributions are welcome, from fixes to the scripts and docs to better
+examples and new checks. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+<!-- /template-only -->
+
+## Requirements
+
+- To install and use the plugins: a current Copilot CLI, the GitHub Copilot
+  app, or VS Code with agent plugins turned on, and a GitHub Copilot plan. See
+  [Install plugins](#install-plugins).
+- To build, check, and change the marketplace: Node.js 22.14 or newer and npm.
+  `npm ci` installs everything else, including the pinned Vally CLI and Copilot
+  runtime that evals use.
+- To run behavioral evals: a Copilot plan or organization policy that allows
+  the usage, since every run spends AI credits. See [Evals](#evals).
 
 ## Make it yours
 
@@ -73,12 +104,11 @@ You need Node.js 22.14 or newer.
 4. Add your first plugin with `npm run new-plugin -- <name>`. See
    [Add a plugin](#add-a-plugin). `npm run verify` passes even with no plugins
    at all.
-   <!-- plugin:github-copilot -->
-5. Decide whether to keep the remote `github-copilot` plugin in the catalog. It
-   needs access to the private `github/evals` repository; see
+   <!-- plugin:eval -->
+5. Decide whether to keep the remote `eval` plugin in the catalog. See
    [Remote plugins](docs/remote-plugins.md). Remove it with
-   `npm run remove-plugin -- github-copilot`.
-   <!-- /plugin:github-copilot -->
+   `npm run remove-plugin -- eval`.
+   <!-- /plugin:eval -->
 6. Replace what's meant for you before you ship:
    - Your own copyright line in [LICENSE](LICENSE), beside the template's. That
      one file covers the whole repository, including every plugin. See
@@ -129,11 +159,6 @@ copilot plugin install json-configuration@plugin-marketplace-starter
 
 Choose only the plugins you need; each one installs on its own. Start a new
 session after installing.
-
-<!-- template-only -->
-This repository is currently private, so installers need a GitHub account with
-access to it.
-<!-- /template-only -->
 
 ### VS Code
 
@@ -234,10 +259,9 @@ marketplace consistent.
 [evals.yml](.github/workflows/evals.yml) runs behavioral evals. It's off for
 pull requests until you set the repository variable `ENABLE_EVALS` to `true`,
 and you can always run it by hand. Each run can wait for a reviewer's approval
-through the `evals` environment. By default it uses the private
-[`github/evals-action`](https://github.com/github/evals-action), which only
-repositories in the GitHub organization can use. Anywhere else, including a
-personal account, set the repository variable `EVALS_RUNNER` to `npm` to run
+through the `evals` environment. By default it uses
+[`github/evals-action`](https://github.com/github/evals-action). Set the
+repository variable `EVALS_RUNNER` to `npm` to run
 the same evals with the pinned Vally CLI. On a personal account, usage is
 billed to your own Copilot plan. [Continuous integration](docs/ci.md) covers
 setup, personal accounts, billing, cost, and security.
@@ -290,6 +314,27 @@ The `Copyright` line in `LICENSE` says who holds the copyright in the code.
 - Keep the vendored Agent Plugins schemas' Apache-2.0
   [license](schemas/LICENSE-APACHE-2.0.txt) and [notice](schemas/NOTICE), and
   the third-party notices beside each generated bundle.
+
+<!-- template-only -->
+## Maintainers
+
+GitHub's Copilot Evals team, `@github/code-ai-evals`, maintains this template.
+[.github/CODEOWNERS](.github/CODEOWNERS) lists the code owners who review
+changes.
+
+## Support
+
+See [SUPPORT.md](SUPPORT.md) for how to ask questions and report bugs, and
+[SECURITY.md](SECURITY.md) for how to report a vulnerability privately.
+
+## Acknowledgement
+
+This template builds on the [Agent Plugins](https://agent-plugins.org/)
+standard and its schemas, and runs its evals with
+[Vally](https://microsoft.github.io/vally/). Thanks to
+[@digitarald](https://github.com/digitarald), who wrote its first version, and
+to everyone who's contributed since.
+<!-- /template-only -->
 
 ## References
 

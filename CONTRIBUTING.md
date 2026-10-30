@@ -4,6 +4,14 @@ Thanks for improving this marketplace. This guide is the checklist for people;
 [AGENTS.md](AGENTS.md) adds rules for coding agents, and the [README](README.md)
 explains how everything fits together.
 
+Contributions to this project are
+[released](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service#6-contributions-under-repository-license)
+to the public under the [project's open source license](LICENSE).
+
+Please note that this project is released with a
+[Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating in this
+project you agree to abide by its terms.
+
 ## Before you start
 
 - Install Node.js 22.14 or newer and run `npm ci`.

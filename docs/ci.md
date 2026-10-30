@@ -40,8 +40,7 @@ organization:
 - `validate.yml` works as it is, and it's all you need to keep the marketplace
   consistent. It never calls a model.
 - To run behavioral evals in CI, set the repository variable `EVALS_RUNNER` to
-  `npm`. The default runner uses a private Action that only repositories in the
-  GitHub organization can use, so without this the eval job fails.
+  `npm`.
 - Copilot usage from the job's token is
   [billed to your own Copilot plan](https://docs.github.com/en/copilot/concepts/agent-capabilities/agent-powered-workflows-and-operations/copilot-cli-in-github-actions).
   Each plan includes a monthly allowance of AI credits; see
@@ -106,13 +105,13 @@ requests as drafts.
 |---|---|---|
 | Set `EVALS_RUNNER` to | nothing, or `action` | `npm` |
 | Runs | [`github/evals-action`](https://github.com/github/evals-action) v0.1.0 | `node scripts/evals.mjs eval --suite <suite> --require-pass` |
-| Who can use it | Repositories in the GitHub organization. The Action is private and shared only there, so other organizations can't use it. | Any repository |
+| Who can use it | Any repository | Any repository |
 | Report | Structured report and one sticky pull request comment | The job summary |
 | Job token permissions | `contents: read`, `copilot-requests: write`, `pull-requests: write` | `contents: read`, `copilot-requests: write` |
 
 The two runners are separate jobs, because a job downloads every action it
 names before it starts, even ones in skipped steps. With `EVALS_RUNNER=npm`, the
-private Action is never downloaded.
+Action is never downloaded.
 
 Both fail the job on a failed verdict, an incomplete run, or an infrastructure
 error, unlike the report-only default of `npm run eval:report` locally. Both use

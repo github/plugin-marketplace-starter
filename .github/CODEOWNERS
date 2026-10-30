@@ -10,3 +10,6 @@
 # /evals/                        @your-org/ai-customizations
 # /marketplace.json              @your-org/ai-customizations-admins
 # /plugins/<plugin-with-hooks>/  @your-org/ai-customizations-admins
+
+# This repository is maintained by:
+* @github/code-ai-evals

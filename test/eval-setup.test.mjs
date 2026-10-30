@@ -300,7 +300,7 @@ test("deterministic CI stays model-free, and opt-in behavioral CI uses the Evals
   }
   const npmJob = evals.jobs["evals-npm"];
   if (npmJob) {
-    assert.ok(!npmJob.steps.some((step) => step.uses?.startsWith("github/evals-action@")), "The npm runner must not need the private Action.");
+    assert.ok(!npmJob.steps.some((step) => step.uses?.startsWith("github/evals-action@")), "The npm runner must not need the Action.");
     const runStep = npmJob.steps.find((step) => /scripts\/evals\.mjs eval\b/.test(step.run ?? ""));
     assert.ok(runStep.run.includes("--require-pass"));
     const report = npmJob.steps.find((step) => /eval-report\.mjs/.test(step.run ?? ""));
