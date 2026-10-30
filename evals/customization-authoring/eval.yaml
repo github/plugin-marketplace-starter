@@ -40,8 +40,8 @@ stimuli:
       - type: program
         config:
           program: node
-          # The Evals Action passes only allowlisted environment variables, so the
-          # pinned Vally CLI path arrives as an argument from a .vally.yaml param.
+          # The pinned Vally CLI path arrives as an argument from a .vally.yaml
+          # param, which the launcher passes as an absolute path.
           args: [.grading/authoring.mjs, '${MARKETPLACE_VALLY_CLI}']
           timeout: 60s
   - name: does-not-author-for-factual-question

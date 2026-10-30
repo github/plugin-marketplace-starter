@@ -72,12 +72,12 @@ place; don't duplicate them here.
 - `npm run eval:smoke`, `npm run eval`, and the evals workflow spend AI
   credits. Don't run them unless the user asks, and don't turn on
   `ENABLE_EVALS` for anyone. Static checks don't establish behavioral quality.
-- When upgrading Vally or Copilot, update the pins, the lockfile, and the
-  workflow's `vally-version` together, and verify real custom-agent delegation
-  and MCP behavior, not only schema validity. When you touch the workflows,
-  refresh every action's commit SHA (with its version comment), keep the
-  evals workflow on a Node major that `validate.yml` tests, and keep both eval
-  runner jobs (`action` and `npm`) in step.
+- When upgrading Vally or Copilot, update the pins in `package.json` and the
+  lockfile together, and verify real custom-agent delegation and MCP behavior,
+  not only schema validity. CI runs evals through the same launcher as local
+  runs. When you touch the workflows, refresh every action's commit SHA (with
+  its version comment), and keep the evals workflow on a Node major that
+  `validate.yml` tests.
 - Keep remote plugins opt-in. The repository settings overlay must never enable
   a remote plugin; that's a deliberate security rule, so developers install
   remote plugins themselves. A remote entry's `name` must match the upstream
@@ -105,7 +105,7 @@ Consult the relevant contract before changing package or catalog fields:
 - [Creating a team marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace).
 - [CLI plugin and catalog reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference).
 - [Vally eval schema](https://microsoft.github.io/vally/reference/eval-spec/) and
-  [Evals Action](https://github.com/github/evals-action).
+  [Vally CI guide](https://microsoft.github.io/vally/get-started/add-to-ci/).
 
 The README's [references](README.md#references) cover skills, hooks, VS Code,
 and this repository's guides.

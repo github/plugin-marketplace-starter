@@ -159,9 +159,7 @@ test("verify warns about scaffold text in every scaffolded file and the template
       await write("plugins/done/README.md", "# Done\n\nReal instructions.\n\n## Host checks\n\n- Try it in each host.\n"),
       await write("plugins/unchecked/README.md", "# Unchecked\n\nReal instructions.\n"),
     ];
-    await write(".github/workflows/evals.yml", "jobs:\n  evals:\n    steps:\n      - uses: github/evals-action@x\n        with:\n          upload-transcripts: true\n");
     const warnings = (await staleReferenceWarnings(directory, { name: "ours", owner: { name: "Acme" } }, files)).join("\n");
-    assert.match(warnings, /evals\.yml: job evals uploads transcripts/);
     for (const path of ["plugins/mine/README.md", "plugins/mine/src/server.ts", "plugins/mine/com.github.copilot/hooks/mine.mjs",
       "plugins/mine/com.github.copilot/extensions/mine/extension.mjs", "evals/mine/eval.yaml"]) {
       assert.match(warnings, new RegExp(`${path.replaceAll(".", "\\.")}: still has scaffolded text`), path);

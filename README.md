@@ -250,11 +250,9 @@ marketplace consistent.
 [evals.yml](.github/workflows/evals.yml) runs behavioral evals. It's off for
 pull requests until you set the repository variable `ENABLE_EVALS` to `true`,
 and you can always run it by hand. Each run can wait for a reviewer's approval
-through the `evals` environment. By default it uses
-[`github/evals-action`](https://github.com/github/evals-action). Set the
-repository variable `EVALS_RUNNER` to `npm` to run
-the same evals with the pinned Vally CLI. On a personal account, usage is
-billed to your own Copilot plan. [Continuous integration](docs/ci.md) covers
+through the `evals` environment. It runs the same launcher you use locally,
+with the pinned Vally CLI. On a personal account, usage is billed to your own
+Copilot plan. [Continuous integration](docs/ci.md) covers
 setup, personal accounts, billing, cost, and security.
 
 ## Repository layout
@@ -345,5 +343,6 @@ to everyone who's contributed since.
 - [Hooks reference](https://docs.github.com/en/copilot/reference/hooks-reference)
 - [VS Code agent plugins](https://code.visualstudio.com/docs/agent-customization/agent-plugins)
 - [Agent Skills specification](https://agentskills.io/specification)
-- [Vally](https://microsoft.github.io/vally/) and the
-  [Evals Action](https://github.com/github/evals-action)
+- [Vally](https://microsoft.github.io/vally/), its
+  [eval schema](https://microsoft.github.io/vally/reference/eval-spec/), and
+  [CI guide](https://microsoft.github.io/vally/get-started/add-to-ci/)

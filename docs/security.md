@@ -3,7 +3,7 @@
 This page is for whoever approves this marketplace for a team: what runs, when,
 with what access, and where data goes. [SECURITY.md](../SECURITY.md) covers
 reporting a vulnerability. [Continuous integration](ci.md#security) covers the
-eval workflows in detail.
+eval workflow in detail.
 
 None of this is a sandbox. Hooks, MCP servers, extensions, graders, and scripts
 run as ordinary processes with the permissions of the account that runs them.
@@ -30,15 +30,14 @@ plugins.
 |---|---|---|
 | Prompts, files the agent reads, tool arguments and results, hook messages, MCP results, and canvas notes the agent reads | Copilot and the model behind it | Set by your Copilot plan and policies, not by this template. See the [GitHub Copilot Trust Center](https://copilot.github.trust.page/). |
 | Local eval results in `vally-results/`: results, a report, JUnit, and session evidence with transcripts | Your disk | Gitignored. Delete them when you're done. |
-| npm runner in CI: Vally's log and the report in the job summary | The workflow run | Anyone who can read the repository's Actions runs. Logs follow the repository's [retention setting](https://docs.github.com/en/organizations/managing-organization-settings/configuring-the-retention-period-for-github-actions-artifacts-and-logs-in-your-organization) (90 days by default). |
-| npm runner results artifact, which includes transcripts | A workflow artifact | Only when `EVALS_UPLOAD_RESULTS` is `true`. Kept for 7 days. |
-| Evals Action report and pull request comment | The workflow run and the pull request | Anyone who can read them. The report and comment hold case names, verdicts, and grader evidence. Raw transcript upload is off. This template doesn't document the Action's internals. |
-| Vally telemetry | Vally's telemetry service, unless turned off | `VALLY_TELEMETRY_OPTOUT=1` is set by `validate.yml`, the local launcher, and both eval jobs. The Action job also forwards it to Vally's run phase; whether the Action's lint and report phases honor it isn't verified. |
+| The eval job in CI: Vally's log and the report in the job summary | The workflow run | Anyone who can read the repository's Actions runs. Logs follow the repository's [retention setting](https://docs.github.com/en/organizations/managing-organization-settings/configuring-the-retention-period-for-github-actions-artifacts-and-logs-in-your-organization) (90 days by default). |
+| The eval job's results artifact, which includes transcripts | A workflow artifact | Only when `EVALS_UPLOAD_RESULTS` is `true`. Kept for 7 days. |
+| Vally telemetry | Vally's telemetry service, unless turned off | `VALLY_TELEMETRY_OPTOUT=1` is set by `validate.yml`, the local launcher, and the eval job. |
 | Copilot CLI telemetry | GitHub | Set by Copilot's own settings and policies, not by this template. |
 
 Grader evidence can quote what the model said, and transcripts hold prompts,
 model output, and file contents. Keep every fixture, prompt, and expected
-answer synthetic, and treat reports, comments, logs, and artifacts as possibly
+answer synthetic, and treat reports, logs, and artifacts as possibly
 sensitive.
 
 Data a plugin keeps for itself, such as a canvas's state or an MCP server's
