@@ -26,12 +26,16 @@ export function evaluate(trajectory, workspace, mode) {
     const settings = json(workspace, ".github/copilot/settings.json");
     const contents = existsSync(folder) ? readdirSync(folder).sort().join(",") : "";
     return [
-      check("Used the repository scaffolder", ran(trajectory, /new-plugin[\s\S]*yaml-after-edit/)),
       check("Created only the plugin shell", plugin?.name === "yaml-after-edit" && contents === "CHANGELOG.md,README.md,plugin.json"),
+      check("Gave the manifest a version, description, and matching changelog heading", /^\d+\.\d+\.\d+$/.test(plugin?.version ?? "")
+        && typeof plugin?.description === "string" && plugin.description.trim()
+        && text(workspace, "plugins/yaml-after-edit/CHANGELOG.md").replaceAll("\r\n", "\n").includes(`## ${plugin.version}\n`)),
       check("Catalog and manifest agree", entry?.source === "./plugins/yaml-after-edit" && entry?.version === plugin?.version
         && entry?.description === plugin?.description),
       check("Enabled the local plugin", settings?.enabledPlugins?.["yaml-after-edit@fixture-plugins"] === true),
-      check("Ran static verification", ran(trajectory, /npm(?:\.cmd)?\s+run\s+verify/)),
+      check("Listed it in the marketplace README", text(workspace, "README.md").includes("plugins/yaml-after-edit/")),
+      check("Kept the existing plugin", catalog.plugins.some((item) => item.name === "sample-notes")
+        && settings?.enabledPlugins?.["sample-notes@fixture-plugins"] === true),
     ];
   }
   if (mode === "try") {
@@ -47,20 +51,22 @@ export function evaluate(trajectory, workspace, mode) {
   if (mode === "submit") {
     const plugin = json(workspace, "plugins/sample-notes/plugin.json");
     const entry = catalog.plugins.find((item) => item.name === "sample-notes");
-    const headings = ["## What and why", "## Checklist", "## Risk", "## Paid evals"];
-    const riskRows = ["What runs, and when", "Files it reads or writes", "Network destinations",
-      "Credentials or tokens", "Data it keeps", "Data it sends to the model",
-      "New dependencies", "Remote sources"];
+    const headings = ["## What changed", "## Version and changelog", "## Checks", "## Risk"];
     const output = trajectory.output;
+    const section = (heading) => {
+      const start = output.indexOf(heading);
+      if (start === -1) return "";
+      const next = output.indexOf("\n## ", start + heading.length);
+      return output.slice(start, next === -1 ? undefined : next);
+    };
     return [
       check("Applied the requested patch version consistently", plugin?.version === "1.0.1" && entry?.version === "1.0.1"),
       check("Added the matching changelog heading", /^## 1\.0\.1\s*$/m.test(text(workspace, "plugins/sample-notes/CHANGELOG.md"))),
-      check("Preserved PR-template heading order", headings.every((heading, i) => output.includes(heading)
+      check("Wrote the PR body's sections in order", headings.every((heading, i) => output.includes(heading)
         && (i === 0 || output.indexOf(heading) > output.indexOf(headings[i - 1])))),
-      check("Filled all template risk questions", riskRows.every((row) =>
-        output.split("\n").some((line) => line.includes(row) && /^\|[^|]+\|\s*[^|\s][^|]*\|\s*$/.test(line)))),
-      check("Reported paid evals honestly", /(?:None|not run|Not run)/.test(output.slice(output.indexOf("## Paid evals")))),
-      check("Ran static verification", ran(trajectory, /npm(?:\.cmd)?\s+run\s+verify/)),
+      check("Described the wording change", /empty/i.test(section("## What changed"))),
+      check("Stated the new version", /1\.0\.1/.test(section("## Version and changelog"))),
+      check("Said honestly that it runs no code", /no code|runs nothing|doesn't run|does not run|none/i.test(section("## Risk"))),
       check("Did not create a PR or push", !calls(trajectory).some((call) => /(?:gh\s+pr\s+create|git\s+push)/.test(JSON.stringify(call.args)))),
     ];
   }

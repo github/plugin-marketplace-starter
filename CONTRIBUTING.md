@@ -18,14 +18,15 @@ project you agree to abide by its terms.
 
 1. [Fork][fork] and clone the repository.
 1. Install the dependencies with Node.js 22.14 or newer: `npm ci`
-1. Make sure the checks pass on your machine: `npm run verify`
+1. Make sure the lint passes on your machine: `npm run lint`
 1. Create a new branch: `git checkout -b my-branch-name`
-1. Make your change. For a new plugin, open an issue with the **New plugin**
-   form first, then start it with `npm run new-plugin -- <name>`. For a change
-   to an existing plugin, bump its version in `plugin.json` and
+1. Make your change. For a new plugin, follow [Add a plugin](README.md#add-a-plugin).
+   For a change to an existing plugin, bump its version in `plugin.json` and
    `marketplace.json` and add a `CHANGELOG.md` entry.
-1. Make sure `npm run verify` still passes.
-1. Push to your fork and [submit a pull request][pr], filling in the template.
+1. Make sure `npm run lint` still passes.
+1. Push to your fork and [submit a pull request][pr]. Say what changed, and for
+   a plugin that runs code, what it runs, what it reads, writes, and reaches,
+   and what data it keeps or sends to the model.
 1. Pat yourself on the back and wait for your pull request to be reviewed and merged.
 
 Here are a few things you can do that will increase the likelihood of your pull

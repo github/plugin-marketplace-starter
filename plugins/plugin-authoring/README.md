@@ -3,14 +3,14 @@
 Scaffold, try locally, and prepare contributions to this plugin marketplace.
 
 For contributors working in a checkout of this marketplace starter or a renamed
-copy. The skills use that checkout's scripts; installing this plugin doesn't
+copy. The skills edit that checkout's files; installing this plugin doesn't
 turn another repository into a marketplace.
 
 | Asset | Job |
 |---|---|
-| [add-plugin](skills/add-plugin/SKILL.md) | Scaffold a new plugin's shell and register it in the catalog and overlay |
+| [add-plugin](skills/add-plugin/SKILL.md) | Create a new plugin's shell and register it in the catalog and overlay |
 | [try-plugin-locally](skills/try-plugin-locally/SKILL.md) | Check CLI or VS Code discovery before publishing and clean up the test copy |
-| [submit-plugin](skills/submit-plugin/SKILL.md) | Check compatibility, synchronize versions and changelogs, validate, and draft the repository's PR template |
+| [submit-plugin](skills/submit-plugin/SKILL.md) | Check compatibility, bump versions and changelogs, and write the pull request description |
 
 There are no hooks, servers, or automatic actions.
 
@@ -43,7 +43,8 @@ and evals don't prove that a host loads or shows everything.
 
 - Confirm all three skills are discovered in Copilot CLI and VS Code.
 - In a disposable marketplace checkout, ask for a new plugin and confirm
-  `add-plugin` runs `new-plugin` and `verify`.
+  `add-plugin` creates only `plugin.json`, `README.md`, and `CHANGELOG.md`, and
+  registers the plugin in `marketplace.json` and the repository overlay.
 - Test CLI installation in an isolated home, confirm discovery, then confirm
   the test copy is uninstalled and the real home is unchanged.
 - In VS Code, try the local plugin-location route, then restore settings.

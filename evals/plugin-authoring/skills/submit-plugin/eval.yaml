@@ -1,5 +1,5 @@
 name: submit-plugin
-description: Contribution preparation for an existing plugin in a disposable synthetic workspace.
+description: Contribution preparation for an existing plugin in a synthetic marketplace.
 type: capability
 defaults:
   executor: copilot-sdk
@@ -20,24 +20,26 @@ grading_environment:
     - src: ../../../graders/common.mjs
       dest: .grading/common.mjs
 stimuli:
-  - name: submit-plugin-prepares-patch-and-template
+  - name: submit-plugin-prepares-patch-and-pr-body
     prompt: >-
       Get sample-notes ready for a pull request. The only change since released.json
       is a wording fix clarifying that an empty input needs notes. It is an
       existing 1.0.0 plugin and needs a patch release. Use released.json as the
       comparison base instead of Git history. Synchronize its version and changelog,
-      run the fixture's static verification, and draft the complete repository PR
-      template in chat. No code runs automatically, no dependencies or network access
-      were added, and I haven't run paid evals. Don't create an issue, commit, push,
-      or open a PR; identify any remaining owner/approval or validation gaps.
+      and draft the pull request description in chat. No code runs automatically,
+      and no dependencies or network access were added. Don't create an issue,
+      commit, push, or open a PR.
     agent_environment:
-      commands:
-        - node "${MAINTENANCE_WORKSPACE}" authoring
+      files:
+        - src: ../../../support/marketplace
+          dest: .
+        - src: fixture
+          dest: .
     tags:
       assets: skill:plugin-authoring/submit-plugin
       control: positive
       suite: smoke
-      boundary: synthetic-template-static-workflow
+      boundary: synthetic-marketplace-files
     graders:
       - type: completed
       - type: skill-invocation

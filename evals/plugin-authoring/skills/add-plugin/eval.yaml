@@ -1,5 +1,5 @@
 name: add-plugin
-description: Scaffolding a plugin shell in a disposable synthetic workspace.
+description: Creating a plugin shell by hand in a synthetic marketplace.
 type: capability
 defaults:
   executor: copilot-sdk
@@ -23,17 +23,18 @@ stimuli:
   - name: add-plugin-scaffolds-plugin-shell
     prompt: >-
       Add a plugin named yaml-after-edit to this marketplace. It will format YAML
-      after edits, but I'll write its parts myself later, so scaffold only the
-      plugin shell. I have approved the contribution scope; don't create an issue
-      or PR. Use the fixture's existing dependencies and run its static verification.
+      after edits, but I'll write its parts myself later, so create only the
+      plugin shell and register it. I have approved the contribution scope;
+      don't create an issue or PR.
     agent_environment:
-      commands:
-        - node "${MAINTENANCE_WORKSPACE}" authoring
+      files:
+        - src: ../../../support/marketplace
+          dest: .
     tags:
       assets: skill:plugin-authoring/add-plugin
       control: positive
       suite: smoke
-      boundary: synthetic-template-static-workflow
+      boundary: synthetic-marketplace-files
     graders:
       - type: completed
       - type: skill-invocation

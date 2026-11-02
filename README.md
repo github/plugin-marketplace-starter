@@ -4,10 +4,8 @@ A GitHub template for setting up and maintaining a GitHub Copilot plugin
 marketplace: one repository that lists the plugins your team shares. It works
 for a team in an organization and for one person with a personal account.
 
-<!-- template-only -->
 **Status:** active development. GitHub maintains this template; see
 [Maintainers](#maintainers) and [Support](#support).
-<!-- /template-only -->
 
 Two files make the repository a marketplace:
 
@@ -19,72 +17,60 @@ Two files make the repository a marketplace:
 
 ## What's in the starter
 
-Two plugins that help you run the marketplace, and commands that add a plugin,
-remove one, and rename the marketplace.
+Two plugins that help you run the marketplace:
 
-<!-- plugin-table -->
 | Plugin | What it does |
 |---|---|
 | [plugin-authoring](plugins/plugin-authoring/) | Scaffold, try locally, and prepare contributions to this plugin marketplace. |
 | [marketplace-maintainer](plugins/marketplace-maintainer/) | Review contributed plugins, maintain remote pins, and prepare marketplace releases. |
 
-<!-- plugin:plugin-authoring -->
 `plugin-authoring`, for people who add plugins:
 
-- `add-plugin` skill: scaffolds a new plugin with `npm run new-plugin` and checks it with `npm run verify`.
+- `add-plugin` skill: creates a new plugin's folder and files and registers it in the catalog.
 - `try-plugin-locally` skill: installs a plugin from your checkout to try it before you open a pull request, then cleans up.
-- `submit-plugin` skill: bumps the version and changelog, runs `npm run verify`, and drafts the pull request.
-<!-- /plugin:plugin-authoring -->
+- `submit-plugin` skill: bumps the version and changelog and writes the pull request description.
 
-<!-- plugin:marketplace-maintainer -->
 `marketplace-maintainer`, for people who own the marketplace:
 
 - `plugin-reviewer` agent: reviews a plugin pull request without changing anything: what it runs, what it reaches, and whether it's registered correctly.
 - `update-remote-pins` skill: adds a plugin from another repository, or moves its pin, to a commit you've reviewed.
-- `release-plugins` skill: checks versions and changelogs, runs `npm run verify`, drafts release notes, and retires a plugin.
-<!-- /plugin:marketplace-maintainer -->
+- `release-plugins` skill: checks versions and changelogs, drafts release notes, and retires a plugin.
 
-<!-- template-only -->
 ## Background
 
-Teams that share Copilot customizations need a catalog, a way to add and
-remove plugins, and checks that keep it consistent. This template sets that up
-in one repository, so you can start sharing plugins right away.
+Teams that share Copilot customizations need a catalog and a simple way to add,
+remove, and review plugins. This template sets that up in one repository, so
+you can start sharing plugins right away.
 
 Planned work and known gaps are in the
 [open issues](https://github.com/github/plugin-marketplace-starter/issues).
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
-<!-- /template-only -->
 
 ## Requirements
 
 - To use the plugins: a current Copilot CLI, the GitHub Copilot app, or VS Code
   with agent plugins turned on, and a GitHub Copilot plan.
-- To change the marketplace: Node.js 22.14 or newer and npm. `npm ci` installs
-  everything else.
+- To lint the plugins and run their evals: Node.js 22.14 or newer and npm.
 
 ## Make it yours
 
-1. Click **Use this template** on GitHub, clone your new repository, and run
-   `npm ci`.
-2. Rename the marketplace. This changes the catalog, the repository overlay,
-   `package.json`, and the install commands in every README at once:
-
-   ```sh
-   npm run rename-marketplace -- --name my-team-plugins --owner "My Team" --repo my-org/my-team-plugins
-   ```
-
-   The name must be unique, lowercase, and hyphenated. Add `--dry-run` to see
-   which files would change.
-3. Keep the included plugins if they fit your team, or remove them. See
-   [Remove a plugin](#remove-a-plugin).
-4. Add your first plugin. See [Add a plugin](#add-a-plugin).
-5. Replace what's meant for you: your own copyright line in [LICENSE](LICENSE),
-   the title and introduction of this README, real owners in
-   [.github/CODEOWNERS](.github/CODEOWNERS), and your reporting channel in
-   [SECURITY.md](SECURITY.md).
-6. Run `npm run verify`. It fails on anything inconsistent and warns while the
-   template's names are still in place.
+1. Click **Use this template** on GitHub and clone your new repository.
+2. Name your marketplace. In [marketplace.json](marketplace.json), set `name`
+   (unique, lowercase, and hyphenated) and `owner.name`. In
+   [.github/copilot/settings.json](.github/copilot/settings.json), use the new
+   name as the key under `extraKnownMarketplaces` and after the `@` in each
+   key under `enabledPlugins`. Set `name` in [package.json](package.json) too.
+3. Update the install commands in this README and in each plugin's README: use
+   your repository instead of `github/plugin-marketplace-starter` or
+   `OWNER/REPO`, and your marketplace name after the `@`.
+4. Keep the included plugins if they fit your team, or
+   [remove them](#remove-a-plugin).
+5. [Add your first plugin](#add-a-plugin).
+6. Replace what's meant for this template: add your own copyright line to
+   [LICENSE](LICENSE) below GitHub's, rewrite this README's title,
+   introduction, Background, Maintainers, Support, and Acknowledgement, name
+   real owners in [.github/CODEOWNERS](.github/CODEOWNERS), and put your own
+   contacts in [SECURITY.md](SECURITY.md) and [SUPPORT.md](SUPPORT.md).
 7. Push, turn on branch protection or a ruleset for your default branch, and
    [add your marketplace in Copilot](#use-the-marketplace) to check that its
    plugins install.
@@ -109,57 +95,80 @@ Remote plugins, which live in another repository, are never enabled for you.
 
 ## Add a plugin
 
-```sh
-npm run new-plugin -- release-notes --description "Draft release notes from merged pull requests."
-npm run verify
-```
+The `add-plugin` skill does these steps for you. By hand:
 
-`new-plugin` creates `plugins/<name>/` with `plugin.json`, a README, and a
-CHANGELOG, adds the plugin to the catalog and the repository overlay, and lists
-it in this README. Then add the plugin's skills, agents, or other parts to that
-folder. The
+1. Create `plugins/<name>/` with a `plugin.json`:
+
+   ```json
+   {
+     "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+     "name": "release-notes",
+     "version": "0.1.0",
+     "description": "Draft release notes from merged pull requests.",
+     "license": "MIT"
+   }
+   ```
+
+   Add a `README.md` that says what it does and how to install it, and a
+   `CHANGELOG.md` with a `## 0.1.0` entry.
+2. Add the plugin to the `plugins` list in `marketplace.json` with the same
+   `name`, `version`, and `description`, and
+   `"source": "./plugins/release-notes"`.
+3. Enable it in `.github/copilot/settings.json` with
+   `"release-notes@plugin-marketplace-starter": true` under `enabledPlugins`.
+4. Add it to the table and install commands in this README.
+
+Then add the plugin's skills, agents, or other parts to its folder. The
 [Copilot CLI plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference)
-lists what a plugin can contain.
+lists what a plugin can contain. Put any evals for it in `evals/<name>/`.
 
 When you change a plugin, bump its version in `plugin.json` and
-`marketplace.json` and add a `CHANGELOG.md` entry; `npm run verify` checks
-that they match.
+`marketplace.json` together, and add a `CHANGELOG.md` entry.
 
 ## Remove a plugin
 
-```sh
-npm run remove-plugin -- release-notes
-npm run verify
-```
-
-`remove-plugin` deletes `plugins/<name>/`, `evals/<name>/`, and the plugin's
-tests, removes it from the catalog and the repository overlay, and removes its
-install commands, table rows, and marked sections from Markdown files. Add
-`--dry-run` to see what would go.
+The `release-plugins` skill can retire a plugin for you. By hand, delete
+`plugins/<name>/` and `evals/<name>/`, then remove the plugin's entry from
+`marketplace.json`, its key from `enabledPlugins` in
+`.github/copilot/settings.json`, and its row and install command from this
+README.
 
 ## Checks
 
-`npm run verify` checks the catalog, each plugin's `plugin.json`, versions and
-changelogs, the repository overlay, and Markdown links, runs the tests, and
-lints the eval files. It never calls a model.
+```sh
+npm ci
+npm run lint
+```
+
+`npm run lint` checks the plugins' skills and the eval files with the pinned
+[Vally](https://microsoft.github.io/vally/) CLI. It never calls a model.
 [validate.yml](.github/workflows/validate.yml) runs it on every pull request.
 
 The included plugins have behavioral evals in `evals/`. They run real Copilot
-sessions and cost AI credits. Run them with `npm run eval -- --suite smoke`,
-then `npm run eval:report -- --suite smoke`.
-[evals.yml](.github/workflows/evals.yml) runs them when you start it by hand,
-or on pull requests once you set the repository variable `ENABLE_EVALS` to
-`true`. Add required reviewers to the `evals` environment to approve each run.
+sessions and cost AI credits. The `plugin-reviewer` eval needs the full Copilot
+CLI that `npm ci` installs, so point `COPILOT_CLI_PATH` at it:
+
+```sh
+export COPILOT_CLI_PATH="$PWD/node_modules/@github/copilot/npm-loader.js"
+npm run eval -- --suite smoke
+```
+
+In PowerShell, set it with
+`$env:COPILOT_CLI_PATH = "$PWD\node_modules\@github\copilot\npm-loader.js"`.
+
+Results go to `vally-results/`.
+[evals.yml](.github/workflows/evals.yml) runs the evals when you start it by
+hand, or on pull requests once you set the repository variable `ENABLE_EVALS`
+to `true`. Add required reviewers to the `evals` environment to approve each
+run.
 
 ## License
 
 This project is licensed under the terms of the MIT open source license. Please
 refer to [LICENSE](LICENSE) for the full terms. That one file covers every
-plugin here. Keep its `Copyright` line for the code you kept from the template,
-and add your own line below it. The vendored Agent Plugins schema keeps its
-Apache-2.0 [license](schemas/LICENSE-APACHE-2.0.txt) and [notice](schemas/NOTICE).
+plugin here. Keep its `Copyright` line for the code you kept from the
+template, and add your own line below it.
 
-<!-- template-only -->
 ## Maintainers
 
 GitHub's Copilot Evals team, `@github/code-ai-evals`, maintains this template.
@@ -174,8 +183,6 @@ See [SUPPORT.md](SUPPORT.md) for how to ask questions and report bugs, and
 ## Acknowledgement
 
 This template builds on the [Agent Plugins](https://agent-plugins.org/)
-standard and its schemas, and runs its evals with
-[Vally](https://microsoft.github.io/vally/). Thanks to
-[@digitarald](https://github.com/digitarald), who wrote its first version, and
-to everyone who's contributed since.
-<!-- /template-only -->
+standard and runs its evals with [Vally](https://microsoft.github.io/vally/).
+Thanks to [@digitarald](https://github.com/digitarald), who wrote its first
+version, and to everyone who's contributed since.

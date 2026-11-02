@@ -1,7 +1,0 @@
-Agent Plugins 1.0.0 plugin manifest schema
-Source: https://agent-plugins.org/schemas/1.0.0/plugin.schema.json
-Project: https://github.com/agentplugins/agent-plugins-spec
-
-The schema is software material licensed under Apache-2.0 by the Agent Plugins
-project. See LICENSE-APACHE-2.0.txt and the upstream LICENSE.md.
-This copy has formatting changes only; schema values are unchanged.

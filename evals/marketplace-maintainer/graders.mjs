@@ -11,9 +11,6 @@ const json = (workspace, path) => {
     throw error;
   }
 };
-const ran = (trajectory, pattern) => calls(trajectory).some((call) =>
-  call.success && pattern.test(JSON.stringify(call.args))
-  && !/exit(?:ed)? (?:with )?code[: ]+[1-9]/i.test(JSON.stringify(call.result)));
 
 export function evaluate(trajectory, workspace, mode) {
   const catalog = json(workspace, "marketplace.json");
@@ -29,8 +26,6 @@ export function evaluate(trajectory, workspace, mode) {
         && entry?.source?.repo === "fixture-org/outside-notes"),
       check("Preserved the unrelated local entry", catalog.plugins.some((item) => item.name === "sample-notes" && item.version === "1.0.0")),
       check("Kept the remote opt-in", Object.keys(settings.enabledPlugins).every((key) => !key.startsWith("outside-notes@"))),
-      check("Ran remote and static checks", ran(trajectory, /npm(?:\.cmd)?\s+run\s+check-remotes/)
-        && ran(trajectory, /npm(?:\.cmd)?\s+run\s+verify/)),
       check("Reported the upstream change and offline limit", /empty note lists/i.test(trajectory.output)
         && /offline|recorded/i.test(trajectory.output)),
     ];
@@ -41,7 +36,6 @@ export function evaluate(trajectory, workspace, mode) {
     return [
       check("Kept the already bumped release version", plugin?.version === "1.0.1" && entry?.version === "1.0.1"),
       check("Kept the matching changelog", /^## 1\.0\.1\s*$/m.test(readFileSync(resolve(workspace, "plugins/sample-notes/CHANGELOG.md"), "utf8"))),
-      check("Ran static verification", ran(trajectory, /npm(?:\.cmd)?\s+run\s+verify/)),
       check("Drafted the actual user-visible change", /sample-notes/.test(trajectory.output)
         && /1\.0\.1/.test(trajectory.output) && /empty.input/i.test(trajectory.output)),
       check("Did not publish", !calls(trajectory).some((call) =>
@@ -50,12 +44,13 @@ export function evaluate(trajectory, workspace, mode) {
   }
   if (mode === "retire") {
     return [
-      check("Used the repository removal command", ran(trajectory, /npm(?:\.cmd)?\s+run\s+remove-plugin[\s\S]*sample-notes/)),
       check("Removed plugin files and catalog entry", !existsSync(resolve(workspace, "plugins/sample-notes"))
         && catalog.plugins.every((item) => item.name !== "sample-notes")),
+      check("Removed the plugin's evals", !existsSync(resolve(workspace, "evals/sample-notes"))),
       check("Removed the overlay registration", !Object.keys(settings.enabledPlugins).some((key) => key.startsWith("sample-notes@"))),
-      check("Kept shared scaffolding", existsSync(resolve(workspace, "scripts/new-plugin.mjs"))),
-      check("Ran static verification", ran(trajectory, /npm(?:\.cmd)?\s+run\s+verify/)),
+      check("Removed its README row and install command", !/plugins\/sample-notes|install sample-notes@/.test(readFileSync(resolve(workspace, "README.md"), "utf8"))),
+      check("Kept the rest of the marketplace", catalog.name === "fixture-plugins" && existsSync(resolve(workspace, "AGENTS.md"))),
+      check("Drafted a retirement note", /sample-notes/.test(trajectory.output) && /retir/i.test(trajectory.output)),
     ];
   }
   throw new Error(`Unknown marketplace-maintainer grader mode: ${mode}`);

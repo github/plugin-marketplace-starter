@@ -2,17 +2,15 @@ name: Behavioral evals
 # Off by default, because evals run real Copilot sessions and spend AI credits.
 # Pull requests run evals only after you set the repository variable
 # ENABLE_EVALS to true. Manual runs work either way. The job runs the pinned
-# Vally CLI from package.json through the same launcher contributors use
-# locally. It uses the "evals" environment, so you can require a reviewer to
-# approve each run before it gets a token. See README.md.
+# Vally CLI from package.json, the same way contributors do locally. It uses the
+# "evals" environment, so you can require a reviewer to approve each run before
+# it gets a token. See README.md.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - plugins/**
       - evals/**
-      - schemas/**
-      - scripts/**
       - .vally.yaml
       - package.json
       - package-lock.json
@@ -48,6 +46,9 @@ jobs:
     env:
       SUITE: ${{ inputs.suite || 'smoke' }}
       VALLY_TELEMETRY_OPTOUT: '1'
+      # The full Copilot CLI from package.json, which custom-agent evals need.
+      COPILOT_CLI_PATH: ${{ github.workspace }}/node_modules/@github/copilot/npm-loader.js
+      COPILOT_AUTO_UPDATE: 'false'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -57,19 +58,14 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - name: Check the runtime bridge
-        run: node scripts/eval-runtime.js --version
-      # --require-pass fails the job on a failed verdict.
-      # The launcher uses one worker and one bounded retry.
+      # --require-pass fails the job on a failed verdict; errors always fail it.
       - name: Run evals
-        run: node scripts/evals.mjs eval --suite "$SUITE" --require-pass
+        run: npm run eval -- --suite "$SUITE" --require-pass
         env:
           GITHUB_TOKEN: ${{ github.token }}
-      # Prints the report and adds it to the job summary. It fails on an
-      # incomplete run or an infrastructure error.
-      - name: Report eval results
+      - name: Add the eval report to the job summary
         if: ${{ !cancelled() }}
-        run: node scripts/eval-report.mjs --suite "$SUITE"
+        run: cat vally-results/*/eval-results.md >> "$GITHUB_STEP_SUMMARY" || true
       # Results include transcripts, which can contain prompts, model output, and
       # code, so they're uploaded only when EVALS_UPLOAD_RESULTS is true.
       - name: Upload eval results

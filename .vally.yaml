@@ -1,7 +1,6 @@
-# Vally project configuration for the included plugins' evals. scripts/evals.mjs
-# and scripts/eval-report.mjs read it too.
+# Vally configuration for the included plugins' evals.
 paths:
-  # evals/ mirrors plugins/: one eval per asset, such as
+  # evals/ mirrors plugins/: one eval per skill or agent, such as
   # evals/<plugin>/skills/<skill>/eval.yaml.
   evals:
     - evals
@@ -9,11 +8,6 @@ paths:
     - eval.yaml
     - "*.eval.yaml"
   results: vally-results
-# Values containing a slash are repository-relative paths. scripts/evals.mjs
-# passes them to evals as absolute paths.
-params:
-  # Synthetic disposable workspaces using real template tooling, without eval answer keys.
-  MAINTENANCE_WORKSPACE: evals/support/maintenance-workspace.mjs
 suites:
   smoke:
     description: One representative case for each skill and agent

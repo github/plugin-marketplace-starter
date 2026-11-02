@@ -1,46 +1,55 @@
 ---
 name: submit-plugin
-description: "Prepare a marketplace plugin contribution or update for a pull request. Use to synchronize plugin versions and changelogs, flag compatibility changes, validate the contribution, and draft the repository's PR template and risk table. Don't use for a catalog-wide release, generic PRs, or publishing without approval."
+description: "Prepare a marketplace plugin contribution or update for a pull request. Use to bump plugin versions and changelogs, flag compatibility changes, and write the pull request description. Don't use for a catalog-wide release, generic PRs, or publishing without approval."
 ---
 
 # Prepare a plugin contribution
 
-Work in the user's marketplace checkout. Read its `AGENTS.md`,
-`CONTRIBUTING.md`, and `.github/PULL_REQUEST_TEMPLATE.md`
-(or the selected template in `.github/PULL_REQUEST_TEMPLATE/`). Don't replace
-the repository's template with a generic body. If the checkout or template
-can't be read, report that prerequisite rather than inventing its contents.
+Work in the user's marketplace checkout. Read its `AGENTS.md` and
+`CONTRIBUTING.md`. If the checkout can't be read, report that rather than
+guessing its rules.
 
 1. Establish the plugin and comparison base with the user or the existing PR.
    Inspect the working-tree changes and relevant history without discarding
-   unrelated work. For a new plugin, check the contribution issue requirement;
-   never invent approval or an issue number.
-2. Compare the public surface with the base: skill and agent names, tools and
-   schemas, hook events, permissions, network access, and supported hosts.
-   Flag renamed or removed skills/agents/tools and behavior changes for current
-   users. A new automatic hook also needs explicit risk review.
-3. For each changed existing plugin, use semantic versioning:
-   patch for fixes/wording, minor for new compatible behavior, major for breaking
-   changes. Ask when compatibility is unclear. Update `plugin.json` and the
-   matching `marketplace.json` version together and add a `## <version>` heading
-   to `CHANGELOG.md`. Don't bump twice if this contribution already has the
-   correct new version and changelog. A new plugin keeps its initial version;
-   changes only outside a plugin don't require a plugin version bump.
-4. Check matching catalog descriptions, local overlay enablement, and READMEs.
-   If the plugin has evals in `evals/<name>/`, check that they use only
-   synthetic data. Don't claim that static checks prove behavior.
-5. Run `npm run verify`.
-   Fix contribution-related failures, and report any remaining failure as a
-   blocker. Paid evals and the evals workflow require separate approval.
-6. Draft the PR body in chat using the actual template's headings, comments,
-   checklist items, and ordering. Mark items honestly; include each exact
-   validation command and result. Fill every risk-table row from evidence
-   (use "none" only when verified), including what runs, files, network,
-   credentials, retained data, model inputs, dependencies/licenses, and remote
-   sources. Identify owner/approver gaps. In **Paid evals**, list actual runs
-   and results or "None; not run." Call out breaking changes and host checks
-   that weren't exercised.
+   unrelated work. Never invent approval or an issue number.
+2. Compare the public surface with the base: skill and agent names, tools,
+   hook events, permissions, network access, and supported hosts. Flag renamed
+   or removed parts and behavior changes for current users. A new automatic
+   hook needs explicit risk review.
+3. For each changed existing plugin, use semantic versioning: patch for fixes
+   and wording, minor for new compatible behavior, major for breaking changes.
+   Ask when compatibility is unclear. Update the version in `plugin.json` and
+   the matching `marketplace.json` entry together, and add a `## <version>`
+   heading with a short entry to `CHANGELOG.md`. Don't bump twice if the
+   contribution already has the correct new version and changelog. A new plugin
+   keeps its initial version.
+4. Check that the catalog description matches `plugin.json`, the plugin is
+   enabled in `.github/copilot/settings.json`, the JSON files are valid, and the
+   README describes the change. If the plugin has evals in `evals/<name>/`,
+   check that they use only synthetic data.
+5. Write the pull request description in chat with these sections:
 
-Return the version/changelog changes, compatibility risks, validation results,
-and complete PR draft. Preparing the draft doesn't authorize creating an issue,
+   ```markdown
+   ## What changed
+   One or two sentences, and any breaking change.
+
+   ## Version and changelog
+   <plugin>: <old version> -> <new version>, with a CHANGELOG.md entry.
+
+   ## Checks
+   What you checked, and anything you couldn't check, such as a host you
+   didn't try.
+
+   ## Risk
+   ```
+
+   Under **Risk**, if the plugin runs no code (only skills or agents), say so in
+   one line. Otherwise answer each question from evidence, using "none" only
+   when verified: what runs, and when; files it reads or writes; network
+   destinations; credentials or tokens and where they come from; data it keeps,
+   where, and for how long; data it sends to the model; new dependencies and
+   their licenses; remote sources and the pinned sha; and who owns it.
+
+Return the version and changelog changes, compatibility risks, and the pull
+request description. Preparing it doesn't authorize creating an issue,
 committing, pushing, opening a PR, or publishing; do those only if requested.

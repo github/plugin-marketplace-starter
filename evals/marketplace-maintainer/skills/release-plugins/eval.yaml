@@ -1,5 +1,5 @@
 name: release-plugins
-description: Release readiness and retirement using real template checks in synthetic workspaces.
+description: Release readiness and retirement in a synthetic marketplace.
 type: capability
 defaults:
   executor: copilot-sdk
@@ -23,17 +23,20 @@ stimuli:
     prompt: >-
       Get this catalog ready to release against released.json. sample-notes has
       already been bumped and its changelog describes the wording fix. Check the
-      versions and changelog, run the fixture's static verify command, and draft
-      short release notes in chat. Don't increment its version again or publish.
-      No model-backed eval or manual host test was run.
+      versions and changelog, and draft short release notes in chat. Don't
+      increment its version again or publish. No model-backed eval or manual host
+      test was run.
     agent_environment:
-      commands:
-        - node "${MAINTENANCE_WORKSPACE}" release
+      files:
+        - src: ../../../support/marketplace
+          dest: .
+        - src: fixture
+          dest: .
     tags:
       assets: skill:marketplace-maintainer/release-plugins
       control: positive
       suite: smoke
-      boundary: synthetic-template-static-workflow
+      boundary: synthetic-marketplace-files
     graders:
       - type: completed
       - type: skill-invocation
@@ -46,17 +49,20 @@ stimuli:
   - name: release-plugins-retires-approved-plugin
     prompt: >-
       Retire sample-notes from this synthetic marketplace. I approve removing this
-      exact local plugin and its owned files because it is no longer maintained.
-      Inspect the removal dry run, use the repository removal command, verify the
-      remaining catalog, and draft a retirement note. Preserve shared tooling.
-      Don't commit, push, publish, or uninstall anyone's existing real copy.
+      exact local plugin, its folder, and its evals because it is no longer
+      maintained. Update the catalog, the repository overlay, and the README, and
+      draft a retirement note. Don't commit, push, publish, or uninstall anyone's
+      existing real copy.
     agent_environment:
-      commands:
-        - node "${MAINTENANCE_WORKSPACE}" release
+      files:
+        - src: ../../../support/marketplace
+          dest: .
+        - src: fixture
+          dest: .
     tags:
       assets: skill:marketplace-maintainer/release-plugins
       control: positive
-      boundary: synthetic-template-static-workflow
+      boundary: synthetic-marketplace-files
     graders:
       - type: completed
       - type: skill-invocation

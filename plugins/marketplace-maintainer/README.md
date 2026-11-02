@@ -3,17 +3,17 @@
 Review contributed plugins, maintain remote pins, and prepare marketplace releases.
 
 For owners of a checkout of this marketplace starter or a renamed copy. Its
-workflows use that checkout's catalog and maintenance scripts.
+workflows edit that checkout's catalog and plugin files.
 
 | Asset | Job |
 |---|---|
 | [plugin-reviewer](com.github.copilot/agents/plugin-reviewer.agent.md) | Read-only contribution review: runtime and data risks, layout, versions, and registrations |
 | [update-remote-pins](skills/update-remote-pins/SKILL.md) | Review upstream changes and deliberately add or update an opt-in remote pin |
-| [release-plugins](skills/release-plugins/SKILL.md) | Validate versions and changelogs, draft release notes, fix catalog health, or retire a plugin |
+| [release-plugins](skills/release-plugins/SKILL.md) | Check versions and changelogs, draft release notes, fix catalog inconsistencies, or retire a plugin |
 
 Review is an agent only, with `read` and `search` tools and no matching skill.
-It returns findings in chat, never posts comments or runs `verify`; the Validate
-workflow provides that evidence. Custom-agent support in the Copilot app is
+It returns findings in chat, never posts comments or runs commands; the Validate
+workflow lints the plugin. Custom-agent support in the Copilot app is
 not verified. Skills work in hosts that support Agent Skills.
 
 ## Install
@@ -51,7 +51,7 @@ and evals don't prove that a host loads or shows everything.
 - Review a clean contribution; a clean finding is accepted.
 - In a disposable checkout, update a reviewed remote pin and confirm full
   SHA/ref/version, upstream-change summary, and no overlay enablement.
-- Prepare release notes; confirm `verify` runs and no tag/release is published.
+- Prepare release notes; confirm versions and changelogs are checked and no tag or release is published.
 - Retire a disposable plugin only after approval and confirm registrations and
   owned files are removed without deleting shared tooling.
 - Ask an unrelated question; neither the skills nor the agent should run.

@@ -1,11 +1,9 @@
 # Remote pins
 
 The catalog can list plugins that live in another repository. They're opt-in:
-the repository overlay never enables a remote plugin, and `npm run verify`
-rejects an overlay that does, because checking out the marketplace must not
-activate code fetched from somewhere else. Each developer installs remote
-plugins themselves. Local checks validate a remote entry's metadata only; they
-never download or run upstream code.
+the repository overlay never enables a remote plugin, because checking out the
+marketplace must not activate code fetched from somewhere else. Each developer
+installs remote plugins themselves.
 
 ## The entry
 
@@ -32,7 +30,7 @@ never download or run upstream code.
 | `source.repo` | Required. `OWNER/REPO`, not a URL. |
 | `source.path` | The directory that holds `plugin.json`, relative to the repository root, such as `packages/plugin`. No leading `./` or `/`, no `..`, and no backslashes. Omit it when `plugin.json` is at the root. |
 | `source.sha` | Required. The full 40-character commit SHA you reviewed. A tag or branch can move; a commit can't. |
-| `source.ref` | Recommended. The release tag or branch the SHA came from. `verify` warns without it. |
+| `source.ref` | Recommended. The release tag or branch the SHA came from, so reviewers can tell what's pinned. |
 | `version` | Optional. The upstream `plugin.json` version at that SHA. |
 | `description`, `homepage` | Optional, but they help people choose. |
 
@@ -44,36 +42,32 @@ private-repository access requirement.
 
 ```sh
 gh api repos/OWNER/REPO/commits/REF --jq .sha
+git ls-remote https://github.com/OWNER/REPO REF
 gh api "repos/OWNER/REPO/contents/PATH/plugin.json?ref=SHA" -H "Accept: application/vnd.github.raw"
 ```
+
+For an annotated tag, `git ls-remote` also lists a `REF^{}` line; that's the
+commit to pin.
 
 `commits/REF` returns the commit a tag points at, even for an annotated tag,
 whose own object ID differs. Some projects tag a release and then build it in
 a later commit; pin the commit their own catalog uses.
 
-## Check pins against GitHub
+## Check a pin
 
-```sh
-npm run check-remotes
-npm run check-remotes -- anarlog
-```
-
-This uses the network, so `npm run verify` doesn't run it. For each remote
-entry it confirms that the repository and SHA exist, that `plugin.json` is at
-`path` at that SHA, and that its `name` and `version` match the catalog. It
-notes a legacy manifest location, a `ref` that has moved away from the pin,
-and a newer upstream release. It authenticates with `GH_TOKEN` or
-`GITHUB_TOKEN`, or the GitHub CLI login.
+Before and after an update, confirm with `gh api` that the SHA exists, that
+`plugin.json` is at `path` at that SHA, and that its `name` and `version`
+match the catalog entry. Note when `ref` has moved away from the pin, and
+when upstream has a newer release.
 
 ## Keep pins current
 
 Nothing updates remote pins automatically. On a regular cadence, or when
 upstream announces a release:
 
-1. Run `npm run check-remotes` and read its notes.
+1. Check each pin as described above.
 2. Review what changed upstream between the pinned SHA and the new one.
-3. Update `sha`, `ref`, and `version` together, and run `npm run verify` and
-   `npm run check-remotes`.
+3. Update `sha`, `ref`, and `version` together.
 4. Say in the pull request what you reviewed.
 
 After a pin changes, users pick it up with `copilot plugin marketplace update`,
@@ -83,7 +77,7 @@ then `copilot plugin update <plugin>@<marketplace>`.
 
 A remote entry can't be fully tested from a local checkout: when a marketplace
 is added from a local directory, Copilot CLI removes a downloaded remote plugin
-on the next command. Use `npm run check-remotes`, or push the change to a
+on the next command. Check the pin with `gh api`, or push the change to a
 repository you control and add that repository as the marketplace. Installing
 from upstream's own marketplace tests upstream's current version, not the pin.
 

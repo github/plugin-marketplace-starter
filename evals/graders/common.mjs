@@ -20,14 +20,6 @@ export function calls(trajectory, suffix) {
   });
 }
 
-export function payload(call) {
-  if (!call?.success) return undefined;
-  if (call.result?.structuredContent) return call.result.structuredContent;
-  const text = typeof call.result === "string" ? call.result : call.result?.content;
-  if (typeof text !== "string") throw new Error("A successful contract tool returned no JSON payload.");
-  return JSON.parse(text);
-}
-
 export function score(name, checks) {
   if (!checks.length) throw new Error("A grader must contain assertions.");
   const failures = checks.filter((item) => !item.passed);

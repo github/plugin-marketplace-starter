@@ -1,5 +1,5 @@
 name: try-plugin-locally
-description: Isolated Copilot CLI installation of a local plugin in a disposable synthetic workspace.
+description: Isolated Copilot CLI installation of a local plugin from a synthetic marketplace.
 type: capability
 defaults:
   executor: copilot-sdk
@@ -23,13 +23,14 @@ stimuli:
   - name: try-plugin-locally-installs-and-cleans-cli-copy
     prompt: >-
       Let me try sample-notes before I open a PR. Do an install-only check with the
-      pinned Copilot CLI, not a model session. Use an isolated COPILOT_HOME at the
+      Copilot CLI on PATH, not a model session. Use an isolated COPILOT_HOME at the
       absolute path of .fixture-copilot-home in this workspace, run the CLI from
       outside the checkout, and turn auto-update off. Check discovery, uninstall
       the test copy, and remove that test home afterward. Don't touch my real home.
     agent_environment:
-      commands:
-        - node "${MAINTENANCE_WORKSPACE}" authoring
+      files:
+        - src: ../../../support/marketplace
+          dest: .
     tags:
       assets: skill:plugin-authoring/try-plugin-locally
       control: positive

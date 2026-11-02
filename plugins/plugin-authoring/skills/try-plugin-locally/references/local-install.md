@@ -33,9 +33,8 @@ Confirm the plugin's skills appear in **Chat: Configure Skills**. See
 ## Test installation without publishing
 
 This checks what a teammate's `copilot plugin install` does, without starting a
-session or calling a model. It uses an isolated Copilot home and the CLI
-version the checkout pins, and runs from outside the checkout so its overlay
-doesn't mix in. Replace `MARKETPLACE` with the `name` in `marketplace.json` and
+session or calling a model. It uses an isolated Copilot home and runs from
+outside the checkout so the checkout's overlay doesn't mix in. Replace `MARKETPLACE` with the `name` in `marketplace.json` and
 `PLUGIN` with the plugin to install.
 
 PowerShell:
@@ -43,17 +42,15 @@ PowerShell:
 ```powershell
 $repo = "C:\path\to\your-marketplace"          # the checkout
 $env:COPILOT_HOME = "$env:TEMP\copilot-install-check"
-$env:COPILOT_AUTO_UPDATE = "false"            # run the pinned CLI version
-$copilot = "$repo\node_modules\.bin\copilot.cmd"
 Push-Location $env:TEMP                       # outside the checkout
-& $copilot plugin marketplace add $repo
-& $copilot plugin install PLUGIN@MARKETPLACE
-& $copilot plugin list --json
-& $copilot skill list --json
-& $copilot plugin uninstall PLUGIN@MARKETPLACE
+copilot plugin marketplace add $repo
+copilot plugin install PLUGIN@MARKETPLACE
+copilot plugin list --json
+copilot skill list --json
+copilot plugin uninstall PLUGIN@MARKETPLACE
 Pop-Location
 Remove-Item -Recurse -Force $env:COPILOT_HOME
-Remove-Item Env:COPILOT_HOME, Env:COPILOT_AUTO_UPDATE
+Remove-Item Env:COPILOT_HOME
 ```
 
 bash or zsh:
@@ -61,15 +58,13 @@ bash or zsh:
 ```sh
 repo=/path/to/your-marketplace                 # the checkout
 export COPILOT_HOME="$(mktemp -d)"
-export COPILOT_AUTO_UPDATE=false              # run the pinned CLI version
-copilot="$repo/node_modules/.bin/copilot"
 cd "$COPILOT_HOME"                            # outside the checkout
-"$copilot" plugin marketplace add "$repo"
-"$copilot" plugin install PLUGIN@MARKETPLACE
-"$copilot" plugin list --json
-"$copilot" skill list --json
-"$copilot" plugin uninstall PLUGIN@MARKETPLACE
-cd - >/dev/null; rm -rf "$COPILOT_HOME"; unset COPILOT_HOME COPILOT_AUTO_UPDATE
+copilot plugin marketplace add "$repo"
+copilot plugin install PLUGIN@MARKETPLACE
+copilot plugin list --json
+copilot skill list --json
+copilot plugin uninstall PLUGIN@MARKETPLACE
+cd - >/dev/null; rm -rf "$COPILOT_HOME"; unset COPILOT_HOME
 ```
 
 `.copilot-home/` inside the checkout is gitignored if you'd rather keep the

@@ -17,9 +17,8 @@ host support that official documentation doesn't state.
    - For an interactive CLI session in another project, use
      `copilot --plugin-dir "<absolute-plugin-directory>"`.
    - For an installation check, follow **Test installation without publishing**
-     in the local install guide. Use the checkout's pinned CLI with
-     auto-update off, a fresh isolated `COPILOT_HOME`, and a working directory
-     outside the checkout. Read the actual marketplace name from its catalog.
+     in the local install guide. Use the Copilot CLI on PATH, a fresh isolated
+     `COPILOT_HOME`, and a working directory outside the checkout. Read the actual marketplace name from its catalog.
      Run `plugin marketplace add "<absolute-checkout>"`,
      `plugin install <plugin>@<marketplace>`, `plugin list --json`, and
      `skill list --json` to check the actual enabled skill names.

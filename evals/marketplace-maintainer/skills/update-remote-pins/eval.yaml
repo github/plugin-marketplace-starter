@@ -1,5 +1,5 @@
 name: update-remote-pins
-description: Deliberate remote pins using real template checks and synthetic offline upstream evidence.
+description: Deliberate remote pins using synthetic offline upstream evidence.
 type: capability
 defaults:
   executor: copilot-sdk
@@ -22,15 +22,16 @@ stimuli:
   - name: update-remote-pins-uses-reviewed-release
     prompt: >-
       Pin outside-notes at its latest release using the reviewed offline
-      upstream-snapshot.json. Its current catalog pin is the previous release.
-      Review and summarize the supplied upstream changes, update the selected
-      entry, run check-remotes and static verify, and keep it opt-in.
-      This disposable fixture's check-remotes uses recorded API responses through
-      the real checker, not live GitHub. Don't access the network, install upstream
-      code, commit, or publish. State the offline verification limit.
+      upstream-snapshot.json instead of GitHub. Its current catalog pin is the
+      previous release. Review and summarize the supplied upstream changes, update
+      the selected entry, and keep it opt-in. Don't access the network, install
+      upstream code, commit, or publish. State the offline verification limit.
     agent_environment:
-      commands:
-        - node "${MAINTENANCE_WORKSPACE}" remote
+      files:
+        - src: ../../../support/marketplace
+          dest: .
+        - src: fixture
+          dest: .
     tags:
       assets: skill:marketplace-maintainer/update-remote-pins
       control: positive
