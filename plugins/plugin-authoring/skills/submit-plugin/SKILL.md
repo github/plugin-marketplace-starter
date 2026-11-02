@@ -6,7 +6,7 @@ description: "Prepare a marketplace plugin contribution or update for a pull req
 # Prepare a plugin contribution
 
 Work in the user's marketplace checkout. Read its `AGENTS.md`,
-`CONTRIBUTING.md`, `docs/security.md`, and `.github/PULL_REQUEST_TEMPLATE.md`
+`CONTRIBUTING.md`, and `.github/PULL_REQUEST_TEMPLATE.md`
 (or the selected template in `.github/PULL_REQUEST_TEMPLATE/`). Don't replace
 the repository's template with a generic body. If the checkout or template
 can't be read, report that prerequisite rather than inventing its contents.
@@ -19,18 +19,17 @@ can't be read, report that prerequisite rather than inventing its contents.
    schemas, hook events, permissions, network access, and supported hosts.
    Flag renamed or removed skills/agents/tools and behavior changes for current
    users. A new automatic hook also needs explicit risk review.
-3. For each changed existing plugin, use the contribution guide's versioning:
+3. For each changed existing plugin, use semantic versioning:
    patch for fixes/wording, minor for new compatible behavior, major for breaking
    changes. Ask when compatibility is unclear. Update `plugin.json` and the
    matching `marketplace.json` version together and add a `## <version>` heading
    to `CHANGELOG.md`. Don't bump twice if this contribution already has the
    correct new version and changelog. A new plugin keeps its initial version;
    changes only outside a plugin don't require a plugin version bump.
-4. Check matching catalog descriptions, local overlay enablement, `.vally.yaml`
-   skill paths and params, READMEs, and eval invocation/outcome assertions,
-   negative controls, and smoke coverage. Refer eval-writing work to
-   `docs/eval-authoring.md`; don't silently claim static coverage proves quality.
-5. Run `npm run build` if generated-file sources changed, then `npm run verify`.
+4. Check matching catalog descriptions, local overlay enablement, and READMEs.
+   If the plugin has evals in `evals/<name>/`, check that they use only
+   synthetic data. Don't claim that static checks prove behavior.
+5. Run `npm run verify`.
    Fix contribution-related failures, and report any remaining failure as a
    blocker. Paid evals and the evals workflow require separate approval.
 6. Draft the PR body in chat using the actual template's headings, comments,

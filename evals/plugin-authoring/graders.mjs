@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { calls, check, isMain, runGrade } from "./common.mjs";
 
@@ -20,19 +20,17 @@ export function evaluate(trajectory, workspace, mode) {
   const catalog = json(workspace, "marketplace.json");
   if (!Array.isArray(catalog?.plugins)) return [check("Preserved a valid catalog", false)];
   if (mode === "add") {
+    const folder = resolve(workspace, "plugins/yaml-after-edit");
     const plugin = json(workspace, "plugins/yaml-after-edit/plugin.json");
-    const hooks = json(workspace, "plugins/yaml-after-edit/com.github.copilot/hooks/hooks.json");
     const entry = catalog.plugins.find((item) => item.name === "yaml-after-edit");
     const settings = json(workspace, ".github/copilot/settings.json");
+    const contents = existsSync(folder) ? readdirSync(folder).sort().join(",") : "";
     return [
-      check("Used the repository scaffolder with a hook and no skill", ran(trajectory, /new-plugin[\s\S]*yaml-after-edit/)
-        && ran(trajectory, /--with(?:\\?"|\s)+hook/) && ran(trajectory, /--no-skill/)),
-      check("Created a hook-only plugin", plugin?.name === "yaml-after-edit" && hooks?.hooks?.postToolUse?.length > 0
-        && !existsSync(resolve(workspace, "plugins/yaml-after-edit/skills/yaml-after-edit/SKILL.md"))),
+      check("Used the repository scaffolder", ran(trajectory, /new-plugin[\s\S]*yaml-after-edit/)),
+      check("Created only the plugin shell", plugin?.name === "yaml-after-edit" && contents === "CHANGELOG.md,README.md,plugin.json"),
       check("Catalog and manifest agree", entry?.source === "./plugins/yaml-after-edit" && entry?.version === plugin?.version
         && entry?.description === plugin?.description),
       check("Enabled the local plugin", settings?.enabledPlugins?.["yaml-after-edit@fixture-plugins"] === true),
-      check("Created the hook's model-free test", existsSync(resolve(workspace, "test/yaml-after-edit-hook.test.mjs"))),
       check("Ran static verification", ran(trajectory, /npm(?:\.cmd)?\s+run\s+verify/)),
     ];
   }

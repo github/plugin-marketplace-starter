@@ -6,8 +6,9 @@ description: "Add an outside plugin to this marketplace or deliberately update i
 # Maintain remote plugin pins
 
 Work in the user's marketplace checkout, not this installed plugin directory.
-Read its `AGENTS.md`, `docs/remote-plugins.md`, `docs/security.md`, and
-`marketplace.json`. If those aren't available, report the missing checkout.
+Read its `AGENTS.md` and `marketplace.json`, and this skill's
+[remote pin rules](references/remote-pins.md). If the checkout isn't available,
+report that.
 
 1. Establish the upstream `OWNER/REPO`, plugin path, and requested release.
    Inspect any existing entry and run `npm run check-remotes -- <name>` for an
@@ -20,7 +21,7 @@ Read its `AGENTS.md`, `docs/remote-plugins.md`, `docs/security.md`, and
    at that exact SHA (with the raw content API), including its name, version,
    description, and license. Use `source.path` only for a subdirectory, with no
    leading slash, `./`, `..`, or backslashes. Follow the guide for annotated
-   tags and releases whose built commit differs from the tag.
+   tags and releases whose built commit differs from the tag in the remote pin rules.
    If the user explicitly supplies a reviewed offline upstream snapshot, use
    that evidence instead of fetching it again, and label the result offline.
    Don't present a recorded-response check as live GitHub verification.

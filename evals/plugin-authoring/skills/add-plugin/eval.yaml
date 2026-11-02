@@ -1,5 +1,5 @@
 name: add-plugin
-description: Repository-specific scaffolding in a disposable synthetic workspace.
+description: Scaffolding a plugin shell in a disposable synthetic workspace.
 type: capability
 defaults:
   executor: copilot-sdk
@@ -20,13 +20,12 @@ grading_environment:
     - src: ../../../graders/common.mjs
       dest: .grading/common.mjs
 stimuli:
-  - name: add-plugin-selects-hook-only
+  - name: add-plugin-scaffolds-plugin-shell
     prompt: >-
-      Add a plugin named yaml-after-edit that formats YAML after successful edits.
-      It should be a deterministic automatic action, not an on-demand procedure.
-      Scaffold only; leave implementation of the formatter for later.
-      I have approved the contribution scope; don't create an issue or PR.
-      Use the fixture's existing dependencies and run its static verification.
+      Add a plugin named yaml-after-edit to this marketplace. It will format YAML
+      after edits, but I'll write its parts myself later, so scaffold only the
+      plugin shell. I have approved the contribution scope; don't create an issue
+      or PR. Use the fixture's existing dependencies and run its static verification.
     agent_environment:
       commands:
         - node "${MAINTENANCE_WORKSPACE}" authoring

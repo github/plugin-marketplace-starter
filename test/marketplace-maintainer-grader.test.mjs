@@ -3,12 +3,11 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { missing } from "../scripts/examples.mjs";
 import { loadGrader } from "./support/grading.mjs";
 import { fixture } from "./support/maintenance-workspace.mjs";
 
-const skip = missing("evals/marketplace-maintainer/graders.mjs");
-const grader = skip ? undefined : await loadGrader("evals/marketplace-maintainer/skills/update-remote-pins/eval.yaml", ".grading/marketplace-maintainer.mjs");
+// This test belongs to the marketplace-maintainer plugin; npm run remove-plugin removes it with the plugin.
+const grader = await loadGrader("evals/marketplace-maintainer/skills/update-remote-pins/eval.yaml", ".grading/marketplace-maintainer.mjs");
 const trajectory = (commands, output = "") => ({
   output,
   events: commands.flatMap((command, i) => [
@@ -18,7 +17,7 @@ const trajectory = (commands, output = "") => ({
 });
 const passes = (checks) => checks.every((item) => item.passed);
 
-test("remote-pin grader rejects unchanged pins, wrong releases, and overlay enablement", { skip }, async (t) => {
+test("remote-pin grader rejects unchanged pins, wrong releases, and overlay enablement", async (t) => {
   const directory = await fixture(t, "remote");
   const evidence = trajectory(["npm run check-remotes -- outside-notes", "npm run verify"], "Support for empty note lists. Offline recorded checks.");
   assert.equal(passes(grader.evaluate(evidence, directory, "remote")), false);
@@ -43,7 +42,7 @@ test("remote-pin grader rejects unchanged pins, wrong releases, and overlay enab
   assert.equal(passes(grader.evaluate(evidence, directory, "remote")), false);
 });
 
-test("release grader accepts an existing bump and rejects re-bumping or publication", { skip }, async (t) => {
+test("release grader accepts an existing bump and rejects re-bumping or publication", async (t) => {
   const directory = await fixture(t, "release");
   const evidence = trajectory(["npm run verify"], "sample-notes 1.0.1: clarify empty-input wording.");
   assert.equal(passes(grader.evaluate(evidence, directory, "release")), true);
@@ -56,7 +55,7 @@ test("release grader accepts an existing bump and rejects re-bumping or publicat
   assert.equal(passes(grader.evaluate(evidence, directory, "release")), false);
 });
 
-test("retirement grader checks actual removal and preserved scaffolding", { skip }, async (t) => {
+test("retirement grader checks actual removal and preserved scaffolding", async (t) => {
   const directory = await fixture(t, "release");
   const evidence = trajectory(["npm run remove-plugin -- sample-notes --dry-run",
     "npm run remove-plugin -- sample-notes", "npm run verify"]);

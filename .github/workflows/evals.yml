@@ -4,7 +4,7 @@ name: Behavioral evals
 # ENABLE_EVALS to true. Manual runs work either way. The job runs the pinned
 # Vally CLI from package.json through the same launcher contributors use
 # locally. It uses the "evals" environment, so you can require a reviewer to
-# approve each run before it gets a token. See docs/ci.md.
+# approve each run before it gets a token. See README.md.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]

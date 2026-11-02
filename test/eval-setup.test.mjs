@@ -4,85 +4,19 @@ import { resolve, delimiter, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
-import { checkCoverage, checkLayout, discoverAssets, mirroredEvalFolder, readEvals, root, suiteTags } from "../scripts/validate-evals.mjs";
-import { evalFilenameMatcher, parseTagSelectors, readCatalog, readVallyConfig } from "../scripts/catalog.mjs";
+import { evalFilenameMatcher, expectedCases, readCatalog, readEvals, readVallyConfig } from "../scripts/catalog.mjs";
 import { defaultRuntime, pluginDirectories, runtimeArguments, runtimeEntry } from "../scripts/eval-runtime.js";
-import { evalParams, isPathParam, pathParams, reportArguments, runtimeBridge, runtimeEnvironment, vallyArguments, vallyCliPath, vallySelection } from "../scripts/evals.mjs";
-import { expectedCases, render, summarize } from "../scripts/eval-report.mjs";
+import { evalParams, isPathParam, pathParams, runtimeBridge, runtimeEnvironment, vallyArguments, withDefaultSuite } from "../scripts/evals.mjs";
+import { render, summarize } from "../scripts/eval-report.mjs";
 
-test("all local assets have positive, smoke, and negative coverage", async () => {
-  const config = await readVallyConfig(root);
-  const assets = await discoverAssets();
-  const specs = await readEvals(root, config);
-  const { localPlugins } = await readCatalog(root);
-  // A marketplace with no local plugins (only remote entries, or none yet) has nothing to cover.
-  if (!assets.length) return assert.equal(checkCoverage(assets, specs, { suites: suiteTags(config) }), specs.flatMap(({ spec }) => spec.stimuli).length);
-  for (const asset of assets) assert.ok(localPlugins.some((plugin) => asset.id.split(":")[1].startsWith(`${plugin.name}/`)));
-  const stimuli = specs.flatMap(({ spec }) => spec.stimuli);
-  assert.equal(checkCoverage(assets, specs, { suites: suiteTags(config) }), stimuli.length);
-  // Each asset's eval lives at the path that mirrors it under plugins/.
-  assert.doesNotThrow(() => checkLayout(assets, specs));
-  for (const asset of assets) {
-    const withoutPositive = specs.map((item) => ({ ...item, spec: { ...item.spec,
-      stimuli: item.spec.stimuli.filter((stimulus) => !(stimulus.tags.control === "positive" && [stimulus.tags.assets].flat().includes(asset.id))) } }))
-      .filter((item) => item.spec.stimuli.length);
-    assert.throws(() => checkCoverage(assets, withoutPositive, { suites: suiteTags(config) }), /missing/);
-  }
-});
-
-test("each asset's eval must live at the path that mirrors it", () => {
-  const plugin = resolve(root, "plugins/p");
-  const assets = [
-    { id: "skill:p/notes", kind: "skill", name: "notes", plugin: "p", path: resolve(plugin, "skills/notes") },
-    { id: "agent:p/helper", kind: "agent", name: "helper", plugin: "p", path: resolve(plugin, "com.github.copilot/agents/helper.agent.md") },
-    { id: "hook:p/postToolUse", kind: "hook", name: "postToolUse", plugin: "p", path: plugin },
-    { id: "mcp:p/server/echo", kind: "mcp", name: "echo", serverName: "server", plugin: "p", path: plugin },
-    { id: "extension:p/board", kind: "extension", name: "board", plugin: "p", path: resolve(plugin, "com.github.copilot/extensions/board") },
-  ];
-  assert.deepEqual(assets.map(mirroredEvalFolder), ["evals/p/skills/notes", "evals/p/agents/helper", "evals/p/hooks", "evals/p/mcp", "evals/p/extensions/board"]);
-  const at = (folder, asset, file = "eval.yaml") => ({ path: resolve(root, folder, file), spec: { stimuli: [
-    { name: `${asset.name}-yes`, tags: { assets: asset.id, control: "positive" } },
-    { name: `${asset.name}-no`, tags: { assets: asset.id, control: "negative" } },
-  ] } });
-  const mirrored = assets.map((asset) => at(mirroredEvalFolder(asset), asset));
-  assert.doesNotThrow(() => checkLayout(assets, mirrored));
-  // The upstream <name>.eval.yaml file name counts in the mirrored folder.
-  assert.doesNotThrow(() => checkLayout([assets[0]], [at("evals/p/skills/notes", assets[0], "notes.eval.yaml")]));
-  // A plugin-wide or old-style file doesn't count, and the message names the expected path.
-  assert.throws(() => checkLayout([assets[0]], [at("evals/p", assets[0])]), /skill:p\/notes: its eval belongs in evals\/p\/skills\/notes\/eval\.yaml/);
-  assert.throws(() => checkLayout([assets[1]], [at("evals/p/agent", assets[1])]), /evals\/p\/agents\/helper\/eval\.yaml/);
-  assert.throws(() => checkLayout([assets[0]], [at("evals/p/skills/notes/nested", assets[0])]), /evals\/p\/skills\/notes\/eval\.yaml/);
-  // The mirrored file needs both its own positive cases and its own negative control.
-  const positiveOnly = at("evals/p/skills/notes", assets[0]);
-  positiveOnly.spec.stimuli.pop();
-  assert.throws(() => checkLayout([assets[0]], [positiveOnly]), /Add negative cases for it there/);
-  // Tags inherited from the eval's top level count, as they do for coverage.
-  const inherited = { path: resolve(root, "evals/p/hooks/eval.yaml"), spec: { tags: { assets: assets[2].id }, stimuli: [
-    { name: "hook-yes", tags: { control: "positive" } }, { name: "hook-no", tags: { control: "negative" } },
-  ] } };
-  assert.doesNotThrow(() => checkLayout([assets[2]], [inherited]));
-});
-
-test("every discovered skill must be loaded by its positive cases", async (t) => {
-  const assets = await discoverAssets();
-  const skill = assets.find((asset) => asset.kind === "skill");
-  if (!skill) return t.skip("No local skills remain after customization.");
-  const specs = await readEvals();
-  const unloaded = structuredClone(specs);
-  for (const { spec } of unloaded) {
-    if (spec.agent_environment) spec.agent_environment.skills = [];
-    for (const stimulus of spec.stimuli) {
-      if (stimulus.agent_environment) stimulus.agent_environment.skills = [];
-    }
-  }
-  assert.throws(() => checkCoverage(assets, unloaded), /load the actual skill/);
-});
+const root = fileURLToPath(new URL("../", import.meta.url));
 
 test("eval-only dependencies stay out of plugins and remote installation stays opt-in", async () => {
   const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
   for (const [name, version] of Object.entries({
-    "@github/copilot": "1.0.98", "@microsoft/vally-cli": "0.19.0", "@modelcontextprotocol/sdk": "1.32.1",
+    "@github/copilot": "1.0.98", "@microsoft/vally-cli": "0.19.0",
   })) assert.equal(manifest.devDependencies[name], version);
   for (const version of Object.values(manifest.devDependencies)) assert.match(version, /^\d+\.\d+\.\d+$/);
   assert.equal(manifest.engines.node, ">=22.14.0");
@@ -132,7 +66,7 @@ test("the launcher passes absolute values for every .vally.yaml path param and k
   assert.throws(() => vallyArguments("plan"), /Use eval/);
 });
 
-test("path params come only from .vally.yaml, so removing an example removes its param", async () => {
+test("path params come only from .vally.yaml", async () => {
   const directory = await mkdtemp(join(tmpdir(), "starter-params-"));
   try {
     assert.deepEqual(await pathParams(directory), {});
@@ -214,9 +148,8 @@ test("the source validator accepts CRLF changelog headings and excludes generate
 
 
 // These check the safety properties of the workflows, not their exact shape, so
-// the customizations docs/ci.md describes keep npm run verify passing: trimming
-// the validate matrix, removing the evals environment, uploading transcripts
-// for a debug run, or deleting evals.yml.
+// common customizations keep npm run verify passing: trimming the validate
+// matrix, removing the evals environment, or deleting evals.yml.
 test("deterministic CI stays model-free, and opt-in behavioral CI runs the pinned Vally launcher on trusted code", async () => {
   const automatic = parse(await readFile(resolve(root, ".github/workflows/validate.yml"), "utf8"));
   const evalsPath = resolve(root, ".github/workflows/evals.yml");
@@ -244,8 +177,7 @@ test("deterministic CI stays model-free, and opt-in behavioral CI runs the pinne
     }
   }
   assert.ok(manifest.scripts.verify.includes("eval:lint"));
-  assert.ok(manifest.scripts.verify.includes("build:check"));
-  assert.ok(!manifest.scripts.verify.includes("eval:smoke"));
+  assert.ok(!manifest.scripts.verify.includes("evals.mjs eval"));
   assert.ok(!manifest.scripts.verify.includes("npm run eval "));
   if (!evals) return;
 
@@ -254,8 +186,7 @@ test("deterministic CI stays model-free, and opt-in behavioral CI runs the pinne
   const runners = Object.entries(evals.jobs).filter(([, job]) => job.steps.some((step) => /scripts\/evals\.mjs eval\b/.test(step.run ?? "")));
   assert.ok(runners.length, "evals.yml should have a job that runs evals.");
   for (const [name, job] of runners) {
-    // An environment is optional (docs/ci.md explains when to drop it); if
-    // there is one, it's the evals environment.
+    // An environment is optional; if there is one, it's the evals environment.
     if (job.environment !== undefined) assert.equal(job.environment?.name ?? job.environment, "evals", name);
     assert.equal(String(job.env?.VALLY_TELEMETRY_OPTOUT), "1", name);
     // Opt-in, never on forks or drafts.
@@ -281,90 +212,43 @@ test("deterministic CI stays model-free, and opt-in behavioral CI runs the pinne
   }
 });
 
-test("reports select the cases of a configured suite or of specific eval specs", () => {
+test("reports expect the cases of a configured suite, with eval-level tags inherited as in Vally", () => {
   const specs = [
     { path: resolve(root, "evals/a/eval.yaml"), spec: { stimuli: [{ name: "a-smoke", tags: { suite: "smoke" } }, { name: "a-other", tags: {} }] } },
-    { path: resolve(root, "evals/b/release.eval.yaml"), spec: { stimuli: [{ name: "b-ci", tags: { lane: ["ci", "nightly"] } }] } },
+    { path: resolve(root, "evals/b/release.eval.yaml"), spec: { tags: { lane: "ci" }, stimuli: [{ name: "b-ci" }, { name: "b-nightly", tags: { lane: "nightly" } }] } },
   ];
   const config = { suites: {
     smoke: { filter: { suite: "smoke" } },
-    ci: { filter: { lane: "ci" } },
+    ci: { filter: { lane: ["ci", "weekly"] } },
     full: { evals: ["evals/**/eval.yaml", "evals/**/*.eval.yaml"] },
     "a-only": { evals: ["evals/a/*.yaml"] },
   } };
-  const names = (options) => [...expectedCases(specs, config, options)].sort();
-  assert.deepEqual(names({}), ["a-other", "a-smoke", "b-ci"]);
-  assert.deepEqual(names({ suite: "smoke" }), ["a-smoke"]);
-  assert.deepEqual(names({ suite: "ci" }), ["b-ci"]);
-  assert.deepEqual(names({ suite: "a-only" }), ["a-other", "a-smoke"]);
-  assert.deepEqual(names({ evalSpecs: ["evals/b/release.eval.yaml"] }), ["b-ci"]);
-  assert.deepEqual(names({ evalSpecs: ["evals/a/eval.yaml"], suite: "smoke" }), ["a-smoke"]);
+  const names = (suite) => [...expectedCases(specs, config, { suite })].sort();
+  assert.deepEqual(names(), ["a-other", "a-smoke", "b-ci", "b-nightly"]);
+  assert.deepEqual(names("smoke"), ["a-smoke"]);
+  assert.deepEqual(names("ci"), ["b-ci"]);
+  assert.deepEqual(names("a-only"), ["a-other", "a-smoke"]);
   assert.throws(() => expectedCases(specs, config, { suite: "nightly" }), /Unknown suite nightly/);
-  assert.throws(() => expectedCases(specs, config, { evalSpecs: ["evals/missing/eval.yaml"] }), /No eval spec/);
-  assert.throws(() => expectedCases(specs, config, { evalSpecs: ["evals/b/release.eval.yaml"], suite: "smoke" }), /no cases/);
+  assert.throws(() => expectedCases(specs, { suites: { none: { filter: { suite: "none" } } } }, { suite: "none" }), /no cases/);
+  assert.throws(() => expectedCases([...specs, specs[0]], config), /Duplicate case: a-smoke/);
 });
 
-test("selection follows Vally: eval-level tags are inherited, a case's own tag wins, and --tag includes or excludes", () => {
-  const specs = [
-    { path: resolve(root, "evals/ci/eval.yaml"), spec: { tags: { lane: "ci", control: "positive" }, stimuli: [
-      { name: "inherits-ci", tags: {} },
-      { name: "overrides-lane", tags: { lane: "nightly" } },
-      { name: "negative-ci", tags: { control: "negative" } },
-    ] } },
-    { path: resolve(root, "evals/other/eval.yaml"), spec: { stimuli: [{ name: "untagged" }, { name: "smoke-one", tags: { suite: "smoke", control: "negative" } }] } },
-  ];
-  const config = { suites: { ci: { filter: { lane: "ci" } }, smoke: { filter: { suite: "smoke" } }, full: { evals: ["evals/**/eval.yaml"] } } };
-  const names = (options) => [...expectedCases(specs, config, options)].sort();
-  assert.deepEqual(names({ suite: "ci" }), ["inherits-ci", "negative-ci"]);
-  assert.deepEqual(names({ tags: ["control=negative"] }), ["negative-ci", "smoke-one"]);
-  // A missing key never matches an exclusion, as in Vally.
-  assert.deepEqual(names({ tags: ["control!=negative"] }), ["inherits-ci", "overrides-lane", "untagged"]);
-  assert.deepEqual(names({ tags: ["lane=ci,nightly", "control=positive"] }), ["inherits-ci", "overrides-lane"]);
-  assert.deepEqual(names({ suite: "full", tags: ["control=negative"] }), ["negative-ci", "smoke-one"]);
-  assert.deepEqual(names({ evalSpecs: ["evals/ci/eval.yaml"], tags: ["control!=negative"] }), ["inherits-ci", "overrides-lane"]);
-  assert.throws(() => parseTagSelectors(["nokey"]), /Invalid --tag/);
-  assert.deepEqual(parseTagSelectors(["a=1,2", "a=3", "b!=x"]), { include: { a: ["1", "2", "3"] }, exclude: { b: ["x"] } });
-  // Coverage sees the same inherited tags.
-  const asset = { id: "skill:p/p", kind: "skill", name: "p", path: resolve(root, "plugins/p/skills/p") };
-  const inherited = [{ path: resolve(root, "evals/p/eval.yaml"), spec: { tags: { assets: asset.id }, agent_environment: { skills: ["../../plugins/p/skills/p"] }, stimuli: [
-    { name: "p-runs", tags: { control: "positive", suite: "smoke" }, graders: [{ type: "skill-invocation", config: { required: ["p"] } }, { type: "output-contains", config: { substring: "p" } }] },
-    { name: "p-skips", tags: { control: "negative" }, graders: [{ type: "skill-invocation", config: { disallowed: ["p"] } }] },
-  ] } }];
-  assert.equal(checkCoverage([asset], inherited), 2);
-});
-
-test("tag selection matches Vally's own filter on this repository's evals", async (t) => {
+test("the smoke suite matches Vally's own filter on this repository's evals", async (t) => {
   let vally;
   try { vally = await import("@microsoft/vally"); } catch { return t.skip("@microsoft/vally isn't installed where the test can import it"); }
   const config = await readVallyConfig(root);
   const specs = await readEvals(root, config);
   if (!specs.length) return t.skip("no eval specs");
-  for (const tags of [["control=negative"], ["control!=negative"], ["suite=smoke"], ["suite=smoke", "control=positive"]]) {
-    const theirs = specs.flatMap(({ spec }) => vally.filterStimuli(spec.stimuli, spec.tags, vally.parseSuiteFilter(tags)).matched.map((stimulus) => stimulus.name)).sort();
-    let ours = [];
-    try { ours = [...expectedCases(specs, config, { tags })].sort(); } catch (error) { if (!/no cases/.test(error.message)) throw error; }
-    assert.deepEqual(ours, theirs, tags.join(" "));
-  }
+  const theirs = specs.flatMap(({ spec }) => vally.filterStimuli(spec.stimuli, spec.tags, vally.parseSuiteFilter(["suite=smoke"])).matched.map((stimulus) => stimulus.name)).sort();
+  assert.deepEqual([...expectedCases(specs, config, { suite: "smoke" })].sort(), theirs);
 });
 
-test("the launcher turns a suite with --plugin, --eval-spec, or --tag into a selection Vally accepts", () => {
-  const config = { suites: { smoke: { filter: { suite: "smoke" } }, full: { evals: ["evals/**/eval.yaml"] } } };
-  const specPaths = ["evals/a/eval.yaml", "evals/a/agents/helper/eval.yaml", "evals/b/other.yaml"];
-  assert.deepEqual(vallySelection([], config), ["--suite", "full"]);
-  assert.deepEqual(vallySelection(["--model", "x"], config), ["--suite", "full", "--model", "x"]);
-  assert.throws(() => vallySelection([], { suites: {} }), /Choose what to run/);
-  assert.deepEqual(vallySelection(["--suite", "smoke"], config), ["--suite", "smoke"]);
-  assert.deepEqual(vallySelection(["--eval-spec", "evals/a/eval.yaml", "--suite", "smoke", "--require-pass"], config),
-    ["--eval-spec", "evals/a/eval.yaml", "--tag", "suite=smoke", "--require-pass"]);
-  assert.deepEqual(vallySelection(["--suite", "full", "--eval-spec", "evals/a/eval.yaml"], config), ["--eval-spec", "evals/a/eval.yaml"]);
-  assert.deepEqual(vallySelection(["--suite", "full", "--tag", "control=negative"], config, { specPaths }),
-    ["--eval-spec", "evals/a/eval.yaml", "--eval-spec", "evals/a/agents/helper/eval.yaml", "--tag", "control=negative"]);
-  assert.deepEqual(vallySelection(["--suite=smoke", "--tag=control!=negative"], config), ["--tag", "suite=smoke", "--tag", "control!=negative"]);
-  assert.throws(() => vallySelection(["--suite", "smoke", "--tag", "suite=full"], config), /already filters on suite/);
-  assert.throws(() => vallySelection(["--suite", "full", "--eval-spec", "evals/b/other.yaml"], config), /None of the selected eval specs are in the full suite/);
-  // The report gets only options it understands, never Vally's run options.
-  assert.deepEqual(reportArguments(["--suite", "smoke", "--model", "gpt-5.4", "--require-pass", "-e", "evals/a/eval.yaml", "--tag", "x=y"], ["a"]),
-    ["--suite", "smoke", "--plugin", "a", "--eval-spec", "evals/a/eval.yaml", "--tag", "x=y"]);
+test("the launcher runs the full suite unless the command line selects something", () => {
+  assert.deepEqual(withDefaultSuite([]), ["--suite", "full"]);
+  assert.deepEqual(withDefaultSuite(["--model", "x"]), ["--suite", "full", "--model", "x"]);
+  for (const args of [["--suite", "smoke"], ["--suite=smoke"], ["--eval-spec", "evals/a/eval.yaml"], ["-e", "a"], ["--tag", "control=negative"], ["--help"]]) {
+    assert.deepEqual(withDefaultSuite(args), args);
+  }
 });
 
 // The template locks every package to registry.npmjs.org. A team that installs

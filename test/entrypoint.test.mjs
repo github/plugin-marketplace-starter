@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,14 +28,12 @@ function linkedCopy(t, files) {
 }
 
 test("scripts run main() when started through a linked directory", (t) => {
-  const linked = linkedCopy(t, [
-    ["scripts/entrypoint.mjs", "scripts/entrypoint.mjs"],
-    ["scripts/typecheck.mjs", "scripts/typecheck.mjs"],
-  ]);
-  // With no node_modules next to it, main() must run and report missing dependencies.
-  const result = spawnSync(process.execPath, [join(linked, "scripts", "typecheck.mjs")], { cwd: linked, encoding: "utf8" });
-  assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stderr, /Dependencies aren't installed/);
+  const linked = linkedCopy(t, [["scripts/entrypoint.mjs", "scripts/entrypoint.mjs"]]);
+  writeFileSync(join(linked, "scripts", "main.mjs"),
+    'import { isEntrypoint } from "./entrypoint.mjs";\nif (isEntrypoint(import.meta.url)) console.log("main ran");\n');
+  const result = spawnSync(process.execPath, [join(linked, "scripts", "main.mjs")], { cwd: linked, encoding: "utf8" });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /main ran/);
 });
 
 test("entrypoint checks compare real paths everywhere", () => {

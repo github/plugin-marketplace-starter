@@ -49,13 +49,11 @@ export function evaluate(trajectory, workspace, mode) {
     ];
   }
   if (mode === "retire") {
-    const vally = readFileSync(resolve(workspace, ".vally.yaml"), "utf8");
     return [
       check("Used the repository removal command", ran(trajectory, /npm(?:\.cmd)?\s+run\s+remove-plugin[\s\S]*sample-notes/)),
       check("Removed plugin files and catalog entry", !existsSync(resolve(workspace, "plugins/sample-notes"))
         && catalog.plugins.every((item) => item.name !== "sample-notes")),
-      check("Removed overlay and skill registration", !Object.keys(settings.enabledPlugins).some((key) => key.startsWith("sample-notes@"))
-        && !vally.includes("plugins/sample-notes/skills")),
+      check("Removed the overlay registration", !Object.keys(settings.enabledPlugins).some((key) => key.startsWith("sample-notes@"))),
       check("Kept shared scaffolding", existsSync(resolve(workspace, "scripts/new-plugin.mjs"))),
       check("Ran static verification", ran(trajectory, /npm(?:\.cmd)?\s+run\s+verify/)),
     ];

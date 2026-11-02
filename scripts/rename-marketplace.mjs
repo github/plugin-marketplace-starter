@@ -18,8 +18,8 @@ Renames the marketplace everywhere it appears:
 - the marketplace key and every <plugin>@<marketplace> key in
   .github/copilot/settings.json
 - name and repository in package.json, and name in package-lock.json
-- install commands, OWNER/REPO and MARKETPLACE placeholders, and the template's
-  own name in Markdown files, including plugin READMEs
+- install commands, GitHub links, OWNER/REPO and MARKETPLACE placeholders, and
+  the template's own name in Markdown files, including plugin READMEs
 - the README title, if it's still the template's, and sections marked
   <!-- template-only --> that describe the template itself
 
@@ -59,13 +59,14 @@ async function markdownFiles(directory) {
 export function renameMarkdown(text, { from, to }) {
   let next = text.replace(/\r\n/g, "\n");
   if (from.repo) next = next.replace(new RegExp(`(?<![\\w./-])${escape(from.repo)}(?![\\w-])`, "g"), to.repo);
+  if (from.repo) next = next.replace(new RegExp(`(https://github\\.com/)${escape(from.repo)}(?![\\w-])`, "g"), `$1${to.repo}`);
   next = next.replace(new RegExp(`(copilot plugin install [a-z0-9-]+@)${escape(from.name)}(?![\\w-])`, "g"), `$1${to.name}`)
     .replace(new RegExp(`(copilot plugin marketplace browse )${escape(from.name)}(?![\\w-])`, "g"), `$1${to.name}`)
     .replace(new RegExp(`@${escape(from.name)}(?![\\w-])`, "g"), `@${to.name}`)
     .replace(/^(copilot plugin marketplace add )OWNER\/REPO\s*$/gm, `$1${to.repo}`)
     .replace(/^(copilot plugin install [a-z0-9-]+@)MARKETPLACE\s*$/gm, `$1${to.name}`)
     .replace(/\nReplace `OWNER\/REPO` with the GitHub repository that hosts this marketplace\nand `MARKETPLACE` with the `name` in its `marketplace\.json`\.( See\n)?/g, (match, see) => see ? "\nSee\n" : "\n")
-    .replace(/\nReplace `OWNER\/REPO` with the GitHub repository that hosts this marketplace\.\n/g, "\n");
+    .replace(/\n\n?Replace `OWNER\/REPO` with the GitHub repository that hosts this marketplace\.\n/g, "\n");
   const lines = [];
   let skipping = false;
   for (const line of next.split("\n")) {

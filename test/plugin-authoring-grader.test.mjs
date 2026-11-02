@@ -1,14 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { missing } from "../scripts/examples.mjs";
 import { loadGrader } from "./support/grading.mjs";
 import { fixture } from "./support/maintenance-workspace.mjs";
 
-const skip = missing("evals/plugin-authoring/graders.mjs");
-const grader = skip ? undefined : await loadGrader("evals/plugin-authoring/skills/add-plugin/eval.yaml", ".grading/plugin-authoring.mjs");
+// This test belongs to the plugin-authoring plugin; npm run remove-plugin removes it with the plugin.
+const grader = await loadGrader("evals/plugin-authoring/skills/add-plugin/eval.yaml", ".grading/plugin-authoring.mjs");
 const trajectory = (commands, output = "") => ({
   output,
   events: commands.flatMap((command, i) => [
@@ -18,13 +17,17 @@ const trajectory = (commands, output = "") => ({
 });
 const passes = (checks) => checks.every((item) => item.passed);
 
-test("add-plugin grader rejects no-op and inconsistent registrations", { skip }, async (t) => {
+test("add-plugin grader rejects no-op, extra content, and inconsistent registrations", async (t) => {
   const directory = await fixture(t);
-  const evidence = trajectory(["npm run new-plugin -- yaml-after-edit --with hook --no-skill", "npm run verify"]);
+  const evidence = trajectory(["npm run new-plugin -- yaml-after-edit", "npm run verify"]);
   assert.equal(passes(grader.evaluate(evidence, directory, "add")), false);
-  execFileSync(process.execPath, ["scripts/new-plugin.mjs", "yaml-after-edit", "--with", "hook", "--no-skill"],
+  execFileSync(process.execPath, ["scripts/new-plugin.mjs", "yaml-after-edit"],
     { cwd: directory, encoding: "utf8", timeout: 30_000 });
   assert.equal(passes(grader.evaluate(evidence, directory, "add")), true);
+  assert.equal(passes(grader.evaluate(trajectory(["npm run verify"]), directory, "add")), false);
+  await mkdir(resolve(directory, "plugins/yaml-after-edit/skills/yaml-after-edit"), { recursive: true });
+  assert.equal(passes(grader.evaluate(evidence, directory, "add")), false);
+  await rm(resolve(directory, "plugins/yaml-after-edit/skills"), { recursive: true });
   const path = resolve(directory, "marketplace.json");
   const catalog = JSON.parse(await readFile(path, "utf8"));
   catalog.plugins.find((item) => item.name === "yaml-after-edit").version = "9.0.0";
@@ -34,7 +37,7 @@ test("add-plugin grader rejects no-op and inconsistent registrations", { skip },
   assert.equal(passes(grader.evaluate(evidence, directory, "add")), false);
 });
 
-test("local-install grader requires install, list, uninstall, and cleanup, not a claimed success", { skip }, async (t) => {
+test("local-install grader requires install, list, uninstall, and cleanup, not a claimed success", async (t) => {
   const directory = await fixture(t);
   const evidence = trajectory(["COPILOT_HOME=.fixture-copilot-home", "copilot plugin install sample-notes@fixture-plugins",
     "copilot plugin list --json", "copilot plugin uninstall sample-notes@fixture-plugins"]);
@@ -44,7 +47,7 @@ test("local-install grader requires install, list, uninstall, and cleanup, not a
   assert.equal(passes(grader.evaluate(evidence, directory, "try")), false);
 });
 
-test("submission grader requires a real version, changelog, and complete PR template", { skip }, async (t) => {
+test("submission grader requires a real version, changelog, and complete PR template", async (t) => {
   const directory = await fixture(t);
   const template = await readFile(resolve(directory, ".github/PULL_REQUEST_TEMPLATE.md"), "utf8");
   const filled = template.replace(/\| \|$/gm, "| None; skill-only, no new access. |");

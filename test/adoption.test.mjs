@@ -1,16 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { randomBytes } from "node:crypto";
-import { parse, stringify } from "yaml";
-import { root } from "../scripts/validate-evals.mjs";
-import { examples } from "../scripts/examples.mjs";
+import { fileURLToPath } from "node:url";
 import { pruneMarkdown } from "../scripts/remove-plugin.mjs";
 
+const root = fileURLToPath(new URL("../", import.meta.url));
 // Never copied into a scratch repository: dependencies are linked, and results,
 // eval state, and isolated Copilot homes don't belong to the template.
 const skipped = new Set([".git", "node_modules", "vally-results", ".vally", ".copilot-home"]);
@@ -18,8 +16,6 @@ const skipped = new Set([".git", "node_modules", "vally-results", ".vally", ".co
 // run in the real checkout only.
 const outerOnly = new Set(["adoption.test.mjs", "installation.test.mjs"]);
 const json = async (path) => JSON.parse(await readFile(path, "utf8"));
-const writeJson = (path, value) => writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
-const present = Object.keys(examples).filter((name) => existsSync(resolve(root, "plugins", name)));
 
 function run(directory, ...args) {
   return new Promise((done, fail) => {
@@ -66,12 +62,7 @@ async function scratchRepository(t) {
 
 // The same model-free checks as npm run verify, run inside a scratch copy.
 async function verify(directory, { tests = true } = {}) {
-  await ok(directory, "scripts/typecheck.mjs");
   const validated = await ok(directory, "scripts/validate.mjs");
-  // node_modules is linked into the copy, so this also proves the committed
-  // bundles don't depend on where node_modules lives.
-  await ok(directory, "scripts/build.mjs", "--check");
-  const coverage = await ok(directory, "scripts/validate-evals.mjs");
   await ok(directory, "scripts/evals.mjs", "lint");
   if (tests) {
     const files = (await readdir(join(directory, "test"))).filter((name) => name.endsWith(".test.mjs") && !outerOnly.has(name))
@@ -82,190 +73,55 @@ async function verify(directory, { tests = true } = {}) {
     assert.equal(result.status, 0, `Tests failed after customization:\n${failures.join("\n")}\n${result.stderr}`);
     assert.match(result.stdout, /# fail 0/);
   }
-  return { validated, coverage };
+  return validated;
 }
 
-const newPlugin = (directory, ...args) => ok(directory, "scripts/new-plugin.mjs", ...args);
-const removeExamples = (directory, ...names) => ok(directory, "scripts/remove-plugin.mjs", "--example", ...names);
+const localPlugins = async (directory) => (await json(join(directory, "marketplace.json"))).plugins
+  .filter((entry) => typeof entry.source === "string").map((entry) => entry.name);
 
 // Follows the README's "Make it yours" steps on a disposable copy.
-test("a team can rename the marketplace, drop examples and the remote entry, and add its own plugins", { timeout: 600_000 }, async (t) => {
+test("a team can rename the marketplace, add its own plugin, and remove one", { timeout: 600_000 }, async (t) => {
   const directory = await scratchRepository(t);
-  const fixture = `adoption-${randomBytes(3).toString("hex")}`;
-  if (!existsSync(join(directory, "plugins/release-notes"))) {
-    await newPlugin(directory, "release-notes");
-    // The guide's chat-skill eval must pass the coverage check and strict lint as written.
-    const example = (await readFile(join(directory, "docs/eval-authoring.md"), "utf8")).match(/```yaml\r?\n(name: release-notes\r?\n[\s\S]*?)```/)?.[1];
-    assert.ok(example, "docs/eval-authoring.md should keep its release-notes example.");
-    if (example) await writeFile(join(directory, "evals/release-notes/skills/release-notes/eval.yaml"), example);
-  }
-  await newPlugin(directory, `${fixture}-tools`, "--with", "mcp", "--with", "agent", "--description", "Fixture tools for the adoption test.");
-  // evals/ mirrors plugins/: one eval per asset, nothing in the shared folders.
-  for (const path of [`skills/${fixture}-tools`, `agents/${fixture}-tools-specialist`, "mcp"]) {
-    assert.ok(existsSync(join(directory, "evals", `${fixture}-tools`, path, "eval.yaml")), path);
-  }
-  const dropped = present.slice(0, 1);
-  if (dropped.length) await removeExamples(directory, ...dropped);
-
-  const catalog = await json(join(directory, "marketplace.json"));
-  catalog.name = `${fixture}-marketplace`;
-  catalog.owner = { name: "Acme" };
-  catalog.plugins = catalog.plugins.filter((entry) => typeof entry.source === "string");
-  await writeJson(join(directory, "marketplace.json"), catalog);
-  const manifest = await json(join(directory, "package.json"));
-  await writeJson(join(directory, "package.json"), { ...manifest, name: `${fixture}-marketplace` });
-  await writeJson(join(directory, ".github/copilot/settings.json"), {
-    extraKnownMarketplaces: { [catalog.name]: { source: { source: "directory", path: "." } } },
-    enabledPlugins: Object.fromEntries(catalog.plugins.map((entry) => [`${entry.name}@${catalog.name}`, true])),
-  });
-
-  const { validated, coverage } = await verify(directory);
-  assert.match(validated, /0 remote references/);
-  assert.doesNotMatch(validated, /name is still the template's/);
-  assert.match(coverage, new RegExp(`skill:${fixture}-tools/${fixture}-tools`));
-  assert.match(coverage, new RegExp(`agent:${fixture}-tools/${fixture}-tools-specialist`));
-  assert.match(coverage, new RegExp(`mcp:${fixture}-tools/${fixture}-tools/echo`));
-  for (const name of dropped) assert.doesNotMatch(coverage, new RegExp(`:${name}/`));
-  const params = JSON.stringify(parse(await readFile(join(directory, ".vally.yaml"), "utf8")).params ?? {});
-  for (const name of dropped) assert.doesNotMatch(params, new RegExp(name));
-
-  // Scaffolding refuses names that would collide or aren't valid plugin names.
-  for (const name of [`${fixture}-tools`, "Bad_Name"]) {
-    const refused = await run(directory, "scripts/new-plugin.mjs", name);
-    assert.notEqual(refused.status, 0);
-    assert.match(refused.stderr, /already|must be lowercase/);
-    assert.doesNotMatch(refused.stderr, /\n\s+at /, "Expected a plain message, not a stack trace.");
-  }
-
-  // Every problem is reported at once as `path: message`, without a stack trace.
-  const vally = parse(await readFile(join(directory, ".vally.yaml"), "utf8"));
-  vally.paths.skills = vally.paths.skills.filter((path) => !path.includes(fixture));
-  await writeFile(join(directory, ".vally.yaml"), stringify(vally));
-  await writeFile(join(directory, "README.md"), `${await readFile(join(directory, "README.md"), "utf8")}\n[one](missing-one.md) [two](missing-two.md)\n`);
-  const stale = await run(directory, "scripts/validate.mjs");
-  assert.notEqual(stale.status, 0);
-  assert.match(stale.stderr, new RegExp(`\\.vally\\.yaml paths\\.skills must list plugins/${fixture}-tools/skills`));
-  assert.match(stale.stderr, /README\.md: broken relative link missing-one\.md/);
-  assert.match(stale.stderr, /README\.md: broken relative link missing-two\.md/);
-  assert.doesNotMatch(stale.stderr, /\n\s+at /);
-});
-
-// The order a solo developer or a remote-only curator might take: strip every
-// example and remote entry first, then scaffold into what's left. In the
-// template that's an empty catalog; in your marketplace, your own plugins stay.
-test("an empty or remote-only marketplace passes verify, and new plugins scaffold into it", { timeout: 900_000 }, async (t) => {
-  const directory = await scratchRepository(t);
-  const prefix = `adoption-${randomBytes(3).toString("hex")}`;
-  if (present.length) await ok(directory, "scripts/remove-plugin.mjs", "--example", "--all");
-  for (const example of present) {
-    for (const path of [`plugins/${example}`, `evals/${example}`, ...examples[example].paths]) {
-      assert.ok(!existsSync(join(directory, path)), `${path} should be removed with ${example}.`);
-    }
-  }
-  const vally = parse(await readFile(join(directory, ".vally.yaml"), "utf8"));
-  for (const example of present) for (const param of examples[example].params) assert.equal(vally.params?.[param], undefined);
-  const before = await json(join(directory, "marketplace.json"));
-  const ownPlugins = before.plugins.filter((entry) => typeof entry.source === "string");
-  const readme = await readFile(join(directory, "README.md"), "utf8");
-  if (present.length) {
-    assert.ok(!existsSync(join(directory, "docs/examples.md")), "The examples guide goes with the last example.");
-    assert.doesNotMatch(readme, /Six small example plugins|authoring reference/);
-    if (!ownPlugins.length && readme.includes("<!-- plugin-table -->")) {
-      assert.match(readme, /<!-- plugin-table -->\n\| Plugin \| Try it \| Helps with \|\n\|---\|---\|---\|\n\| _None yet\._ \| \| \|\n/);
-    }
-  }
-
-  // Only remote entries (and your own plugins) left: everything still passes, including the tests.
-  const remote = await verify(directory);
-  if (!ownPlugins.length) assert.match(remote.validated, /There are no local plugins yet/);
-
-  for (const entry of before.plugins.filter((item) => typeof item.source !== "string")) {
-    await ok(directory, "scripts/remove-plugin.mjs", entry.name);
-  }
-  assert.ok((await json(join(directory, "marketplace.json"))).plugins.every((entry) => typeof entry.source === "string"));
-  const empty = await verify(directory, { tests: false });
-  if (!ownPlugins.length) assert.match(empty.coverage, /nothing to cover/);
-  // The setup steps about examples go with them, and the list stays numbered in order.
-  const setup = (await readFile(join(directory, "README.md"), "utf8")).match(/## Make it yours\n[\s\S]*?\n## /)?.[0];
-  if (setup) {
-    if (present.length) assert.doesNotMatch(setup, /remove-example/);
-    const numbers = [...setup.matchAll(/^(\d+)\. /gm)].map((match) => Number(match[1]));
-    assert.deepEqual(numbers, numbers.map((_, index) => index + 1));
-  }
-
-  const [hook, canvas, skill] = ["lint", "standup", "notes"].map((name) => `${prefix}-${name}`);
-  await newPlugin(directory, hook, "--no-skill", "--with", "hook");
-  await newPlugin(directory, canvas, "--with", "extension");
-  await newPlugin(directory, skill);
-  const scaffolded = await verify(directory);
-  for (const id of [`hook:${hook}/postToolUse`, `extension:${canvas}/${canvas}`, `skill:${canvas}/${canvas}`, `skill:${skill}/${skill}`]) {
-    assert.match(scaffolded.coverage, new RegExp(id));
-  }
-  const listed = await readFile(join(directory, "README.md"), "utf8");
-  if (listed.includes("<!-- plugin-table -->")) {
-    assert.doesNotMatch(listed, /_None yet\._/);
-    for (const name of [hook, canvas, skill]) assert.match(listed, new RegExp(`\\| \\[${name}\\]\\(plugins/${name}/\\) \\|`));
-  }
-  assert.match(scaffolded.validated, /still has scaffolded text/);
-
-  for (const path of [`${hook}/hooks/eval.yaml`, `${canvas}/extensions/${canvas}/eval.yaml`, `${canvas}/extensions/${canvas}/grader.mjs`,
-    `${canvas}/skills/${canvas}/eval.yaml`, `${skill}/skills/${skill}/eval.yaml`]) {
-    assert.ok(existsSync(join(directory, "evals", path)), path);
-  }
-
-  // Removing a scaffolded plugin takes its evals, graders, and the tests named after it, and keeps shared files.
-  await ok(directory, "scripts/remove-plugin.mjs", canvas, hook);
-  for (const path of [`evals/${canvas}`, `evals/${hook}`, `test/${hook}-hook.test.mjs`]) assert.ok(!existsSync(join(directory, path)), path);
-  for (const path of ["evals/graders/common.mjs", "evals/support/canvas-host.mjs"]) assert.ok(existsSync(join(directory, path)), path);
-  assert.ok(!Object.values(parse(await readFile(join(directory, ".vally.yaml"), "utf8")).params ?? {}).some((value) => String(value).includes(canvas)));
-  await verify(directory, { tests: false });
-});
-
-test("rename-marketplace renames the catalog, overlay, package, and install commands together", { timeout: 600_000 }, async (t) => {
-  const directory = await scratchRepository(t);
-  const before = await json(join(directory, "marketplace.json"));
-  const templateTitle = (await readFile(join(directory, "README.md"), "utf8")).startsWith("# Plugin marketplace starter\n");
   await ok(directory, "scripts/rename-marketplace.mjs", "--name", "jdoe-skills", "--owner", "jdoe", "--repo", "jdoe/my-skills");
   const catalog = await json(join(directory, "marketplace.json"));
-  assert.equal(catalog.name, "jdoe-skills");
-  assert.equal(catalog.owner.name, "jdoe");
-  assert.equal(catalog.plugins.length, before.plugins.length);
+  assert.deepEqual([catalog.name, catalog.owner.name], ["jdoe-skills", "jdoe"]);
   const settings = await json(join(directory, ".github/copilot/settings.json"));
   assert.deepEqual(Object.keys(settings.extraKnownMarketplaces), ["jdoe-skills"]);
   assert.ok(Object.keys(settings.enabledPlugins).every((key) => key.endsWith("@jdoe-skills")));
   const manifest = await json(join(directory, "package.json"));
-  assert.equal(manifest.name, "jdoe-skills");
-  assert.equal(manifest.repository.url, "https://github.com/jdoe/my-skills");
+  assert.deepEqual([manifest.name, manifest.repository.url], ["jdoe-skills", "https://github.com/jdoe/my-skills"]);
   const lock = await json(join(directory, "package-lock.json"));
-  assert.equal(lock.name, "jdoe-skills");
-  assert.equal(lock.packages[""].name, "jdoe-skills");
+  assert.deepEqual([lock.name, lock.packages[""].name], ["jdoe-skills", "jdoe-skills"]);
   const readme = await readFile(join(directory, "README.md"), "utf8");
-  if (templateTitle) assert.match(readme, /^# Jdoe Skills\n/);
-  assert.doesNotMatch(readme, /plugin-marketplace-starter|currently private/);
-  if (catalog.plugins.some((entry) => typeof entry.source === "string")) assert.match(readme, /copilot plugin marketplace add jdoe\/my-skills/);
-  for (const name of present) {
+  assert.doesNotMatch(readme, /plugin-marketplace-starter/);
+  for (const name of await localPlugins(directory)) {
     const pluginReadme = await readFile(join(directory, "plugins", name, "README.md"), "utf8");
     assert.match(pluginReadme, new RegExp(`copilot plugin install ${name}@jdoe-skills`));
-    assert.doesNotMatch(pluginReadme, /OWNER\/REPO|MARKETPLACE/);
-  }
-  const { validated } = await verify(directory, { tests: false });
-  assert.doesNotMatch(validated, /name is still the template's|still names the template's marketplace|OWNER\/REPO/);
-  if (readme.includes("A GitHub template for building, evaluating, and sharing AI customizations")) {
-    // rename-marketplace changes the title, but the introduction is still the template's.
-    assert.match(validated, /README\.md: the title or introduction is still the template's/);
-  }
-  const holders = [...(await readFile(join(directory, "LICENSE"), "utf8")).matchAll(/^Copyright \(c\) \d{4} (.+?)\s*$/gm)].map((match) => match[1]);
-  if (holders.length && holders.every((holder) => holder === "GitHub, Inc.")) {
-    // rename-marketplace leaves LICENSE alone, so the template's holder is still the only one.
-    assert.match(validated, /LICENSE: names only GitHub, Inc\., the template's holder/);
+    assert.doesNotMatch(pluginReadme, /OWNER\/REPO/);
   }
 
-  // A new plugin's README uses the real repository, and a second rename works too.
-  await newPlugin(directory, "regex-explainer");
-  assert.match(await readFile(join(directory, "plugins/regex-explainer/README.md"), "utf8"), /copilot plugin marketplace add jdoe\/my-skills\ncopilot plugin install regex-explainer@jdoe-skills/);
-  await ok(directory, "scripts/rename-marketplace.mjs", "--name", "jdoe-tools", "--owner", "jdoe", "--repo", "jdoe/tools");
-  assert.match(await readFile(join(directory, "plugins/regex-explainer/README.md"), "utf8"), /marketplace add jdoe\/tools\ncopilot plugin install regex-explainer@jdoe-tools/);
-  await ok(directory, "scripts/validate.mjs");
+  // A new plugin's README uses the real repository, and the shell passes verify.
+  await ok(directory, "scripts/new-plugin.mjs", "regex-explainer", "--description", "Explain regular expressions.");
+  assert.match(await readFile(join(directory, "plugins/regex-explainer/README.md"), "utf8"),
+    /copilot plugin marketplace add jdoe\/my-skills\ncopilot plugin install regex-explainer@jdoe-skills/);
+  assert.match(await readFile(join(directory, "README.md"), "utf8"), /\| \[regex-explainer\]\(plugins\/regex-explainer\/\) \| Explain regular expressions\. \|/);
+  const validated = await verify(directory);
+  assert.doesNotMatch(validated, /name is still the template's/);
+
+  // Scaffolding refuses names that would collide or aren't valid plugin names.
+  for (const name of ["regex-explainer", "Bad_Name", "graders"]) {
+    const refused = await run(directory, "scripts/new-plugin.mjs", name);
+    assert.notEqual(refused.status, 0, name);
+    assert.match(refused.stderr, /already|must be lowercase|reserved/, name);
+    assert.doesNotMatch(refused.stderr, /\n\s+at /, "Expected a plain message, not a stack trace.");
+  }
+
+  await ok(directory, "scripts/remove-plugin.mjs", "regex-explainer");
+  assert.ok(!existsSync(join(directory, "plugins/regex-explainer")));
+  assert.doesNotMatch(await readFile(join(directory, "README.md"), "utf8"), /regex-explainer/);
+  assert.ok(!(await localPlugins(directory)).includes("regex-explainer"));
+  await verify(directory, { tests: false });
+
   for (const args of [["--name", "Bad Name", "--owner", "x", "--repo", "a/b"], ["--name", "ok", "--owner", "x", "--repo", "https://github.com/a/b"]]) {
     const refused = await run(directory, "scripts/rename-marketplace.mjs", ...args);
     assert.notEqual(refused.status, 0);
@@ -273,16 +129,26 @@ test("rename-marketplace renames the catalog, overlay, package, and install comm
   }
 });
 
-test("each example can be removed on its own", { timeout: 600_000, skip: !present.length && "no examples left" }, async (t) => {
-  const pending = [...present];
-  const worker = async () => {
-    for (let name = pending.shift(); name; name = pending.shift()) {
-      const directory = await scratchRepository(t);
-      await removeExamples(directory, name);
-      await verify(directory, { tests: false });
-    }
-  };
-  await Promise.all([worker(), worker(), worker()]);
+// Removing every included plugin proves the template works with no plugins at
+// all, then a new plugin scaffolds into what's left.
+test("an empty marketplace passes verify, and new plugins scaffold into it", { timeout: 900_000 }, async (t) => {
+  const directory = await scratchRepository(t);
+  const included = await localPlugins(directory);
+  if (included.length) await ok(directory, "scripts/remove-plugin.mjs", ...included);
+  for (const name of included) {
+    for (const path of [`plugins/${name}`, `evals/${name}`]) assert.ok(!existsSync(join(directory, path)), `${path} should be removed with ${name}.`);
+    assert.ok(!(await readdir(join(directory, "test"))).some((file) => file.startsWith(`${name}-`)), `${name}'s tests should be removed.`);
+  }
+  for (const path of ["evals/graders/common.mjs", "scripts/new-plugin.mjs"]) assert.ok(existsSync(join(directory, path)), `${path} is shared and stays.`);
+  const readme = await readFile(join(directory, "README.md"), "utf8");
+  if (readme.includes("<!-- plugin-table -->")) assert.match(readme, /<!-- plugin-table -->\n\| Plugin \| What it does \|\n\|---\|---\|\n\| _None yet\._ \| \|\n/);
+  for (const name of included) assert.doesNotMatch(readme, new RegExp(`plugins/${name}|install ${name}@`));
+  const empty = await verify(directory);
+  assert.match(empty, /There are no local plugins yet/);
+
+  await ok(directory, "scripts/new-plugin.mjs", "notes");
+  assert.match(await readFile(join(directory, "README.md"), "utf8"), /\| \[notes\]\(plugins\/notes\/\) \|/);
+  await verify(directory, { tests: false });
 });
 
 test("removal renumbers a list that lost a marked step", () => {
@@ -291,9 +157,9 @@ test("removal renumbers a list that lost a marked step", () => {
   assert.equal(pruneMarkdown("1. One\n3. Kept as is\n", [], () => false), "1. One\n3. Kept as is\n");
 });
 
-test("removal prunes install commands, marked sections, example table rows, and links to removed files", () => {
-  assert.equal(pruneMarkdown(["| Plugin | Notes |", "|---|---|", "| [gone](plugins/gone/) | row |", "", "<!-- examples -->", "Six examples.", "<!-- /examples -->", "after"].join("\n"),
-    ["gone"], (link) => link.startsWith("plugins/gone"), ["examples"]), ["| Plugin | Notes |", "|---|---|", "| _None yet._ | |", "", "after"].join("\n"));
+test("removal prunes install commands, marked sections, table rows, and links to removed files", () => {
+  assert.equal(pruneMarkdown(["| Plugin | Notes |", "|---|---|", "| [gone](plugins/gone/) | row |", "", "after"].join("\n"),
+    ["gone"], (link) => link.startsWith("plugins/gone")), ["| Plugin | Notes |", "|---|---|", "| _None yet._ | |", "", "after"].join("\n"));
   const removed = (link) => link.startsWith("plugins/gone") || link.startsWith("../plugins/gone");
   const text = [
     "| [gone](plugins/gone/) | row |",

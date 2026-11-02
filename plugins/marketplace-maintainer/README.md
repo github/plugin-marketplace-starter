@@ -3,13 +3,13 @@
 Review contributed plugins, maintain remote pins, and prepare marketplace releases.
 
 For owners of a checkout of this marketplace starter or a renamed copy. Its
-workflows use that checkout's guides, catalog, and maintenance scripts.
+workflows use that checkout's catalog and maintenance scripts.
 
 | Asset | Job |
 |---|---|
-| [plugin-reviewer](com.github.copilot/agents/plugin-reviewer.agent.md) | Read-only contribution review: runtime/data risks, layout, versions, registrations, and evals (O2) |
-| [update-remote-pins](skills/update-remote-pins/SKILL.md) | Review upstream changes and deliberately add/update an opt-in remote pin (O3) |
-| [release-plugins](skills/release-plugins/SKILL.md) | Validate versions/changelogs, draft release notes, fix catalog health, or retire a plugin (O4, O5) |
+| [plugin-reviewer](com.github.copilot/agents/plugin-reviewer.agent.md) | Read-only contribution review: runtime and data risks, layout, versions, and registrations |
+| [update-remote-pins](skills/update-remote-pins/SKILL.md) | Review upstream changes and deliberately add or update an opt-in remote pin |
+| [release-plugins](skills/release-plugins/SKILL.md) | Validate versions and changelogs, draft release notes, fix catalog health, or retire a plugin |
 
 Review is an agent only, with `read` and `search` tools and no matching skill.
 It returns findings in chat, never posts comments or runs `verify`; the Validate

@@ -3,17 +3,15 @@
 Scaffold, try locally, and prepare contributions to this plugin marketplace.
 
 For contributors working in a checkout of this marketplace starter or a renamed
-copy. The skills read that checkout's guides and use its scripts; installing
-this plugin doesn't turn another repository into a marketplace.
+copy. The skills use that checkout's scripts; installing this plugin doesn't
+turn another repository into a marketplace.
 
 | Asset | Job |
 |---|---|
-| [add-plugin](skills/add-plugin/SKILL.md) | Choose a type and scaffold it with the repository's registrations and evals (A1, A2) |
-| [try-plugin-locally](skills/try-plugin-locally/SKILL.md) | Check CLI or VS Code discovery before publishing and clean up the test copy (A5) |
-| [submit-plugin](skills/submit-plugin/SKILL.md) | Check compatibility, synchronize versions/changelogs, validate, and draft the repository's PR template (A6) |
+| [add-plugin](skills/add-plugin/SKILL.md) | Scaffold a new plugin's shell and register it in the catalog and overlay |
+| [try-plugin-locally](skills/try-plugin-locally/SKILL.md) | Check CLI or VS Code discovery before publishing and clean up the test copy |
+| [submit-plugin](skills/submit-plugin/SKILL.md) | Check compatibility, synchronize versions and changelogs, validate, and draft the repository's PR template |
 
-Generic skill/agent writing uses public guidance linked from `add-plugin`.
-Eval writing stays in the checkout's eval-authoring guide, not in this plugin.
 There are no hooks, servers, or automatic actions.
 
 ## Install
@@ -27,7 +25,7 @@ Replace `OWNER/REPO` with the GitHub repository that hosts this marketplace.
 
 ## Try it
 
-> Add a plugin that formats YAML after edits.
+> Add a plugin named release-notes to this marketplace.
 >
 > Let me try my plugin locally before I open a PR.
 >
@@ -44,8 +42,8 @@ Before a release, try these by hand in each host you support. Automated tests
 and evals don't prove that a host loads or shows everything.
 
 - Confirm all three skills are discovered in Copilot CLI and VS Code.
-- In a disposable marketplace checkout, request a hook-only plugin and confirm
-  `add-plugin` selects `--with hook --no-skill` and runs `verify`.
+- In a disposable marketplace checkout, ask for a new plugin and confirm
+  `add-plugin` runs `new-plugin` and `verify`.
 - Test CLI installation in an isolated home, confirm discovery, then confirm
   the test copy is uninstalled and the real home is unchanged.
 - In VS Code, try the local plugin-location route, then restore settings.

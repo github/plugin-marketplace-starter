@@ -6,10 +6,10 @@ description: "Try a marketplace plugin from a local checkout before publishing o
 # Try a plugin locally
 
 Find the user's marketplace checkout, not this installed plugin's directory.
-Read its `AGENTS.md`, `docs/local-development.md`, and the selected plugin's
-README and manifest. If the checkout, plugin, or requested host is missing,
-ask for it before changing settings. Check the host matrix in
-`docs/customization-types.md`; don't promise unverified support.
+Read its `AGENTS.md`, this skill's [local install guide](references/local-install.md),
+and the selected plugin's README and manifest. If the checkout, plugin, or
+requested host is missing, ask for it before changing settings. Don't promise
+host support that official documentation doesn't state.
 
 1. Choose the least invasive path:
    - In the trusted checkout, the repository overlay already enables local
@@ -17,7 +17,7 @@ ask for it before changing settings. Check the host matrix in
    - For an interactive CLI session in another project, use
      `copilot --plugin-dir "<absolute-plugin-directory>"`.
    - For an installation check, follow **Test installation without publishing**
-     in the local-development guide. Use the checkout's pinned CLI with
+     in the local install guide. Use the checkout's pinned CLI with
      auto-update off, a fresh isolated `COPILOT_HOME`, and a working directory
      outside the checkout. Read the actual marketplace name from its catalog.
      Run `plugin marketplace add "<absolute-checkout>"`,
@@ -30,7 +30,7 @@ ask for it before changing settings. Check the host matrix in
      than claiming to have performed them.
 2. Confirm discovery: CLI install/list results, or the VS Code skills and agents
    lists. An installation message counts skills, not proof that a hook, MCP
-   server, or canvas works. The CLI's plugin list doesn't expose agent names;
+   server, or other part works. The CLI's plugin list doesn't expose agent names;
    verify agent discovery in the interactive host and mark it unverified if
    that can't be done here. Use the plugin README's **Host checks** to try one
    intended task and one non-trigger task. Starting a model session or a paid
@@ -48,5 +48,4 @@ ask for it before changing settings. Check the host matrix in
 
 Return the method, plugin and host, observed discovery and behavior, unverified
 checks, and cleanup result. A local-directory marketplace is live, not a copied
-published package. A remote pin needs the different procedure in
-`docs/remote-plugins.md`; local installation doesn't test that pin.
+published package. Local installation doesn't test a remote pin.

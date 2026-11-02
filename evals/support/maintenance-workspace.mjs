@@ -28,33 +28,29 @@ export async function createWorkspace(destination, scenario = "authoring") {
     throw new Error("The fixture workspace must be empty except for staged agent/git metadata.");
   }
   for (const name of ["scripts", "schemas"]) await cp(resolve(source, name), resolve(directory, name), { recursive: true });
-  for (const name of [".github", "docs", "plugins/sample-notes/skills/sample-notes", "fixture", "evals/support", "evals/graders"]) {
+  for (const name of [".github", "plugins/sample-notes/skills/sample-notes", "fixture", "evals/graders"]) {
     await mkdir(resolve(directory, name), { recursive: true });
   }
-  for (const name of ["support/canvas-host.mjs", "support/canvas-loader.mjs", "support/canvas-sdk.mjs", "graders/common.mjs"]) {
-    await cp(resolve(source, "evals", name), resolve(directory, "evals", name));
-  }
-  const policyFiles = ["AGENTS.md", "CONTRIBUTING.md", "docs/customization-types.md", "docs/security.md",
-    "docs/local-development.md", "docs/remote-plugins.md", "docs/eval-authoring.md"];
+  await cp(resolve(source, "evals/graders/common.mjs"), resolve(directory, "evals/graders/common.mjs"));
+  const policyFiles = ["AGENTS.md", "CONTRIBUTING.md"];
   for (const name of policyFiles) {
     const text = await readFile(resolve(source, name), "utf8");
     await writeFile(resolve(directory, name), text.replace(/\[([^\]]+)\]\((?!https?:|#)[^)]+\)/g, "$1"));
   }
   await cp(resolve(source, ".github/PULL_REQUEST_TEMPLATE.md"), resolve(directory, ".github/PULL_REQUEST_TEMPLATE.md"));
   await cp(resolve(source, "LICENSE"), resolve(directory, "LICENSE"));
-  await cp(resolve(source, "tsconfig.json"), resolve(directory, "tsconfig.json"));
   await symlink(resolve(source, "node_modules"), resolve(directory, "node_modules"), "junction");
   const pkg = JSON.parse(await readFile(resolve(source, "package.json"), "utf8"));
   await json(resolve(directory, "package.json"), {
     ...pkg, name: "fixture-plugins",
     scripts: {
       ...pkg.scripts,
-      // Exercise real structure/build checks, not subject-visible eval answer keys.
-      verify: "node scripts/typecheck.mjs && node scripts/validate.mjs && node scripts/build.mjs --check",
+      // Exercise the real structural checks, not subject-visible eval answer keys.
+      verify: "node scripts/validate.mjs",
       "check-remotes": "node fixture/check-remotes.mjs",
     },
   });
-  await writeFile(resolve(directory, "README.md"), "# Fixture marketplace\n\n<!-- plugin-table -->\n| Plugin | Try it | Helps with |\n|---|---|---|\n| [sample-notes](plugins/sample-notes/) | Summarize notes | Notes |\n\n```sh\ncopilot plugin marketplace browse fixture-plugins\ncopilot plugin install sample-notes@fixture-plugins\n```\n");
+  await writeFile(resolve(directory, "README.md"), "# Fixture marketplace\n\n<!-- plugin-table -->\n| Plugin | What it does |\n|---|---|\n| [sample-notes](plugins/sample-notes/) | Summarize synthetic release notes. |\n\n```sh\ncopilot plugin marketplace browse fixture-plugins\ncopilot plugin install sample-notes@fixture-plugins\n```\n");
   await json(resolve(directory, "plugins/sample-notes/plugin.json"), manifest);
   await writeFile(resolve(directory, "plugins/sample-notes/README.md"), "# Sample notes\n\n## Host checks\n\nTry a synthetic note.\n");
   const changed = scenario === "release";
@@ -80,7 +76,7 @@ export async function createWorkspace(destination, scenario = "authoring") {
     enabledPlugins: { "sample-notes@fixture-plugins": true },
   });
   await writeFile(resolve(directory, ".vally.yaml"),
-    "paths:\n  skills:\n    - plugins/sample-notes/skills\n  evals: [evals]\n  evalFilenames: [eval.yaml]\n  results: vally-results\nparams:\n  CANVAS_HOST: evals/support/canvas-host.mjs\nsuites:\n  smoke:\n    filter:\n      suite: smoke\n  full:\n    evals: [evals/**/eval.yaml]\n");
+    "paths:\n  evals: [evals]\n  evalFilenames: [eval.yaml]\n  results: vally-results\nsuites:\n  smoke:\n    filter:\n      suite: smoke\n  full:\n    evals: [evals/**/eval.yaml]\n");
   await json(resolve(directory, "released.json"), { plugins: [manifest] });
   await json(resolve(directory, "upstream-snapshot.json"), {
     repo: remote.source.repo, path: "", old: { sha: "a".repeat(40), ref: "v1.0.0", version: "1.0.0" },
