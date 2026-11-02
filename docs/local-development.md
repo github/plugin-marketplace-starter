@@ -1,5 +1,10 @@
 # Local development
 
+<!-- plugin:plugin-authoring -->
+The [try-plugin-locally skill](../plugins/plugin-authoring/skills/try-plugin-locally/SKILL.md)
+walks through these checks and cleans up only its own test installation.
+<!-- /plugin:plugin-authoring -->
+
 ## Work in this checkout
 
 Opening this checkout in a trusted Copilot CLI session makes every local plugin
@@ -86,6 +91,7 @@ Push-Location $env:TEMP                       # outside the checkout
 & $copilot plugin marketplace add $repo
 & $copilot plugin install PLUGIN@MARKETPLACE
 & $copilot plugin list --json
+& $copilot skill list --json
 Pop-Location
 Remove-Item -Recurse -Force $env:COPILOT_HOME
 Remove-Item Env:COPILOT_HOME, Env:COPILOT_AUTO_UPDATE
@@ -102,6 +108,7 @@ cd "$COPILOT_HOME"                            # outside the checkout
 "$copilot" plugin marketplace add "$repo"
 "$copilot" plugin install PLUGIN@MARKETPLACE
 "$copilot" plugin list --json
+"$copilot" skill list --json
 cd - >/dev/null; rm -rf "$COPILOT_HOME"; unset COPILOT_HOME COPILOT_AUTO_UPDATE
 ```
 
@@ -112,6 +119,10 @@ Expect `Plugin "PLUGIN" installed successfully` and, in the JSON list, an entry
 for it with `"enabled": true` and `"source": "live"`. A local-directory
 marketplace lists all of its plugins, so the ones you didn't install appear with
 `"enabled": false`. That's expected.
+
+`skill list --json` should list the plugin's expected skill names with
+`"source": "plugin"` and `"enabled": true`. The plugin list doesn't expose
+agent names; confirm custom-agent discovery in the interactive host separately.
 
 What this does and doesn't prove:
 

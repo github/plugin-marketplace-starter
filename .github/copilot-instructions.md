@@ -4,6 +4,15 @@ This repository is a marketplace of Copilot plugins. Before changing anything,
 read [AGENTS.md](../AGENTS.md) for the maintenance rules and
 [CONTRIBUTING.md](../CONTRIBUTING.md) for the change checklist.
 
+<!-- plugin:plugin-authoring -->
+- `plugin-authoring` helps contributors choose/scaffold, test locally, and
+  prepare a plugin pull request using this checkout's guides.
+<!-- /plugin:plugin-authoring -->
+<!-- plugin:marketplace-maintainer -->
+- `marketplace-maintainer` covers remote pins and releases; its
+  `plugin-reviewer` agent is read-only and returns contribution findings in chat.
+<!-- /plugin:marketplace-maintainer -->
+
 - Keep each plugin self-contained, and change its manifest, catalog entry,
   changelog, `.vally.yaml` entries, and evals together. Use
   `npm run new-plugin`, `npm run remove-plugin` (or `remove-example`), and

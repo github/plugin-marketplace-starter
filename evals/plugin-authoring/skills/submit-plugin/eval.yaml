@@ -1,0 +1,65 @@
+name: submit-plugin
+description: Contribution preparation for an existing plugin in a disposable synthetic workspace.
+type: capability
+defaults:
+  executor: copilot-sdk
+  model: gpt-5.4-mini
+  timeout: 5m
+  runs: 1
+# All of the plugin's skills load, as they do when it's installed, so these
+# cases also check that Copilot picks the right one.
+agent_environment:
+  skills:
+    - ../../../../plugins/plugin-authoring/skills/add-plugin
+    - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
+    - ../../../../plugins/plugin-authoring/skills/submit-plugin
+grading_environment:
+  files:
+    - src: ../../graders.mjs
+      dest: .grading/plugin-authoring.mjs
+    - src: ../../../graders/common.mjs
+      dest: .grading/common.mjs
+stimuli:
+  - name: submit-plugin-prepares-patch-and-template
+    prompt: >-
+      Get sample-notes ready for a pull request. The only change since released.json
+      is a wording fix clarifying that an empty input needs notes. It is an
+      existing 1.0.0 plugin and needs a patch release. Use released.json as the
+      comparison base instead of Git history. Synchronize its version and changelog,
+      run the fixture's static verification, and draft the complete repository PR
+      template in chat. No code runs automatically, no dependencies or network access
+      were added, and I haven't run paid evals. Don't create an issue, commit, push,
+      or open a PR; identify any remaining owner/approval or validation gaps.
+    agent_environment:
+      commands:
+        - node "${MAINTENANCE_WORKSPACE}" authoring
+    tags:
+      assets: skill:plugin-authoring/submit-plugin
+      control: positive
+      suite: smoke
+      boundary: synthetic-template-static-workflow
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required: [submit-plugin]
+      - type: program
+        config:
+          program: node
+          args: [.grading/plugin-authoring.mjs, submit]
+  - name: submit-plugin-ignores-pricing-question
+    prompt: Is a marketplace plugin the same thing as a paid Copilot subscription? Answer briefly without creating or changing files.
+    tags:
+      assets: skill:plugin-authoring/submit-plugin
+      control: negative
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          disallowed: [add-plugin, try-plugin-locally, submit-plugin]
+      - type: output-matches
+        config:
+          pattern: '[Nn]o\b|[Nn]ot the same'
+      - type: diff-empty
+scoring:
+  threshold: 1

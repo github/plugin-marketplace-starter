@@ -22,6 +22,12 @@ project you agree to abide by its terms.
 
 ## Add or change a plugin
 
+<!-- plugin:plugin-authoring -->
+The [submit-plugin skill](plugins/plugin-authoring/skills/submit-plugin/SKILL.md)
+can synchronize versions, flag breaking changes, run checks, and draft the
+repository's PR template. It doesn't submit anything without a request.
+<!-- /plugin:plugin-authoring -->
+
 Start a new plugin with `npm run new-plugin -- <name>`, optionally with
 `--with agent`, `--with mcp`, `--with hook`, `--with extension`, or
 `--no-skill`. It creates the files and registrations below, including an eval
@@ -48,16 +54,16 @@ Change these together in one pull request:
    a remote plugin there.
 4. **[.vally.yaml](.vally.yaml)**: list the plugin's `skills` directory under
    `paths.skills`, and add any path an eval needs under `params`.
-5. **Evals** under `evals/<name>/`: a positive case with invocation and outcome
-   assertions for every skill, agent, hook, extension, and MCP tool, a smoke
-   case, and a negative control. See [Evals](docs/evals.md#write-an-eval).
+5. **Evals** under `evals/<name>/`, one file per asset at the path that mirrors
+   it, such as `evals/<name>/skills/<skill>/eval.yaml`: a positive case with
+   invocation and outcome assertions for every skill, agent, hook, extension,
+   and MCP tool, a smoke case, and a negative control. Keep the plugin's graders
+   and fixtures under `evals/<name>/` too. See [Layout](docs/evals.md#layout)
+   and [Write an eval](docs/evals.md#write-an-eval).
 6. **Tests** under `test/` for code you add, such as servers, hooks, and graders.
-   Name support files after the plugin, such as `test/<name>-hook.test.mjs` and
-   `evals/graders/<name>.mjs`, so `npm run remove-plugin` removes them with it.
+   Name them after the plugin, such as `test/<name>-hook.test.mjs`, so
+   `npm run remove-plugin` removes them with it.
 7. **Related docs**: the plugin's README, and
-   <!-- examples -->
-   for a shipped example, its section in [Examples](docs/examples.md), and
-   <!-- /examples -->
    anything else that describes what you changed. Don't hard-code suite sizes;
    `npm run eval:check` prints them.
 8. **Generated files**: if you changed `plugins/*/src/` or `evals/graders/src/`,
@@ -83,7 +89,7 @@ and paste it into the pull request.
 
 `npm run remove-plugin -- <name>` removes a plugin's directory, evals, catalog
 entry, settings entry, and `.vally.yaml` skill path and params, and prunes
-Markdown that names it. For a shipped example, `npm run remove-example -- <name>`
+Markdown that names it. For an included plugin, `npm run remove-example -- <name>`
 also removes the graders, support files, fixtures, and tests that only it uses.
 To rename a plugin, change its directory, manifest, catalog entry, settings
 key, `.vally.yaml` path, evals, and docs together. `npm run verify` names
@@ -101,8 +107,8 @@ any access requirement. Local checks never download or run upstream code; run
 
 `npm run eval:smoke`, `npm run eval`, and the **Behavioral evals** workflow run
 real Copilot sessions and spend AI credits. Run only the plugins you changed.
-`--plugin` selects every spec for a plugin, including nested ones such as
-`evals/<name>/agent/eval.yaml`. Check the selection for free, then run and
+`--plugin` selects every spec for a plugin, such as
+`evals/<name>/skills/<skill>/eval.yaml` and `evals/<name>/agents/<agent>/eval.yaml`. Check the selection for free, then run and
 report on the same selection:
 
 ```sh
@@ -118,6 +124,12 @@ failed trajectory before changing an assertion, and don't loosen a check just
 to get a pass.
 
 ## Review
+
+<!-- plugin:marketplace-maintainer -->
+The [plugin-reviewer agent](plugins/marketplace-maintainer/com.github.copilot/agents/plugin-reviewer.agent.md)
+can provide a read-only, evidence-backed contribution review. It cannot run
+`verify`; use the Validate workflow for that evidence.
+<!-- /plugin:marketplace-maintainer -->
 
 Reviewers look for a clear workflow, honest descriptions, least-privilege tool
 lists, hooks that never make permission decisions, MCP servers that start

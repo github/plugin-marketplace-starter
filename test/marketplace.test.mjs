@@ -33,15 +33,6 @@ test("discovery covers every local skill, agent, hook, extension, and advertised
   checkCoverage(assets, await readEvals(), { suites: suiteTags(await readVallyConfig(root)) });
 });
 
-test("the JSON configuration example advertises its two real MCP tools", { skip: !existsSync(resolve(root, "plugins/json-configuration")) }, async () => {
-  // Scoped to this example, so adding your own MCP plugin doesn't change it.
-  const assets = await discoverAssets();
-  assert.deepEqual(assets.filter((asset) => asset.id.startsWith("mcp:json-configuration/")).map((asset) => asset.id).sort(), [
-    "mcp:json-configuration/json-configuration/get_json_value",
-    "mcp:json-configuration/json-configuration/validate_json",
-  ]);
-});
-
 test("coverage rejects unknown, unloaded, invocation-free, negative-free, and smoke-free cases", async () => {
   const assets = [{ id: "skill:fixture/fixture-skill", kind: "skill", name: "fixture-skill", path: resolve(root, "plugins/fixture/skills/fixture-skill") }];
   const author = { path: resolve(root, "evals/fixture/eval.yaml"), spec: {
@@ -154,14 +145,14 @@ test("verify warns about scaffold text in every scaffolded file and the template
       await write("plugins/mine/src/server.ts", "// Replace this example tool with your own. Servers must start offline.\n"),
       await write("plugins/mine/com.github.copilot/hooks/mine.mjs", "  // Replace this with the hook's real work.\n"),
       await write("plugins/mine/com.github.copilot/extensions/mine/extension.mjs", "// @github/copilot-sdk/extension; don't install it. Replace the\n// actions and the page with your own.\n"),
-      await write("evals/mine/eval.yaml", "name: mine\ndescription: Scaffolded checks for the mine plugin.\n"),
+      await write("evals/mine/skills/mine/eval.yaml", "name: mine\ndescription: Scaffolded checks for the mine plugin.\n"),
       await write("plugins/mine/dist/server.mjs", "// Replace this example tool with your own.\n"),
       await write("plugins/done/README.md", "# Done\n\nReal instructions.\n\n## Host checks\n\n- Try it in each host.\n"),
       await write("plugins/unchecked/README.md", "# Unchecked\n\nReal instructions.\n"),
     ];
     const warnings = (await staleReferenceWarnings(directory, { name: "ours", owner: { name: "Acme" } }, files)).join("\n");
     for (const path of ["plugins/mine/README.md", "plugins/mine/src/server.ts", "plugins/mine/com.github.copilot/hooks/mine.mjs",
-      "plugins/mine/com.github.copilot/extensions/mine/extension.mjs", "evals/mine/eval.yaml"]) {
+      "plugins/mine/com.github.copilot/extensions/mine/extension.mjs", "evals/mine/skills/mine/eval.yaml"]) {
       assert.match(warnings, new RegExp(`${path.replaceAll(".", "\\.")}: still has scaffolded text`), path);
     }
     assert.doesNotMatch(warnings, /dist\/server\.mjs|plugins\/done/);
@@ -205,15 +196,6 @@ test("MCP coverage requires the configured server, an asserted tool result, and 
   assert.equal(checkCoverage([tool], disallowed), 2);
 });
 
-test("the JSON configuration example's MCP negative controls stay observable", { skip: !existsSync(resolve(root, "plugins/json-configuration")) }, async () => {
-  const assets = (await discoverAssets()).filter((asset) => asset.id.includes(":json-configuration/"));
-  const specs = (await readEvals()).filter((item) => item.spec.name === "json-configuration");
-  assert.doesNotThrow(() => checkCoverage(assets, specs));
-  const weakened = structuredClone(specs);
-  for (const stimulus of weakened[0].spec.stimuli) if (stimulus.tags.control === "negative") stimulus.graders = [{ type: "completed" }, { type: "output-contains", config: { substring: "NOT_FOUND" } }];
-  assert.throws(() => checkCoverage(assets, weakened), /mcp:json-configuration\/json-configuration\/\w+: missing negative control/);
-});
-
 test("a relocated copy discovers the bundled MCP tools without this checkout's node_modules", async () => {
   const directory = await mkdtemp(join(tmpdir(), "starter copied template "));
   try {
@@ -233,7 +215,7 @@ test("bundle path comments don't depend on where node_modules lives", () => {
     "// ../../shared/node_modules/yaml/dist/nodes/identity.js",
     "// C:/work/node_modules/zod/v4/core/core.js",
     "// node_modules/ajv/dist/core.js",
-    "// plugins/json-configuration/src/server.ts",
+    "// plugins/fixture-tools/src/server.ts",
     '  "../repo/node_modules/ajv/dist/compile/codegen/code.js"(exports) {',
     '  "node_modules/ajv/dist/compile/util.js"(exports, module) {',
     'const s = "../node_modules/kept/in/code.js";',
@@ -242,7 +224,7 @@ test("bundle path comments don't depend on where node_modules lives", () => {
     "// node_modules/yaml/dist/nodes/identity.js",
     "// node_modules/zod/v4/core/core.js",
     "// node_modules/ajv/dist/core.js",
-    "// plugins/json-configuration/src/server.ts",
+    "// plugins/fixture-tools/src/server.ts",
     '  "node_modules/ajv/dist/compile/codegen/code.js"(exports) {',
     '  "node_modules/ajv/dist/compile/util.js"(exports, module) {',
     'const s = "../node_modules/kept/in/code.js";',

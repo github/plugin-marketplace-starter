@@ -2,6 +2,12 @@
 
 Two workflows ship with the template.
 
+<!-- plugin:marketplace-maintainer -->
+The [plugin-reviewer agent](../plugins/marketplace-maintainer/com.github.copilot/agents/plugin-reviewer.agent.md)
+doesn't execute validation. The Validate workflow below supplies that evidence;
+a clean review alone isn't a passing CI result.
+<!-- /plugin:marketplace-maintainer -->
+
 ## Deterministic checks
 
 [validate.yml](../.github/workflows/validate.yml) runs `npm ci` and

@@ -14,11 +14,13 @@ const usage = (directory = root) => `Usage: npm run remove-plugin -- <name>... [
        npm run remove-example -- <example>... [--dry-run]
        npm run remove-example -- --all [--dry-run]
 
-Removes each plugin and everything it owns: plugins/<name>/, evals/<name>/, and
-support files named after it (evals/graders/<name>.mjs, a bundled grader in
-evals/graders/src/ and its dist/ build, evals/support/<name>-*, evals/fixtures/<name>/, test/<name>.test.mjs, and test/<name>-*.test.mjs). For a
-shipped example, it also removes the graders, eval support files, and tests
-listed for it in scripts/examples.mjs. It removes the plugin's marketplace.json
+Removes each plugin and everything it owns: plugins/<name>/, evals/<name>/
+(its evals, graders, and fixtures), and support files named after it elsewhere:
+test/<name>.test.mjs, test/<name>-*.test.mjs, evals/graders/<name>.mjs, a
+bundled grader in evals/graders/src/ and its dist/ build, evals/support/<name>-*,
+and evals/fixtures/<name>/. Shared files in evals/graders/ and evals/support/
+stay. For a shipped example, it also removes the tests listed for it in
+scripts/examples.mjs. It removes the plugin's marketplace.json
 entry, repository settings key, .vally.yaml skill path and params, install
 commands, table rows, and marked sections in Markdown files. Links that still
 point at removed files become plain text.

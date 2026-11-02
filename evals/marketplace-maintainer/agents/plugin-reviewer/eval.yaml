@@ -1,0 +1,102 @@
+name: plugin-reviewer-independent
+description: Forced delegation to the actual read-only plugin reviewer, without a companion skill.
+type: capability
+defaults:
+  executor: copilot-sdk
+  model: gpt-5.4-mini
+  timeout: 3m
+  runs: 1
+agent_environment:
+  files:
+    - src: ../../../../plugins/marketplace-maintainer/com.github.copilot/agents/plugin-reviewer.agent.md
+      dest: .github/agents/plugin-reviewer.agent.md
+    - src: fixtures/common
+      dest: marketplace
+stimuli:
+  - name: plugin-reviewer-reports-unpinned-source
+    prompt: >-
+      Delegate to plugin-reviewer to review the supplied marketplace contribution,
+      then report its findings. Use marketplace/REVIEW-SCOPE.md for the contribution
+      scope. Cite precise source locations for demonstrated defects. Don't execute
+      code, edit files, post comments, or claim CI passed.
+    agent_environment:
+      files:
+        - src: fixtures/unpinned/marketplace.json
+          dest: marketplace/marketplace.json
+    tags:
+      assets: agent:marketplace-maintainer/plugin-reviewer
+      control: positive
+      suite: smoke
+      activation: forced-delegation
+    graders:
+      - type: completed
+      - type: tool-calls
+        config:
+          required:
+            - name: ^task$
+              args:
+                agent_type: ^plugin-reviewer$
+      - type: output-matches
+        scope: subagent
+        config:
+          pattern: 'marketplace\.json(?::\d+|[^\n]*line\s+\d+)'
+      - type: output-matches
+        scope: subagent
+        config:
+          pattern: '[Uu]npinned|[Mm]issing[^\n]*(?:sha|SHA|pin)|(?:sha|SHA)[^\n]*(?:missing|required)'
+      - type: tool-calls
+        scope: subagent
+        config:
+          disallowed: ['^(create|edit|apply_patch|bash|powershell|shell|execute|write_file|create_file|replace_string_in_file)$']
+      - type: diff-empty
+  - name: plugin-reviewer-accepts-clean-contribution
+    prompt: >-
+      Delegate to plugin-reviewer to review only the supplied initial contribution
+      in marketplace, using REVIEW-SCOPE.md. Don't invent defects from unavailable
+      evidence; a clean result is valid. Return its findings and validation limits.
+      Don't run code, edit files, or post anything.
+    agent_environment:
+      files:
+        - src: fixtures/clean/marketplace.json
+          dest: marketplace/marketplace.json
+    tags:
+      assets: agent:marketplace-maintainer/plugin-reviewer
+      control: positive
+      activation: forced-delegation
+    graders:
+      - type: completed
+      - type: tool-calls
+        config:
+          required:
+            - name: ^task$
+              args:
+                agent_type: ^plugin-reviewer$
+      - type: output-contains
+        scope: subagent
+        config:
+          substring: No actionable findings.
+      - type: output-matches
+        scope: subagent
+        config:
+          pattern: 'Validate|cannot run|can.t run'
+      - type: tool-calls
+        scope: subagent
+        config:
+          disallowed: ['^(create|edit|apply_patch|bash|powershell|shell|execute|write_file|create_file|replace_string_in_file)$']
+      - type: diff-empty
+  - name: plugin-reviewer-ignores-arithmetic
+    prompt: What is two plus two? Reply with only the digit.
+    tags:
+      assets: agent:marketplace-maintainer/plugin-reviewer
+      control: negative
+    graders:
+      - type: completed
+      - type: tool-calls
+        config:
+          disallowed: ['^task$']
+      - type: output-matches
+        config:
+          pattern: '^\s*4\s*$'
+      - type: diff-empty
+scoring:
+  threshold: 1

@@ -78,7 +78,7 @@ run, a runtime or grader error, or a missing result. Valid failed verdicts are
 reported but don't fail it.
 
 Example:
-  npm run eval:report -- --plugin code-review --run-dir vally-results/<run>`;
+  npm run eval:report -- --plugin marketplace-maintainer --run-dir vally-results/<run>`;
 
 async function main() {
   let parsed;

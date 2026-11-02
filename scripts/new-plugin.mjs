@@ -7,25 +7,30 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { parseDocument } from "yaml";
 import { namePattern, readCatalog } from "./catalog.mjs";
+import { reservedNames } from "./examples.mjs";
 import { runCli } from "./problems.mjs";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 const components = ["agent", "mcp", "hook", "extension"];
 const usage = `Usage: npm run new-plugin -- <name> [--with <type>]... [--no-skill] [--description "What it does."]
 
-Scaffolds plugins/<name>/ with a skill, README, and CHANGELOG, plus
-evals/<name>/eval.yaml, and registers the plugin in marketplace.json,
-.github/copilot/settings.json, .vally.yaml, and the README's plugin table and
-install commands. npm run verify passes right away.
+Scaffolds plugins/<name>/ with a skill, README, and CHANGELOG, plus a
+placeholder eval for each asset under evals/<name>/, at a path that mirrors the
+asset (evals/<name>/skills/<name>/eval.yaml for the skill). It registers the
+plugin in marketplace.json, .github/copilot/settings.json, .vally.yaml, and the
+README's plugin table and install commands. npm run verify passes right away.
+The names graders and support are reserved for shared eval files.
 
   --with agent       Also add a read-only custom agent, <name>-specialist, and its
-                     delegation eval. The plugin name can then have at most 53
-                     characters.
-  --with mcp         Also add a local stdio MCP server (src/server.ts) with one tool.
-  --with hook        Also add a postToolUse hook, its eval, and a model-free test
-                     in test/<name>-hook.test.mjs.
-  --with extension   Also add a canvas extension, its eval through the shared
-                     headless canvas host, and its grader in evals/graders/<name>.mjs.
+                     delegation eval in evals/<name>/agents/<name>-specialist/.
+                     The plugin name can then have at most 53 characters.
+  --with mcp         Also add a local stdio MCP server (src/server.ts) with one
+                     tool, and its eval in evals/<name>/mcp/.
+  --with hook        Also add a postToolUse hook, its eval in evals/<name>/hooks/,
+                     and a model-free test in test/<name>-hook.test.mjs.
+  --with extension   Also add a canvas extension, and its eval and grader in
+                     evals/<name>/extensions/<name>/. The eval uses the shared
+                     headless canvas host.
   --no-skill         Leave out the skill, for example for a hook-only plugin.
                      Add at least one --with type.`;
 
@@ -316,7 +321,7 @@ ${description}
 
 This plugin ships ${parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0]}. Replace the scaffolded
 instructions${mcp ? " and the example `echo` tool" : ""}${hook ? " and hook script" : ""}${extension ? " and canvas" : ""} with your team's own, and update
-[its evals](../../evals/${name}/eval.yaml) to check the real behavior.
+[its evals](../../evals/${name}/) to check the real behavior.
 
 ## Install
 
@@ -338,15 +343,17 @@ ${checks.join("\n")}
 `;
 }
 
-function evalFile(name, { skill, agent, mcp, hook, extension }) {
-  const param = paramName(name);
-  const lines = [
-    `# Behavioral evals for the ${name} plugin. Replace the prompts and graders with`,
-    "# your plugin's real behavior. npm run eval:check needs, for every asset, a",
+// The placeholder eval for one asset. It meets npm run eval:check, so verify
+// passes right away, but its cases only prove the scaffold runs.
+function evalHeader(name, asset, specName) {
+  return [
+    `# Placeholder evals for the ${asset} in the ${name} plugin, written by`,
+    "# npm run new-plugin. Replace these cases with ones that check its real",
+    "# behavior; docs/eval-authoring.md explains how. npm run eval:check needs a",
     "# positive case that asserts invocation and outcome, one positive case tagged",
-    "# suite: smoke, and a negative case with an observable assertion.",
-    `name: ${name}`,
-    `description: Scaffolded checks for the ${name} plugin.`,
+    "# suite: smoke, and a negative control with an observable assertion.",
+    `name: ${specName}`,
+    `description: Scaffolded checks for the ${name} plugin's ${asset}.`,
     "type: capability",
     "defaults:",
     "  executor: copilot-sdk",
@@ -354,30 +361,46 @@ function evalFile(name, { skill, agent, mcp, hook, extension }) {
     "  timeout: 2m",
     "  runs: 1",
   ];
-  if (skill || mcp || agent) lines.push("agent_environment:");
-  if (skill) lines.push("  skills:", `    - ../../plugins/${name}/skills/${name}`);
-  // Every case, including the negative control, sees the agent profile, so the
-  // negative case proves the agent isn't used when it's available.
-  if (agent) {
-    lines.push("  files:", `    - src: ../../plugins/${name}/com.github.copilot/agents/${agent}.agent.md`, `      dest: .github/agents/${agent}.agent.md`);
-  }
-  if (mcp) {
-    lines.push(
-      "  mcpServers:",
-      `    ${name}:`,
-      "      type: stdio",
-      "      command: node",
-      `      args: ['\${${param}}']`,
-    );
-  }
-  if (extension) lines.push("grading_environment:", "  files:", "    - src: ../graders", "      dest: .grading");
-  lines.push("stimuli:");
+}
+
+// A negative control: an unrelated question that mustn't use the asset.
+function unrelated(stimulus, asset, { environment = [], graders = [] } = {}) {
+  return [
+    `  - name: ${stimulus}`,
+    "    prompt: What is two plus two? Reply with only the digit, without editing files.",
+    ...environment,
+    "    tags:",
+    `      assets: ${asset}`,
+    "      control: negative",
+    "    graders:",
+    "      - type: completed",
+    ...graders,
+    "      - type: output-contains",
+    "        config:",
+    '          substring: "4"',
+  ];
+}
+
+const disallow = (pattern) => ["      - type: tool-calls", "        config:", `          disallowed: [${pattern}]`];
+
+// One placeholder eval per asset, at the path that mirrors the asset under
+// plugins/<name>/. Paths in each file are relative to that file.
+function evalFiles(name, { skill, agent, mcp, hook, extension }) {
+  const files = [];
+  const add = (path, lines) => files.push({ path, text: [...lines, "scoring:", "  threshold: 1", ""].join("\n") });
+  const plugin = `../../../../plugins/${name}`;
   if (skill) {
-    lines.push(
+    const asset = `skill:${name}/${name}`;
+    add(`evals/${name}/skills/${name}/eval.yaml`, [
+      ...evalHeader(name, `${name} skill`, name),
+      "agent_environment:",
+      "  skills:",
+      `    - ${plugin}/skills/${name}`,
+      "stimuli:",
       `  - name: ${name}-does-the-task`,
       `    prompt: Use the ${name} skill to help me with a small example task.`,
       "    tags:",
-      `      assets: skill:${name}/${name}`,
+      `      assets: ${asset}`,
       "      suite: smoke",
       "      control: positive",
       "    graders:",
@@ -388,38 +411,26 @@ function evalFile(name, { skill, agent, mcp, hook, extension }) {
       "      - type: output-contains",
       "        config:",
       `          substring: "${name}: ready"`,
-    );
+      ...unrelated(`${name}-ignores-unrelated-question`, asset, {
+        graders: ["      - type: skill-invocation", "        config:", `          disallowed: [${name}]`],
+      }),
+    ]);
   }
-  const assets = [skill && `skill:${name}/${name}`, agent && `agent:${name}/${agent}`, mcp && `mcp:${name}/${name}/echo`,
-    hook && `hook:${name}/postToolUse`, extension && `extension:${name}/${name}`].filter(Boolean);
-  lines.push(
-    `  - name: ${name}-ignores-unrelated-question`,
-    "    prompt: What is two plus two? Reply with only the digit, without editing files.",
-  );
-  if (hook || extension) lines.push("    agent_environment:");
-  if (hook) lines.push("      env:", `        STARTER_PLUGIN_DIRS: plugins/${name}`);
-  if (extension) {
-    lines.push("      mcpServers:", `        ${name}-host:`, "          type: stdio", "          command: node",
-      `          args: ['\${CANVAS_HOST}', '\${${extensionParam(name)}}']`);
-  }
-  lines.push(
-    "    tags:",
-    `      assets: [${assets.join(", ")}]`,
-    "      control: negative",
-    "    graders:",
-    "      - type: completed",
-  );
-  if (skill) lines.push("      - type: skill-invocation", "        config:", `          disallowed: [${name}]`);
-  const disallowed = [agent && "'^task$'", mcp && "'(^|[./_-])echo$'", hook && `'^(${editTools.join("|")})$'`,
-    extension && "'(^|[./_-])(open_canvas|invoke_canvas_action)$'"].filter(Boolean);
-  if (disallowed.length) lines.push("      - type: tool-calls", "        config:", `          disallowed: [${disallowed.join(", ")}]`);
-  lines.push("      - type: output-contains", "        config:", '          substring: "4"');
   if (agent) {
-    lines.push(
+    const asset = `agent:${name}/${agent}`;
+    add(`evals/${name}/agents/${agent}/eval.yaml`, [
+      ...evalHeader(name, `${agent} agent`, agent),
+      // Every case, including the negative control, sees the agent profile, so
+      // the negative case proves the agent isn't used when it's available.
+      "agent_environment:",
+      "  files:",
+      `    - src: ${plugin}/com.github.copilot/agents/${agent}.agent.md`,
+      `      dest: .github/agents/${agent}.agent.md`,
+      "stimuli:",
       `  - name: ${name}-delegates-to-${agent}`,
       `    prompt: Delegate to the ${agent} specialist and report what it says. Don't edit files.`,
       "    tags:",
-      `      assets: agent:${name}/${agent}`,
+      `      assets: ${asset}`,
       "      suite: smoke",
       "      control: positive",
       "    graders:",
@@ -435,14 +446,24 @@ function evalFile(name, { skill, agent, mcp, hook, extension }) {
       "        config:",
       `          substring: "${agent}: ready"`,
       "      - type: diff-empty",
-    );
+      ...unrelated(`${agent}-ignores-unrelated-question`, asset, { graders: disallow("'^task$'") }),
+    ]);
   }
   if (mcp) {
-    lines.push(
+    const asset = `mcp:${name}/${name}/echo`;
+    add(`evals/${name}/mcp/eval.yaml`, [
+      ...evalHeader(name, `${name} MCP server`, `${name}-mcp`),
+      "agent_environment:",
+      "  mcpServers:",
+      `    ${name}:`,
+      "      type: stdio",
+      "      command: node",
+      `      args: ['\${${paramName(name)}}']`,
+      "stimuli:",
       `  - name: ${name}-echoes-text`,
-      `    prompt: ${skill ? `Use the ${name} skill and its` : "Use the"} echo tool to echo the text hello-${name}. Report the tool's result.`,
+      `    prompt: Use the echo tool to echo the text hello-${name}. Report the tool's result.`,
       "    tags:",
-      `      assets: mcp:${name}/${name}/echo`,
+      `      assets: ${asset}`,
       "      suite: smoke",
       "      control: positive",
       "    graders:",
@@ -455,20 +476,23 @@ function evalFile(name, { skill, agent, mcp, hook, extension }) {
       "      - type: output-contains",
       "        config:",
       `          substring: hello-${name}`,
-    );
+      ...unrelated(`${name}-mcp-ignores-unrelated-question`, asset, { graders: disallow("'(^|[./_-])echo$'") }),
+    ]);
   }
   if (hook) {
-    lines.push(
+    const asset = `hook:${name}/postToolUse`;
+    // Mounts the real plugin with --plugin-dir through scripts/eval-runtime.js.
+    const mount = ["    agent_environment:", "      env:", `        STARTER_PLUGIN_DIRS: plugins/${name}`];
+    add(`evals/${name}/hooks/eval.yaml`, [
+      ...evalHeader(name, `${name} postToolUse hook`, `${name}-hook`),
+      "stimuli:",
       `  - name: ${name}-hook-reports-edit`,
       "    prompt: >-",
       "      Use apply_patch to create notes.txt containing the single line hello.",
       "      Don't run shell commands. Then report any message the hook added.",
-      "    agent_environment:",
-      "      env:",
-      "        # Mounts the real plugin with --plugin-dir through scripts/eval-runtime.js.",
-      `        STARTER_PLUGIN_DIRS: plugins/${name}`,
+      ...mount,
       "    tags:",
-      `      assets: hook:${name}/postToolUse`,
+      `      assets: ${asset}`,
       "      suite: smoke",
       "      control: positive",
       "    graders:",
@@ -480,27 +504,45 @@ function evalFile(name, { skill, agent, mcp, hook, extension }) {
       "            - name: ^apply_patch$",
       `              result: '${name}: '`,
       "          disallowed: ['^(bash|powershell|shell)$']",
-    );
+      ...unrelated(`${name}-hook-ignores-unrelated-question`, asset, {
+        environment: mount, graders: disallow(`'^(${editTools.join("|")})$'`),
+      }),
+    ]);
   }
   if (extension) {
-    lines.push(
-      `  - name: ${name}-canvas-adds-item`,
-      "    prompt: >-",
-      `      Use the ${name}-host tools to open the ${name} canvas with the instance handle main.`,
-      '      Add the item "Ship the first draft", then read the list and report it. Don\'t edit files.',
+    const asset = `extension:${name}/${name}`;
+    const host = (seed) => [
       "    agent_environment:",
       "      mcpServers:",
       `        ${name}-host:`,
       "          type: stdio",
       "          command: node",
-      "          # The shared headless host drives the real extension; the seed gives every session the same start.",
-      "          args:",
-      "            - '${CANVAS_HOST}'",
-      `            - '\${${extensionParam(name)}}'`,
-      "            - --seed",
-      `            - '[{"action":"add_item","input":{"text":"Existing item"}}]'`,
+      ...(seed ? [
+        "          # The shared headless host drives the real extension; the seed gives every session the same start.",
+        "          args:",
+        "            - '${CANVAS_HOST}'",
+        `            - '\${${extensionParam(name)}}'`,
+        "            - --seed",
+        `            - '[{"action":"add_item","input":{"text":"Existing item"}}]'`,
+      ] : [`          args: ['\${CANVAS_HOST}', '\${${extensionParam(name)}}']`]),
+    ];
+    add(`evals/${name}/extensions/${name}/eval.yaml`, [
+      ...evalHeader(name, `${name} canvas extension`, `${name}-extension`),
+      // The grader imports ./common.mjs, so both land in the same grading folder.
+      "grading_environment:",
+      "  files:",
+      "    - src: grader.mjs",
+      `      dest: .grading/${name}.mjs`,
+      "    - src: ../../../graders/common.mjs",
+      "      dest: .grading/common.mjs",
+      "stimuli:",
+      `  - name: ${name}-canvas-adds-item`,
+      "    prompt: >-",
+      `      Use the ${name}-host tools to open the ${name} canvas with the instance handle main.`,
+      '      Add the item "Ship the first draft", then read the list and report it. Don\'t edit files.',
+      ...host(true),
       "    tags:",
-      `      assets: extension:${name}/${name}`,
+      `      assets: ${asset}`,
       "      suite: smoke",
       "      control: positive",
       "      boundary: headless-sdk-contract",
@@ -511,10 +553,12 @@ function evalFile(name, { skill, agent, mcp, hook, extension }) {
       "          program: node",
       `          args: [.grading/${name}.mjs]`,
       "      - type: diff-empty",
-    );
+      ...unrelated(`${name}-canvas-ignores-unrelated-question`, asset, {
+        environment: host(false), graders: disallow("'(^|[./_-])(open_canvas|invoke_canvas_action)$'"),
+      }),
+    ]);
   }
-  lines.push("scoring:", "  threshold: 1", "");
-  return lines.join("\n");
+  return files;
 }
 
 // Adds the plugin to the README's plugin table (marked with <!-- plugin-table -->)
@@ -547,6 +591,9 @@ export async function newPlugin(name, { components: requested = [], skill = true
   if (!namePattern.test(name ?? "") || name.length > 64) {
     throw new Error(`Plugin name "${name ?? ""}" must be lowercase letters, digits, and single hyphens, such as release-notes.`);
   }
+  if (reservedNames.includes(name)) {
+    throw new Error(`Plugin name "${name}" is reserved: evals/${name}/ holds eval files that several plugins share. Pick another name.`);
+  }
   const unknown = requested.filter((item) => !components.includes(item));
   if (unknown.length) throw new Error(`Unknown --with value: ${unknown.join(", ")}. Use ${components.join(", ")}.`);
   if (!skill && !requested.length) throw new Error("A plugin needs at least one asset. Drop --no-skill, or add --with agent, mcp, hook, or extension.");
@@ -566,7 +613,7 @@ export async function newPlugin(name, { components: requested = [], skill = true
     hook: requested.includes("hook"),
     extension: requested.includes("extension"),
   };
-  for (const path of [options.hook && `test/${name}-hook.test.mjs`, options.extension && `evals/graders/${name}.mjs`].filter(Boolean)) {
+  for (const path of [options.hook && `test/${name}-hook.test.mjs`].filter(Boolean)) {
     if (existsSync(resolve(directory, path))) throw new Error(`${path} already exists. Pick another name or remove it first.`);
   }
   description ??= `Help with ${name.replaceAll("-", " ")} tasks.`;
@@ -603,9 +650,9 @@ export async function newPlugin(name, { components: requested = [], skill = true
   }
   if (options.extension) {
     await add(`plugins/${name}/com.github.copilot/extensions/${name}/extension.mjs`, extensionFile(name));
-    await add(`evals/graders/${name}.mjs`, graderFile(name));
+    await add(`evals/${name}/extensions/${name}/grader.mjs`, graderFile(name));
   }
-  await add(`evals/${name}/eval.yaml`, evalFile(name, options));
+  for (const file of evalFiles(name, options)) await add(file.path, file.text);
 
   const catalogPath = resolve(directory, "marketplace.json");
   const rawCatalog = await json(catalogPath);

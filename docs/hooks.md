@@ -31,8 +31,8 @@ That writes:
   successful edits.
 - `test/lint-on-save-hook.test.mjs`, model-free tests that run the script the
   way Copilot does.
-- `evals/lint-on-save/eval.yaml`, with a positive case that proves the hook ran
-  and a negative case.
+- `evals/lint-on-save/hooks/eval.yaml`, with a positive case that proves the hook
+  ran and a negative case.
 
 Drop `--no-skill` to also get a skill.
 

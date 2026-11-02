@@ -1,0 +1,9 @@
+paths:
+  skills:
+    - plugins/review-notes/skills
+  evals:
+    - evals
+suites:
+  smoke:
+    filter:
+      suite: smoke

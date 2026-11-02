@@ -1,5 +1,14 @@
 # Remote plugins
 
+<!-- plugin:marketplace-maintainer -->
+Use [update-remote-pins](../plugins/marketplace-maintainer/skills/update-remote-pins/SKILL.md)
+for deliberate additions or updates, including an upstream-change review.
+<!-- /plugin:marketplace-maintainer -->
+
+The template currently ships no remote entries. The GitHub Copilot Evals plugin
+can be added once its repository is public; this checkout's eval tooling works
+without it.
+
 The catalog can list plugins that live in another repository. They're opt-in:
 the repository overlay never enables a remote plugin, and `npm run verify`
 rejects an overlay that does, because checking out this repository must not

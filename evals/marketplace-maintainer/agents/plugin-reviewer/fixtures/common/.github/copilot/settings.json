@@ -1,0 +1,6 @@
+{
+  "extraKnownMarketplaces": {
+    "fixture-plugins": { "source": { "source": "directory", "path": "." } }
+  },
+  "enabledPlugins": { "review-notes@fixture-plugins": true }
+}

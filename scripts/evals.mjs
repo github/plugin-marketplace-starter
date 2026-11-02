@@ -58,9 +58,9 @@ Commands:
 
 Launcher options for eval and lint:
   --plugin <name>   Select every eval spec for a plugin: the specs under
-                    evals/<name>/, including nested ones such as
-                    evals/<name>/agent/eval.yaml, and any spec whose cases tag one
-                    of its assets. Repeat it for several plugins.
+                    evals/<name>/, such as evals/<name>/skills/<skill>/eval.yaml
+                    and evals/<name>/agents/<agent>/eval.yaml, and any spec whose
+                    cases tag one of its assets. Repeat it for several plugins.
   --list            With eval, print the specs and cases that would run, and the
                     commands to run and report on them, without starting a
                     session. It's free.
@@ -73,10 +73,10 @@ spec list and tag filter Vally accepts. Run node scripts/evals.mjs eval --help
 to also see Vally's own options.
 
 Examples:
-  node scripts/evals.mjs eval --plugin code-review --list
-  node scripts/evals.mjs eval --plugin code-review --suite smoke
+  node scripts/evals.mjs eval --plugin marketplace-maintainer --list
+  node scripts/evals.mjs eval --plugin marketplace-maintainer --suite smoke
   node scripts/evals.mjs eval --tag control=negative --list
-  npm run eval:report -- --plugin code-review`;
+  npm run eval:report -- --plugin marketplace-maintainer`;
 
 const slash = (path) => path.split(sep).join("/");
 
@@ -108,7 +108,7 @@ export function launcherOptions(args) {
     else if (arg === "--help" || arg === "-h") { help = true; rest.push(arg); }
     else if (arg === "--plugin" || arg.startsWith("--plugin=")) {
       const value = arg.includes("=") ? arg.slice("--plugin=".length) : args[++index];
-      if (!value || value.startsWith("-")) throw new Error("--plugin needs a plugin name, such as --plugin code-review.");
+      if (!value || value.startsWith("-")) throw new Error("--plugin needs a plugin name, such as --plugin marketplace-maintainer.");
       plugins.push(value);
     } else rest.push(arg);
   }

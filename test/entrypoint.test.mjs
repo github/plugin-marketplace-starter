@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync, execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -36,19 +36,6 @@ test("scripts run main() when started through a linked directory", (t) => {
   const result = spawnSync(process.execPath, [join(linked, "scripts", "typecheck.mjs")], { cwd: linked, encoding: "utf8" });
   assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stderr, /Dependencies aren't installed/);
-});
-
-test("the format-json hook runs when its plugin directory is linked", (t) => {
-  const hook = "plugins/format-json/com.github.copilot/hooks/format.mjs";
-  if (!existsSync(join(root, hook))) return t.skip("the format-json example was removed");
-  const linked = linkedCopy(t, [[hook, "format.mjs"]]);
-  const output = execFileSync(process.execPath, [join(linked, "format.mjs")], {
-    cwd: linked,
-    input: "not json",
-    encoding: "utf8",
-  });
-  assert.notEqual(output.trim(), "", "the hook must write a result instead of silently skipping main()");
-  JSON.parse(output);
 });
 
 test("entrypoint checks compare real paths everywhere", () => {

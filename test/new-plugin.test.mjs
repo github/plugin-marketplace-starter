@@ -51,7 +51,7 @@ test("renaming rewrites install commands and placeholders, and drops template-on
     "# Plugin marketplace starter", "",
     "copilot plugin marketplace add github/plugin-marketplace-starter",
     "copilot plugin marketplace browse plugin-marketplace-starter",
-    "copilot plugin install bug-report@plugin-marketplace-starter",
+    "copilot plugin install note-helper@plugin-marketplace-starter",
     "<!-- template-only -->", "This repository is currently private.", "<!-- /template-only -->",
     "The canvas ID marketplace-starter-brainstorm stays.",
   ].join("\n"), { from, to });
@@ -59,17 +59,17 @@ test("renaming rewrites install commands and placeholders, and drops template-on
     "# Jdoe Skills", "",
     "copilot plugin marketplace add jdoe/skills",
     "copilot plugin marketplace browse jdoe-skills",
-    "copilot plugin install bug-report@jdoe-skills",
+    "copilot plugin install note-helper@jdoe-skills",
     "The canvas ID marketplace-starter-brainstorm stays.",
   ].join("\n"));
   const plugin = renameMarkdown([
-    "```sh", "copilot plugin marketplace add OWNER/REPO", "copilot plugin install bug-report@MARKETPLACE", "```", "",
+    "```sh", "copilot plugin marketplace add OWNER/REPO", "copilot plugin install note-helper@MARKETPLACE", "```", "",
     "Replace `OWNER/REPO` with the GitHub repository that hosts this marketplace",
     "and `MARKETPLACE` with the `name` in its `marketplace.json`. See",
     "[Install plugins](../../README.md#install-plugins) for VS Code.",
   ].join("\n"), { from, to });
   assert.equal(plugin, [
-    "```sh", "copilot plugin marketplace add jdoe/skills", "copilot plugin install bug-report@jdoe-skills", "```", "",
+    "```sh", "copilot plugin marketplace add jdoe/skills", "copilot plugin install note-helper@jdoe-skills", "```", "",
     "See", "[Install plugins](../../README.md#install-plugins) for VS Code.",
   ].join("\n"));
 });
@@ -77,13 +77,13 @@ test("renaming rewrites install commands and placeholders, and drops template-on
 test("--plugin selects every spec for a plugin, including nested ones and tagged cases", () => {
   const spec = (path, ...assets) => ({ path: join(root, "evals", path), spec: { stimuli: [{ name: path, tags: { assets } }] } });
   const specs = [
-    spec("review/eval.yaml", "skill:review/review"),
-    spec("review/agent/eval.yaml", "agent:review/reviewer"),
+    spec("review/skills/review/eval.yaml", "skill:review/review"),
+    spec("review/agents/reviewer/eval.yaml", "agent:review/reviewer"),
     spec("shared/eval.yaml", "skill:other/other", "mcp:review/server/tool"),
     spec("reviewer-extra/eval.yaml", "skill:reviewer-extra/x"),
   ];
   assert.deepEqual(specsForPlugins(["review"], specs, root).map((item) => item.spec.stimuli[0].name),
-    ["review/eval.yaml", "review/agent/eval.yaml", "shared/eval.yaml"]);
+    ["review/skills/review/eval.yaml", "review/agents/reviewer/eval.yaml", "shared/eval.yaml"]);
   assert.throws(() => specsForPlugins(["missing"], specs, root), /No eval specs found for plugin missing/);
   assert.deepEqual(launcherOptions(["--plugin", "a", "--plugin=b", "--list", "--model", "x"]), { plugins: ["a", "b"], list: true, help: false, rest: ["--model", "x"] });
   assert.throws(() => launcherOptions(["--plugin"]), /needs a plugin name/);
@@ -140,6 +140,8 @@ test("support files named after a plugin belong to it, but not to a shorter name
   ]);
   assert.ok(!(await ownedPaths("catalog", { directory })).includes("test/catalog.test.mjs"));
   assert.ok(!(await ownedPaths("common", { directory })).includes("evals/graders/common.mjs"));
+  // The shared eval folders never belong to a plugin, even one with their name.
+  for (const name of ["graders", "support"]) assert.ok(!(await ownedPaths(name, { directory })).includes(`evals/${name}`), name);
   // A bundled grader's source and build go with the plugin too.
   for (const file of ["evals/graders/src/bug.mjs", "evals/graders/dist/bug.mjs", "evals/graders/dist/THIRD_PARTY_NOTICES.txt"]) {
     await mkdir(join(directory, file, ".."), { recursive: true });
@@ -199,12 +201,69 @@ test("a long plugin name with an agent is refused before anything is written, an
   const profile = await readFile(join(directory, "plugins", name, "com.github.copilot/agents", `${options.agent}.agent.md`), "utf8");
   assert.equal(frontmatter(profile, "agent").name, `${name}-specialist`);
   assert.equal(frontmatter(await readFile(join(directory, "plugins", name, "skills", name, "SKILL.md"), "utf8"), "skill").name, name);
+  // Each asset gets its own placeholder eval at the path that mirrors it.
+  assert.ok(!existsSync(join(directory, "evals", name, "eval.yaml")));
+  const skillSpec = parse(await readFile(join(directory, "evals", name, "skills", name, "eval.yaml"), "utf8"));
+  assert.deepEqual(skillSpec.agent_environment.skills, [`../../../../plugins/${name}/skills/${name}`]);
+  assert.deepEqual(skillSpec.stimuli.map((stimulus) => stimulus.tags.control), ["positive", "negative"]);
   // Every case, including the negative control, sees the agent profile.
-  const spec = parse(await readFile(join(directory, "evals", name, "eval.yaml"), "utf8"));
-  assert.deepEqual(spec.agent_environment.files, [{ src: `../../plugins/${name}/com.github.copilot/agents/${name}-specialist.agent.md`, dest: `.github/agents/${name}-specialist.agent.md` }]);
+  const spec = parse(await readFile(join(directory, "evals", name, "agents", `${name}-specialist`, "eval.yaml"), "utf8"));
+  assert.deepEqual(spec.agent_environment.files, [{ src: `../../../../plugins/${name}/com.github.copilot/agents/${name}-specialist.agent.md`, dest: `.github/agents/${name}-specialist.agent.md` }]);
   assert.ok(spec.stimuli.every((stimulus) => !stimulus.agent_environment?.files));
+  assert.deepEqual(spec.stimuli.map((stimulus) => stimulus.tags.control), ["positive", "negative"]);
+  assert.ok(spec.stimuli.every((stimulus) => stimulus.tags.assets === `agent:${name}/${name}-specialist`));
   // A plugin name can still use all 64 characters without an agent.
   await newPlugin("c".repeat(64), { directory });
+});
+
+test("the shared eval folder names can't be plugin names", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-reserved-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, "marketplace.json"), JSON.stringify({ name: "fixture", owner: { name: "Test" }, plugins: [] }));
+  for (const name of ["graders", "support"]) {
+    await assert.rejects(newPlugin(name, { directory }), /is reserved/, name);
+    assert.ok(!existsSync(join(directory, "plugins", name)), name);
+    const cli = script("new-plugin.mjs", name);
+    assert.notEqual(cli.status, 0, name);
+    assert.match(cli.stderr, new RegExp(`"${name}" is reserved`));
+  }
+});
+
+test("every scaffolded asset gets a placeholder eval at its mirrored path", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-mirror-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, "marketplace.json"), JSON.stringify({ name: "fixture", owner: { name: "Test" }, plugins: [] }));
+  await mkdir(join(directory, ".github/copilot"), { recursive: true });
+  await writeFile(join(directory, ".github/copilot/settings.json"), JSON.stringify({ enabledPlugins: {} }));
+  await writeFile(join(directory, ".vally.yaml"), "paths:\n  skills: []\n");
+  const { created } = await newPlugin("mirror", { components: ["agent", "hook", "extension"], directory });
+  const evals = created.filter((path) => path.startsWith("evals/")).sort();
+  assert.deepEqual(evals, [
+    "evals/mirror/agents/mirror-specialist/eval.yaml",
+    "evals/mirror/extensions/mirror/eval.yaml",
+    "evals/mirror/extensions/mirror/grader.mjs",
+    "evals/mirror/hooks/eval.yaml",
+    "evals/mirror/skills/mirror/eval.yaml",
+  ]);
+  // Nothing lands in the shared folders, and every spec has its own positive smoke case and negative control.
+  assert.ok(!existsSync(join(directory, "evals/graders")) && !existsSync(join(directory, "evals/support")));
+  const names = [];
+  for (const path of evals.filter((item) => item.endsWith(".yaml"))) {
+    const text = await readFile(join(directory, path), "utf8");
+    assert.match(text, /docs\/eval-authoring\.md/, path);
+    const spec = parse(text);
+    const controls = spec.stimuli.map((stimulus) => stimulus.tags.control);
+    assert.ok(controls.includes("positive") && controls.includes("negative"), path);
+    assert.ok(spec.stimuli.some((stimulus) => stimulus.tags.suite === "smoke"), path);
+    names.push(...spec.stimuli.map((stimulus) => stimulus.name));
+  }
+  assert.equal(new Set(names).size, names.length, "Stimulus names must be unique across the new specs.");
+  // The extension's grader sits in its own eval folder and is staged beside the shared helper.
+  const extension = parse(await readFile(join(directory, "evals/mirror/extensions/mirror/eval.yaml"), "utf8"));
+  assert.deepEqual(extension.grading_environment.files, [
+    { src: "grader.mjs", dest: ".grading/mirror.mjs" },
+    { src: "../../../graders/common.mjs", dest: ".grading/common.mjs" },
+  ]);
 });
 
 test("lint --plugin lints every selected spec and the plugin's skills", (t) => {

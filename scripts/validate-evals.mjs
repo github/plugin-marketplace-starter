@@ -72,13 +72,13 @@ export async function discoverAssets(directory = root) {
     for (const skill of (await entries(resolve(source, "skills"))).filter((entry) => entry.isDirectory())) {
       const path = resolve(source, "skills", skill.name);
       await stat(resolve(path, "SKILL.md"));
-      assets.push({ id: `skill:${plugin.name}/${skill.name}`, kind: "skill", name: skill.name, path });
+      assets.push({ id: `skill:${plugin.name}/${skill.name}`, kind: "skill", name: skill.name, plugin: plugin.name, path });
     }
     const agentsPath = resolve(source, "com.github.copilot/agents");
     for (const agent of (await entries(agentsPath)).filter((entry) => entry.isFile() && entry.name.endsWith(".agent.md"))) {
       const path = resolve(agentsPath, agent.name);
       const { name } = frontmatter(await readFile(path, "utf8"), path);
-      assets.push({ id: `agent:${plugin.name}/${name}`, kind: "agent", name, path });
+      assets.push({ id: `agent:${plugin.name}/${name}`, kind: "agent", name, plugin: plugin.name, path });
     }
     let hooks;
     try { hooks = await json(resolve(source, "com.github.copilot/hooks/hooks.json")); }
@@ -89,14 +89,14 @@ export async function discoverAssets(directory = root) {
     for (const extension of (await entries(resolve(source, "com.github.copilot/extensions"))).filter((entry) => entry.isDirectory())) {
       const path = resolve(source, "com.github.copilot/extensions", extension.name);
       await stat(resolve(path, "extension.mjs"));
-      assets.push({ id: `extension:${plugin.name}/${extension.name}`, kind: "extension", name: extension.name, path });
+      assets.push({ id: `extension:${plugin.name}/${extension.name}`, kind: "extension", name: extension.name, plugin: plugin.name, path });
     }
     let mcp;
     try { mcp = await json(resolve(source, "mcp.json")); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     for (const [serverName, server] of Object.entries(mcp?.mcpServers ?? {})) {
       for (const tool of await listMcpTools(source, server)) {
-        assets.push({ id: `mcp:${plugin.name}/${serverName}/${tool.name}`, kind: "mcp", name: tool.name, serverName, path: source });
+        assets.push({ id: `mcp:${plugin.name}/${serverName}/${tool.name}`, kind: "mcp", name: tool.name, serverName, plugin: plugin.name, path: source });
       }
     }
   }
@@ -130,7 +130,6 @@ export function suiteTags(config) {
   return new Set(Object.values(config?.suites ?? {}).flatMap((suite) => list(suite?.filter?.suite)));
 }
 
-const programArgs = (graders, script) => graders.some((grader) => grader.type === "program" && list(grader.config?.args).includes(script));
 
 // Evidence that a hook actually ran, not just that the model did the task. A
 // program grader can check real effects. A built-in grader counts only when it
@@ -146,20 +145,6 @@ export function hookEvidence(grader, plugin) {
   return false;
 }
 
-// Extra checks for the shipped examples. They apply only while those exact
-// assets exist, so renaming or deleting an example removes its contract too.
-const exampleContracts = {
-  "hook:format-json/postToolUse": ({ graders }) => {
-    assert.ok(programArgs(graders, ".grading/format-json.mjs"), "hook:format-json/postToolUse: grade the hook's actual file effects.");
-  },
-  "extension:team-brainstorm/brainstorm": ({ stimulus, mcpServers, graders }) => {
-    const id = "extension:team-brainstorm/brainstorm";
-    assert.equal(stimulus.tags.boundary, "headless-sdk-contract", `${id}: label the host boundary honestly.`);
-    assert.ok(mcpServers["brainstorm-host"], `${id}: configure the actual extension contract transport.`);
-    assert.ok(programArgs(graders, ".grading/brainstorm.mjs"), `${id}: grade the extension's actual session state.`);
-  },
-};
-
 function checkPositive(asset, stimulus, spec, path, directory) {
   const id = asset.id;
   const graders = stimulus.graders ?? [];
@@ -170,7 +155,7 @@ function checkPositive(asset, stimulus, spec, path, directory) {
     `${id}: invocation alone isn't outcome coverage. Add an outcome grader: ${outcomeGraders.join(", ")}${asset.kind === "mcp" ? ", or a tool-calls rule with the tool's result" : asset.kind === "hook" ? ", or a tool-calls rule whose result matches the hook's diagnostic" : ""}.`);
   if (asset.kind === "skill") {
     const skills = [...list(spec.agent_environment?.skills), ...list(stimulus.agent_environment?.skills)];
-    assert.ok(skills.some((skill) => resolve(dirname(path), skill) === asset.path), `${id}: load the actual skill. List its directory in agent_environment.skills, relative to the eval file, for example ../../${relativePath(directory, asset.path)}.`);
+    assert.ok(skills.some((skill) => resolve(dirname(path), skill) === asset.path), `${id}: load the actual skill. List its directory in agent_environment.skills, relative to the eval file: ${relative(dirname(path), asset.path).split(sep).join("/")}.`);
     assert.ok(graders.some((grader) => grader.type === "skill-invocation" && list(grader.config?.required).includes(asset.name)),
       `${id}: assert actual skill invocation with a skill-invocation grader whose config.required lists ${asset.name}.`);
   } else if (asset.kind === "agent") {
@@ -206,7 +191,6 @@ function checkPositive(asset, stimulus, spec, path, directory) {
     assert.ok(Object.keys(mcpServers).length, `${id}: configure the transport that exercises the actual extension.`);
     assert.ok(graders.some((grader) => grader.type === "program"), `${id}: grade the extension's actual state with a program grader.`);
   }
-  exampleContracts[id]?.({ stimulus, mcpServers, graders });
 }
 
 // A negative control must assert something observable. For an MCP tool that's
@@ -295,6 +279,38 @@ export function checkCoverage(assets, specs, { directory = root, suites = new Se
   return names.size;
 }
 
+// Where an asset's eval lives: evals/ mirrors plugins/, with one folder per asset.
+export function mirroredEvalFolder(asset) {
+  const plugin = asset.plugin ?? asset.id.split(":")[1].split("/")[0];
+  if (asset.kind === "skill") return `evals/${plugin}/skills/${asset.name}`;
+  if (asset.kind === "agent") return `evals/${plugin}/agents/${asset.name}`;
+  if (asset.kind === "extension") return `evals/${plugin}/extensions/${asset.name}`;
+  if (asset.kind === "hook") return `evals/${plugin}/hooks`;
+  if (asset.kind === "mcp") return `evals/${plugin}/mcp`;
+  throw new Error(`Unknown asset kind ${asset.kind}.`);
+}
+
+// Each asset needs an eval file directly in its mirrored folder with its own
+// positive and negative cases, so its eval is easy to find. Cases elsewhere can
+// still add coverage.
+export function checkLayout(assets, specs, { directory = root } = {}) {
+  const problems = new Problems(directory);
+  for (const asset of assets) {
+    const folder = mirroredEvalFolder(asset);
+    const here = specs.filter(({ path }) => relativePath(directory, dirname(path)) === folder);
+    const controls = new Set(here.flatMap(({ spec }) => (spec?.stimuli ?? [])
+      .map((stimulus) => effectiveTags(spec, stimulus))
+      .filter((tags) => list(tags.assets).includes(asset.id))
+      .map((tags) => tags.control)));
+    const missing = ["positive", "negative"].filter((control) => !controls.has(control));
+    if (missing.length) {
+      problems.add(asset.id, `its eval belongs in ${folder}/eval.yaml, mirroring the asset under plugins/. `
+        + `Add ${missing.join(" and ")} cases for it there. See docs/evals.md#layout.`);
+    }
+  }
+  problems.throwIfAny();
+}
+
 if (isEntrypoint(import.meta.url)) {
   await runCli(async () => {
     const config = await readVallyConfig(root);
@@ -304,6 +320,7 @@ if (isEntrypoint(import.meta.url)) {
       throw new Error(`No eval files matching ${evalFilenames(config).join(", ")} (.vally.yaml evalFilenames) were found under evals/, but ${assets.length} local assets need coverage. Add evals, or check evalFilenames.`);
     }
     const count = checkCoverage(assets, specs, { suites: suiteTags(config) });
+    checkLayout(assets, specs);
     if (!assets.length && !specs.length) {
       console.log("No local plugins or eval specs yet, so there's nothing to cover. Add a plugin with npm run new-plugin -- <name>; it writes an eval that meets these rules.");
       return;

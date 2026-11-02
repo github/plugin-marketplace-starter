@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, cp, writeFile, rm } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { mkdtemp, mkdir, cp, readdir, writeFile, rm } from 'node:fs/promises';
+import { relative, resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { contained, readCatalog } from '../scripts/catalog.mjs';
@@ -45,6 +45,22 @@ test('local workflows install independently without fetching remote plugins', { 
       const ours = installed.filter(item => item.marketplace === catalog.name && item.enabled);
       assert.deepEqual(ours.map(item => item.name), [plugin.name], 'A workflow must not install its sibling plugins');
       assert.equal(ours[0].enabled, true);
+      const skillsRoot = resolve(source, plugin.source, 'skills');
+      let expectedSkills = [];
+      try {
+        expectedSkills = (await readdir(skillsRoot, { withFileTypes: true }))
+          .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+      const installedSkills = JSON.parse(run(['skill', 'list', '--json']));
+      assert.ok(Array.isArray(installedSkills), 'Expected the documented flat skill list');
+      const pluginSkills = installedSkills.filter(item => item.source === 'plugin' && item.enabled)
+        .filter(item => {
+          const path = relative(skillsRoot, item.path);
+          return path && !path.startsWith('..') && !path.includes('/') && !path.includes('\\');
+        }).map(item => item.name).sort();
+      assert.deepEqual(pluginSkills, expectedSkills, `Installed skills for ${plugin.name} must match its skills directories`);
     } finally {
       await rm(home, { recursive: true, force: true });
     }

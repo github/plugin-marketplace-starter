@@ -23,13 +23,71 @@ The baseline model is `gpt-5.4-mini`; override it with `--model MODEL_ID`.
 Local runs use one worker, per-case timeouts, and one bounded retry for a
 timeout or rate limit. A valid failed verdict isn't retried to get a pass.
 
+## Layout
+
+`evals/` mirrors `plugins/`. Each plugin has a folder of the same name, and
+each asset has one eval file in a folder that mirrors where the asset lives:
+
+| Asset | Eval |
+|---|---|
+| `plugins/<plugin>/skills/<skill>/SKILL.md` | `evals/<plugin>/skills/<skill>/eval.yaml` |
+| `plugins/<plugin>/com.github.copilot/agents/<agent>.agent.md` | `evals/<plugin>/agents/<agent>/eval.yaml` |
+| `plugins/<plugin>/com.github.copilot/hooks/hooks.json` | `evals/<plugin>/hooks/eval.yaml` |
+| `plugins/<plugin>/mcp.json` | `evals/<plugin>/mcp/eval.yaml` |
+| `plugins/<plugin>/com.github.copilot/extensions/<name>/` | `evals/<plugin>/extensions/<name>/eval.yaml` |
+
+Each eval file has its own positive cases, at least one `suite: smoke` case,
+and its own negative control. `npm run eval:check` fails when an asset has no
+positive and negative case in its mirrored folder. A `<name>.eval.yaml` file
+in that folder counts too.
+
+Put every other file at the narrowest level that uses it:
+
+- Used by one asset's eval: in that asset's folder, such as
+  `evals/<plugin>/agents/<agent>/fixtures/`.
+- Used by several assets in one plugin: in `evals/<plugin>/`, such as
+  `evals/<plugin>/graders.mjs`.
+- Used by more than one plugin: in `evals/graders/` (shared grader helpers like
+  `common.mjs`) or `evals/support/` (shared hosts and workspaces).
+
+So `evals/graders/` and `evals/support/` hold only shared files, and
+`new-plugin` won't create a plugin named `graders` or `support`. Removing a
+plugin removes `evals/<plugin>/`, which takes all of its evals, graders, and
+fixtures with it.
+
+A grader that imports `./common.mjs` works wherever it lives, as long as the
+eval's `grading_environment.files` copies both into the same grading folder:
+
+```yaml
+grading_environment:
+  files:
+    - src: ../../graders.mjs
+      dest: .grading/my-plugin.mjs
+    - src: ../../../graders/common.mjs
+      dest: .grading/common.mjs
+```
+
+`npm run new-plugin` creates the mirrored folders with a placeholder eval for
+each asset. Replace the placeholder cases with real ones.
+
+### Other layouts
+
+Vally finds eval files anywhere under `paths.evals`, so this layout is a
+convention, not a requirement. Some teams keep each eval next to its asset
+inside the plugin instead. The trade-off is that the eval files then ship to
+everyone who installs the plugin, because installing copies the whole plugin
+folder and there's no way to exclude files. If you do this, keep large
+fixtures and graders outside the plugin anyway. You'd also need to update
+`paths.evals` in `.vally.yaml` and this repository's eval scripts, which look
+for evals in `evals/` and check the mirrored paths.
+
 ## Run only the plugins you changed
 
-A plugin can have more than one spec, such as `evals/<name>/eval.yaml` and
-`evals/<name>/agent/eval.yaml`, so running `evals/<name>/eval.yaml` alone can
-miss cases. `--plugin` selects every
-spec under `evals/<name>/`, at any depth, plus any spec with a case that tags
-one of the plugin's assets. Check the selection for free first:
+A plugin has one spec per asset, such as
+`evals/<name>/skills/<skill>/eval.yaml` and
+`evals/<name>/agents/<agent>/eval.yaml`, so running one spec alone can miss
+cases. `--plugin` selects every spec under `evals/<name>/`, at any depth,
+plus any spec with a case that tags one of the plugin's assets. Check the selection for free first:
 
 ```sh
 npm run eval:list -- --plugin <name>
@@ -83,8 +141,10 @@ and check your billing dashboard after a run to learn what your suite costs.
 
 ## Write an eval
 
-1. Create `evals/<plugin>/eval.yaml` with realistic tasks, expected outcomes,
-   and at least one negative or non-trigger case. `eval.yaml` is
+1. Create the asset's eval at its mirrored path (see [Layout](#layout)), such
+   as `evals/<plugin>/skills/<skill>/eval.yaml`, with realistic tasks,
+   expected outcomes, and at least one negative or non-trigger case.
+   `eval.yaml` is
    [Vally's default file name](https://microsoft.github.io/vally/reference/eval-spec/).
    `<name>.eval.yaml` works too, so one folder can hold several specs;
    `evalFilenames` in `.vally.yaml` lists both.
@@ -93,7 +153,7 @@ and check your billing dashboard after a run to learn what your suite costs.
    `grading_environment`.
 2. Load the actual asset, rather than pasting its instructions into the task:
    - Skill: list its directory in `agent_environment.skills`, relative to the
-     eval file, such as `../../plugins/<plugin>/skills/<skill>`.
+     eval file, such as `../../../../plugins/<plugin>/skills/<skill>`.
    - Custom agent: copy its real `.agent.md` file to
      `.github/agents/<name>.agent.md` with `agent_environment.files`, where
      `<name>` is the agent's `name`. Stage it at the top of the spec so the
@@ -120,7 +180,8 @@ and check your billing dashboard after a run to learn what your suite costs.
    that a wrong outcome would fail the graders.
 
 [Write an eval, step by step](eval-authoring.md) has complete skill evals with
-each part explained. `npm run new-plugin` writes one for each new plugin.
+each part explained. `npm run new-plugin` writes a placeholder for each new
+asset.
 
 ### Outcome graders
 
@@ -197,6 +258,17 @@ configures to catch a broken path, canvas ID, or seed before a paid run.
 
 ## Asset identities
 
+<!-- examples -->
+The included workflows use disposable synthetic workspaces prepared by
+[maintenance-workspace.mjs](../evals/support/maintenance-workspace.mjs). It copies
+real scaffolding and structural-validation code plus shared canvas transports,
+never the checkout's eval specs or grader answer keys. Its fixture `verify`
+checks source structure and build freshness only; this deliberately isn't the
+full checkout's `verify`. Recorded upstream API responses exercise the real
+remote checker without contacting GitHub, and local CLI install checks don't
+start a model session. Case boundary tags state these limits.
+<!-- /examples -->
+
 | Asset | `tags.assets` identity | Source layout |
 |---|---|---|
 | Skill | `skill:<plugin>/<skill-name>` | `plugins/<plugin>/skills/<skill-name>/SKILL.md` |
@@ -208,9 +280,9 @@ configures to catch a broken path, canvas ID, or seed before a paid run.
 The coverage check discovers every local skill, agent, hook, extension, and MCP
 tool. It starts each local MCP server to read its real tool list. When
 something's missing, it names the spec file, the case, and what to add, and it
-reports every problem in one run. The shipped examples carry a few extra checks
-tied to their exact asset IDs; they disappear when you rename or remove the
-example.
+reports every problem in one run. Live-repository checks test invariants rather
+than a fixed plugin list; plugin-specific outcome graders travel with the
+included plugin and are removed with it.
 
 Slash commands, rules, and LSP servers aren't invoked by the model the way
 skills, agents, and tools are, so the coverage check doesn't require evals for

@@ -1,0 +1,65 @@
+name: update-remote-pins
+description: Deliberate remote pins using real template checks and synthetic offline upstream evidence.
+type: capability
+defaults:
+  executor: copilot-sdk
+  model: gpt-5.4-mini
+  timeout: 5m
+  runs: 1
+# Both of the plugin's skills load, as they do when it's installed, so these
+# cases also check that Copilot picks the right one.
+agent_environment:
+  skills:
+    - ../../../../plugins/marketplace-maintainer/skills/update-remote-pins
+    - ../../../../plugins/marketplace-maintainer/skills/release-plugins
+grading_environment:
+  files:
+    - src: ../../graders.mjs
+      dest: .grading/marketplace-maintainer.mjs
+    - src: ../../../graders/common.mjs
+      dest: .grading/common.mjs
+stimuli:
+  - name: update-remote-pins-uses-reviewed-release
+    prompt: >-
+      Pin outside-notes at its latest release using the reviewed offline
+      upstream-snapshot.json. Its current catalog pin is the previous release.
+      Review and summarize the supplied upstream changes, update the selected
+      entry, run check-remotes and static verify, and keep it opt-in.
+      This disposable fixture's check-remotes uses recorded API responses through
+      the real checker, not live GitHub. Don't access the network, install upstream
+      code, commit, or publish. State the offline verification limit.
+    agent_environment:
+      commands:
+        - node "${MAINTENANCE_WORKSPACE}" remote
+    tags:
+      assets: skill:marketplace-maintainer/update-remote-pins
+      control: positive
+      suite: smoke
+      boundary: recorded-upstream-not-live-github
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required: [update-remote-pins]
+      - type: program
+        config:
+          program: node
+          args: [.grading/marketplace-maintainer.mjs, remote]
+  - name: update-remote-pins-ignores-local-copy-edit
+    prompt: >-
+      Rewrite this local plugin description in plain English, in chat only:
+      "Facilitates the summarization of notes." Don't change files or prepare a release.
+    tags:
+      assets: skill:marketplace-maintainer/update-remote-pins
+      control: negative
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          disallowed: [update-remote-pins, release-plugins]
+      - type: output-matches
+        config:
+          pattern: '[Ss]ummariz(?:e|es|ing) notes'
+      - type: diff-empty
+scoring:
+  threshold: 1

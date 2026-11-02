@@ -5,43 +5,25 @@ import { fileURLToPath } from "node:url";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
 
-// Every repository path that belongs to one shipped example, beyond the generic
-// plugins/<name>/ and evals/<name>/ directories. `npm run remove-example` deletes
-// these, and example-only tests skip when the files they need are gone.
-// Keep this map in step when you add a test, grader, fixture, or param for an example.
+// Every repository path that belongs to one included plugin, beyond the generic
+// plugins/<name>/ and evals/<name>/ directories. A plugin's evals, graders, and
+// fixtures all live under evals/<name>/, so they need no entry here. `npm run
+// remove-example` deletes these, and example-only tests skip when the files they
+// need are gone. Keep this map in step when you add a test or param for an example.
 export const examples = Object.freeze({
-  "bug-report": {
-    paths: ["evals/graders/bug-report.mjs", "test/grader-bug-report.test.mjs"],
+  "plugin-authoring": {
+    paths: ["test/plugin-authoring-grader.test.mjs"],
     params: [],
   },
-  "team-brainstorm": {
-    paths: [
-      "evals/graders/brainstorm.mjs",
-      "test/board.test.mjs",
-      "test/board-ui.test.mjs",
-      "test/brainstorm-eval-host.test.mjs",
-      "test/extension.test.mjs",
-      "test/grader-brainstorm.test.mjs",
-    ],
-    params: ["BRAINSTORM_EXTENSION"],
-  },
-  "format-json": {
-    paths: ["evals/graders/format-json.mjs", "test/hook.test.mjs", "test/grader-format-json.test.mjs"],
+  "marketplace-maintainer": {
+    paths: ["test/marketplace-maintainer-grader.test.mjs"],
     params: [],
-  },
-  "customization-authoring": {
-    paths: ["evals/graders/src/authoring.mjs", "evals/graders/dist/authoring.mjs", "test/authoring-grader.test.mjs"],
-    params: ["MARKETPLACE_VALLY_CLI"],
-  },
-  "code-review": {
-    paths: ["evals/fixtures/review"],
-    params: [],
-  },
-  "json-configuration": {
-    paths: ["test/json-tools.test.mjs", "test/mcp-protocol.test.mjs"],
-    params: ["JSON_MCP_SERVER"],
   },
 });
+
+// Top-level folders in evals/ that hold files several plugins share. They can't
+// be plugin names, since evals/<name>/ belongs to the plugin of that name.
+export const reservedNames = Object.freeze(["graders", "support"]);
 
 // Repository tooling that no plugin owns, even when a plugin's name would match
 // the naming convention below.
@@ -50,14 +32,15 @@ export const protectedPaths = new Set([
   "evals/support/canvas-host.mjs",
   "evals/support/canvas-loader.mjs",
   "evals/support/canvas-sdk.mjs",
+  "evals/support/maintenance-workspace.mjs",
   ...["adoption", "canvas-host", "catalog", "eval-setup", "grader-common", "installation", "marketplace",
-    "new-plugin", "remote-plugins", "rename-marketplace", "runtime-environment"].map((name) => `test/${name}.test.mjs`),
+    "maintenance-workspace", "new-plugin", "remote-plugins", "rename-marketplace", "runtime-environment"].map((name) => `test/${name}.test.mjs`),
 ]);
 
-// The paths a plugin owns: its directory, its evals directory, support files
-// named after it, and for a shipped example, the extra files listed above.
-// Support files follow a naming convention, so `npm run remove-plugin` can find
-// the graders, eval hosts, fixtures, and tests of plugins you add:
+// The paths a plugin owns: its directory, its evals directory (which holds its
+// evals, graders, and fixtures), support files named after it, and for a shipped
+// example, the extra files listed above. Support files outside evals/<name>/
+// follow a naming convention, so `npm run remove-plugin` can find them too:
 // evals/graders/<name>.mjs, evals/graders/<name>-*.mjs, the bundled grader pair
 // evals/graders/src/<name>.mjs and evals/graders/dist/<name>.mjs (or <name>-*.mjs),
 // evals/support/<name>-*, evals/fixtures/<name>/, test/<name>.test.mjs, and test/<name>-*.test.mjs. A
@@ -80,7 +63,8 @@ export async function ownedPaths(name, { directory = root, others = [] } = {}) {
       if (folder === "evals/fixtures" || mine(base)) conventional.push(`${folder}/${entry.name}`);
     }
   }
-  return [...new Set([`plugins/${name}`, `evals/${name}`, ...(examples[name]?.paths ?? []), ...conventional])];
+  const evals = reservedNames.includes(name) ? [] : [`evals/${name}`];
+  return [...new Set([`plugins/${name}`, ...evals, ...(examples[name]?.paths ?? []), ...conventional])];
 }
 
 // Shipped examples whose plugin directory is still here.

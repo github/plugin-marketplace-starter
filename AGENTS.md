@@ -7,21 +7,40 @@ place; don't duplicate them here.
 
 ## Agent-specific rules
 
+<!-- plugin:plugin-authoring -->
+- Use the `plugin-authoring` workflows for choosing/scaffolding a plugin,
+  isolated local checks, and contribution preparation. They use this checkout's
+  guides and scripts; generic asset/eval writing stays in the linked guidance.
+<!-- /plugin:plugin-authoring -->
+<!-- plugin:marketplace-maintainer -->
+- Use `marketplace-maintainer` for remote pins and release preparation.
+  `plugin-reviewer` is a read/search-only contribution reviewer, not a generic
+  code-review skill; it cannot run `verify` or post comments.
+<!-- /plugin:marketplace-maintainer -->
 - Scaffold a plugin with `npm run new-plugin -- <name>` (with `--with agent`,
   `mcp`, `hook`, or `extension`, and `--no-skill` when it has no skill), remove
-  one with `npm run remove-plugin -- <name>` (`remove-example` for the shipped
-  examples), and rename the marketplace with `npm run rename-marketplace`,
+  one with `npm run remove-plugin -- <name>` (`remove-example` for the included
+  plugins), and rename the marketplace with `npm run rename-marketplace`,
   rather than editing the catalog, overlay, and `.vally.yaml` by hand. Name a
-  plugin's support files after it (`evals/graders/<name>.mjs`,
-  `test/<name>-*.test.mjs`) so removal finds them.
-- Group plugins by workflow, not by asset type. Keep every in-repo example
+  plugin's tests after it (`test/<name>-*.test.mjs`) so removal finds them.
+- `evals/` mirrors `plugins/`. Give each asset one eval file at the matching
+  path: `evals/<plugin>/skills/<skill>/eval.yaml`,
+  `evals/<plugin>/agents/<agent>/eval.yaml`, `evals/<plugin>/hooks/eval.yaml`,
+  `evals/<plugin>/mcp/eval.yaml`, or `evals/<plugin>/extensions/<name>/eval.yaml`,
+  each with its own positive cases, a `suite: smoke` case, and a negative
+  control. Put every other eval file at the narrowest level that uses it: one
+  asset's fixtures or grader in that asset's folder, files several of a
+  plugin's evals share in `evals/<plugin>/` (such as `graders.mjs`), and only
+  files more than one plugin uses in `evals/graders/` or `evals/support/`.
+  Then removing `evals/<plugin>/` removes everything the plugin's evals own.
+- Group plugins by workflow, not by asset type. Keep every in-repo plugin
   self-contained and independently installable, without external services.
   Remote catalog references are separate from the local examples.
 - Keep `.vally.yaml` in step with the plugins: `paths.skills` lists every
   plugin's `skills` directory, and path `params` point at files that exist.
   Live-repository tests check invariants, not a fixed plugin list; put
-  example-specific assertions in tests that skip when the example is gone, and
-  list every file an example owns in [scripts/examples.mjs](scripts/examples.mjs).
+  plugin-specific assertions in tests that skip when that plugin is gone, and
+  list every file an included plugin owns in [scripts/examples.mjs](scripts/examples.mjs).
 - Use the Agent Plugins 1.0 layout: root `plugin.json`, `skills/`, and `mcp.json`.
   Copilot agents (`agents/`), slash commands (`commands/`), rules (`rules/`),
   hooks (`hooks/hooks.json`), LSP servers (`lsp.json`), and SDK extensions
@@ -39,8 +58,8 @@ place; don't duplicate them here.
   share guidance through the marketplace, package it as a skill or agent, as
   [docs/customization-types.md](docs/customization-types.md) explains.
 - Don't add a UI framework or database. Never vendor the runtime SDK. The only
-  build step regenerates committed artifacts (the MCP server bundle, the
-  authoring grader, and their notices). Run `npm run build` after changing their
+  build step regenerates committed artifacts (MCP server bundles, bundled
+  graders, and their notices) when those sources exist. Run `npm run build` after changing their
   sources and commit the generated files with the change. Never make an
   installed plugin depend on this checkout's `node_modules`.
 - Skill and agent descriptions explain when to invoke them. Put detailed
@@ -52,9 +71,9 @@ place; don't duplicate them here.
 - Don't claim a customization type works in a host unless official docs say so;
   keep the matrix in [docs/customization-types.md](docs/customization-types.md)
   in step, and write "not verified" where they don't.
-- Preserve coverage when replacing an example; don't delete tests just to
+- Preserve coverage when replacing an included plugin; don't delete tests just to
   make validation pass.
-- Keep evals outside plugins, grouped by workflow under `evals/`. Update the
+- Keep evals outside plugins, in the mirrored layout above. Update the
   corresponding evals whenever adding or changing an in-repo skill, agent, hook,
   extension, or MCP tool. Don't replace real skill, tool, or agent invocation
   assertions with output keywords. Keep eval-only transports and development

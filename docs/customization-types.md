@@ -6,7 +6,8 @@ specific to Copilot and lives under `com.github.copilot/`, which other clients
 ignore, except VS Code's automation templates, which live in `automations/`. The [Copilot CLI plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference#components)
 lists the official locations.
 <!-- examples -->
-[Examples](examples.md) shows which example demonstrates each type.
+[Included plugins](examples.md) covers the repository-specific authoring and
+maintenance workflows. The scaffolder still supports every type below.
 <!-- /examples -->
 
 | Type | Location in a plugin | Use it for | `new-plugin` |
@@ -138,14 +139,14 @@ and canvas extensions. To add another type, or to understand what it did:
 6. In-repo MCP servers must start offline, without credentials, network access,
    or a database. `npm run verify` starts each one to read its tool list for
    eval coverage. Put anything that needs a secret behind a tool call.
-7. Add evals under `evals/<name>/` (see [Evals](evals.md)) and focused tests
-   under `test/` for code such as servers, hooks, and graders. If an eval needs
-   a path, such as your server bundle, add it to `params` in `.vally.yaml`.
-   Name support files after the plugin so `npm run remove-plugin` removes them
-   with it: `evals/graders/<name>.mjs` or `<name>-*.mjs` (also under
-   `evals/graders/src/` for a bundled grader), `evals/support/<name>-*`,
-   `evals/fixtures/<name>/`, and `test/<name>.test.mjs` or `test/<name>-*.test.mjs`.
-   A file named anything else stays behind when the plugin goes.
+7. Add one eval per asset under `evals/<name>/`, at the path that mirrors the
+   asset, and keep the plugin's graders and fixtures there too (see
+   [Layout](evals.md#layout)). Add focused tests under `test/` for code such as
+   servers, hooks, and graders. If an eval needs a path, such as your server
+   bundle, add it to `params` in `.vally.yaml`. `npm run remove-plugin`
+   removes `evals/<name>/` with the plugin. Name tests after the plugin,
+   `test/<name>.test.mjs` or `test/<name>-*.test.mjs`, so it removes them too.
+   A test named anything else stays behind when the plugin goes.
 8. Run `npm run verify`.
 
 For every release, change the version in `plugin.json`, the catalog, and the

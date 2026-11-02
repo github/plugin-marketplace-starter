@@ -2,14 +2,25 @@
 
 This guide walks through one complete eval for a skill and explains each part.
 [Evals](evals.md) covers the rules for every asset type, suites, cost, and
-results. `npm run new-plugin` writes a starting eval for each new plugin, so
-you usually edit one rather than start from nothing.
+results. `npm run new-plugin` writes a placeholder eval for each asset of a new
+plugin, so you usually replace its cases rather than start from nothing.
+
+## Where evals go
+
+`evals/` mirrors `plugins/`, with one eval file per asset. A skill at
+`plugins/<plugin>/skills/<skill>/` has its eval at
+`evals/<plugin>/skills/<skill>/eval.yaml`, and an agent's eval goes in
+`evals/<plugin>/agents/<agent>/`. Put each fixture or grader at the narrowest
+level that uses it: in the asset's folder when only that eval uses it, in
+`evals/<plugin>/` when several of the plugin's evals share it, and in
+`evals/graders/` or `evals/support/` only when more than one plugin does.
+[Layout](evals.md#layout) has the full table.
 
 ## A complete skill eval
 
 The skill lives at `plugins/<plugin>/skills/<skill>/SKILL.md` and its eval at
-`evals/<plugin>/eval.yaml`, so the eval loads the skill from
-`../../plugins/<plugin>/skills/<skill>`. This example uses a plugin named
+`evals/<plugin>/skills/<skill>/eval.yaml`, so the eval loads the skill from
+`../../../../plugins/<plugin>/skills/<skill>`. This example uses a plugin named
 `example-plugin` with a skill named `example-skill` that writes `result.json`.
 It's a pattern, not an expected answer: replace the task and the outcome
 assertions with your skill's real contract.
@@ -25,7 +36,7 @@ defaults:
   runs: 1
 agent_environment:
   skills:
-    - ../../plugins/example-plugin/skills/example-skill
+    - ../../../../plugins/example-plugin/skills/example-skill
 stimuli:
   - name: example-skill-performs-the-task
     prompt: A realistic request that should use the skill.
@@ -88,7 +99,9 @@ scoring:
 ## A skill that answers in chat
 
 A skill that replies in chat, without writing files, uses an output grader
-instead of a file grader. This eval passes the coverage check as written:
+instead of a file grader. Saved as
+`evals/release-notes/skills/release-notes/eval.yaml`, this eval passes the
+coverage check as written:
 
 ```yaml
 name: release-notes
@@ -101,7 +114,7 @@ defaults:
   runs: 1
 agent_environment:
   skills:
-    - ../../plugins/release-notes/skills/release-notes
+    - ../../../../plugins/release-notes/skills/release-notes
 stimuli:
   - name: release-notes-groups-changes
     prompt: "Draft release notes for: added CSV export, fixed login timeout."

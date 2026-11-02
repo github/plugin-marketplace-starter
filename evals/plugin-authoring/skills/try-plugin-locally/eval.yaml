@@ -1,0 +1,62 @@
+name: try-plugin-locally
+description: Isolated Copilot CLI installation of a local plugin in a disposable synthetic workspace.
+type: capability
+defaults:
+  executor: copilot-sdk
+  model: gpt-5.4-mini
+  timeout: 5m
+  runs: 1
+# All of the plugin's skills load, as they do when it's installed, so these
+# cases also check that Copilot picks the right one.
+agent_environment:
+  skills:
+    - ../../../../plugins/plugin-authoring/skills/add-plugin
+    - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
+    - ../../../../plugins/plugin-authoring/skills/submit-plugin
+grading_environment:
+  files:
+    - src: ../../graders.mjs
+      dest: .grading/plugin-authoring.mjs
+    - src: ../../../graders/common.mjs
+      dest: .grading/common.mjs
+stimuli:
+  - name: try-plugin-locally-installs-and-cleans-cli-copy
+    prompt: >-
+      Let me try sample-notes before I open a PR. Do an install-only check with the
+      pinned Copilot CLI, not a model session. Use an isolated COPILOT_HOME at the
+      absolute path of .fixture-copilot-home in this workspace, run the CLI from
+      outside the checkout, and turn auto-update off. Check discovery, uninstall
+      the test copy, and remove that test home afterward. Don't touch my real home.
+    agent_environment:
+      commands:
+        - node "${MAINTENANCE_WORKSPACE}" authoring
+    tags:
+      assets: skill:plugin-authoring/try-plugin-locally
+      control: positive
+      suite: smoke
+      boundary: cli-installation-not-model-behavior
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required: [try-plugin-locally]
+      - type: program
+        config:
+          program: node
+          args: [.grading/plugin-authoring.mjs, try]
+  - name: try-plugin-locally-ignores-pricing-question
+    prompt: Is a marketplace plugin the same thing as a paid Copilot subscription? Answer briefly without creating or changing files.
+    tags:
+      assets: skill:plugin-authoring/try-plugin-locally
+      control: negative
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          disallowed: [add-plugin, try-plugin-locally, submit-plugin]
+      - type: output-matches
+        config:
+          pattern: '[Nn]o\b|[Nn]ot the same'
+      - type: diff-empty
+scoring:
+  threshold: 1

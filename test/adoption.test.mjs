@@ -88,9 +88,7 @@ async function verify(directory, { tests = true } = {}) {
 const newPlugin = (directory, ...args) => ok(directory, "scripts/new-plugin.mjs", ...args);
 const removeExamples = (directory, ...names) => ok(directory, "scripts/remove-plugin.mjs", "--example", ...names);
 
-// Follows the README's "Make it yours" steps on a copy of this repository, as a
-// team that already has its own plugins would: one named like an old test
-// fixture, and a second MCP server next to the JSON example.
+// Follows the README's "Make it yours" steps on a disposable copy.
 test("a team can rename the marketplace, drop examples and the remote entry, and add its own plugins", { timeout: 600_000 }, async (t) => {
   const directory = await scratchRepository(t);
   const fixture = `adoption-${randomBytes(3).toString("hex")}`;
@@ -99,10 +97,14 @@ test("a team can rename the marketplace, drop examples and the remote entry, and
     // The guide's chat-skill eval must pass the coverage check and strict lint as written.
     const example = (await readFile(join(directory, "docs/eval-authoring.md"), "utf8")).match(/```yaml\r?\n(name: release-notes\r?\n[\s\S]*?)```/)?.[1];
     assert.ok(example, "docs/eval-authoring.md should keep its release-notes example.");
-    if (example) await writeFile(join(directory, "evals/release-notes/eval.yaml"), example);
+    if (example) await writeFile(join(directory, "evals/release-notes/skills/release-notes/eval.yaml"), example);
   }
   await newPlugin(directory, `${fixture}-tools`, "--with", "mcp", "--with", "agent", "--description", "Fixture tools for the adoption test.");
-  const dropped = ["team-brainstorm", "format-json"].filter((name) => present.includes(name));
+  // evals/ mirrors plugins/: one eval per asset, nothing in the shared folders.
+  for (const path of [`skills/${fixture}-tools`, `agents/${fixture}-tools-specialist`, "mcp"]) {
+    assert.ok(existsSync(join(directory, "evals", `${fixture}-tools`, path, "eval.yaml")), path);
+  }
+  const dropped = present.slice(0, 1);
   if (dropped.length) await removeExamples(directory, ...dropped);
 
   const catalog = await json(join(directory, "marketplace.json"));
@@ -169,7 +171,7 @@ test("an empty or remote-only marketplace passes verify, and new plugins scaffol
     assert.ok(!existsSync(join(directory, "docs/examples.md")), "The examples guide goes with the last example.");
     assert.doesNotMatch(readme, /Six small example plugins|authoring reference/);
     if (!ownPlugins.length && readme.includes("<!-- plugin-table -->")) {
-      assert.match(readme, /<!-- plugin-table -->\n\| Plugin \| Try it \| Teaches \|\n\|---\|---\|---\|\n\| _None yet\._ \| \| \|\n/);
+      assert.match(readme, /<!-- plugin-table -->\n\| Plugin \| Try it \| Helps with \|\n\|---\|---\|---\|\n\| _None yet\._ \| \| \|\n/);
     }
   }
 
@@ -206,9 +208,15 @@ test("an empty or remote-only marketplace passes verify, and new plugins scaffol
   }
   assert.match(scaffolded.validated, /still has scaffolded text/);
 
-  // Removing a scaffolded plugin takes the support files named after it.
+  for (const path of [`${hook}/hooks/eval.yaml`, `${canvas}/extensions/${canvas}/eval.yaml`, `${canvas}/extensions/${canvas}/grader.mjs`,
+    `${canvas}/skills/${canvas}/eval.yaml`, `${skill}/skills/${skill}/eval.yaml`]) {
+    assert.ok(existsSync(join(directory, "evals", path)), path);
+  }
+
+  // Removing a scaffolded plugin takes its evals, graders, and the tests named after it, and keeps shared files.
   await ok(directory, "scripts/remove-plugin.mjs", canvas, hook);
-  for (const path of [`evals/graders/${canvas}.mjs`, `test/${hook}-hook.test.mjs`]) assert.ok(!existsSync(join(directory, path)), path);
+  for (const path of [`evals/${canvas}`, `evals/${hook}`, `test/${hook}-hook.test.mjs`]) assert.ok(!existsSync(join(directory, path)), path);
+  for (const path of ["evals/graders/common.mjs", "evals/support/canvas-host.mjs"]) assert.ok(existsSync(join(directory, path)), path);
   assert.ok(!Object.values(parse(await readFile(join(directory, ".vally.yaml"), "utf8")).params ?? {}).some((value) => String(value).includes(canvas)));
   await verify(directory, { tests: false });
 });

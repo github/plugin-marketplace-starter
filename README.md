@@ -1,6 +1,6 @@
 # Plugin marketplace starter
 
-A GitHub template for building, evaluating, and sharing AI customizations
+A GitHub template for maintaining and sharing AI customizations
 (skills, custom agents, hooks, MCP servers, and more) as an
 [Agent Plugins](https://agent-plugins.org/) marketplace for GitHub Copilot. It
 works for a team in an organization and for one person with a personal
@@ -14,7 +14,9 @@ account.
 It gives you:
 
 <!-- examples -->
-- Six small example plugins to learn from, copy, or delete.
+- Two included plugins most teams keep: one for marketplace owners and one
+  for plugin authors. [Included plugins](docs/examples.md) maps their assets
+  to the jobs they serve.
 <!-- /examples -->
 - Commands that scaffold a plugin, remove one, and rename the marketplace.
 - `npm run verify`, a model-free check of manifests, the catalog, tests, and
@@ -34,19 +36,11 @@ Two terms come up a lot:
   install.
 
 <!-- plugin-table -->
-| Plugin | Try it | Teaches |
+| Plugin | Try it | Helps with |
 |---|---|---|
-| [bug-report](plugins/bug-report/) | "Turn these notes into a bug report" | A basic skill that loads the right template on demand |
-| [format-json](plugins/format-json/) | Ask Copilot to edit a JSON file | A post-tool hook that formats the files an edit touched |
-| [team-brainstorm](plugins/team-brainstorm/) | "Let's brainstorm a release plan together" | A skill with a canvas extension and a shared session-only UI |
-| [customization-authoring](plugins/customization-authoring/) | "Create a skill and evals for summarizing a changelog" | A skill that writes a skill and its evals |
-| [code-review](plugins/code-review/) | "Use adversarial-review to review this diff without changing it" | A skill that delegates to a read-only custom agent |
-| [json-configuration](plugins/json-configuration/) | 'Use json-configuration to validate {"port":8443} and look up /port' | A skill backed by a bundled local MCP server |
+| [plugin-authoring](plugins/plugin-authoring/) | "Add a plugin that formats YAML after edits" | Choose a type, scaffold, test locally, and prepare a contribution |
+| [marketplace-maintainer](plugins/marketplace-maintainer/) | "Get the catalog ready to release" | Read-only plugin review, remote pins, releases, and retirement |
 
-<!-- examples -->
-[Examples](docs/examples.md) explains what each example shows and which files
-it owns.
-<!-- /examples -->
 
 <!-- template-only -->
 ## Background
@@ -91,11 +85,9 @@ You need Node.js 22.14 or newer.
    The name must be unique, lowercase, and hyphenated. Add `--dry-run` to see
    which files would change.
    <!-- examples -->
-3. Remove the shipped examples you don't want with
-   `npm run remove-example -- <name>...`, or all of them with
-   `npm run remove-example -- --all`. See
-   [Remove a plugin](#remove-a-plugin). You can do this before or after you
-   add your own plugins.
+3. Keep the two included plugins if they fit your team. To remove either one,
+   run `npm run remove-example -- <name>`, or remove both with
+   `npm run remove-example -- --all`. See [Remove a plugin](#remove-a-plugin).
    <!-- /examples -->
 4. Add your first plugin with `npm run new-plugin -- <name>`. See
    [Add a plugin](#add-a-plugin). `npm run verify` passes even with no plugins
@@ -140,12 +132,8 @@ type works in every host; see
 ```sh
 copilot plugin marketplace add github/plugin-marketplace-starter
 copilot plugin marketplace browse plugin-marketplace-starter
-copilot plugin install bug-report@plugin-marketplace-starter
-copilot plugin install team-brainstorm@plugin-marketplace-starter
-copilot plugin install format-json@plugin-marketplace-starter
-copilot plugin install customization-authoring@plugin-marketplace-starter
-copilot plugin install code-review@plugin-marketplace-starter
-copilot plugin install json-configuration@plugin-marketplace-starter
+copilot plugin install plugin-authoring@plugin-marketplace-starter
+copilot plugin install marketplace-maintainer@plugin-marketplace-starter
 ```
 
 Choose only the plugins you need; each one installs on its own. Start a new
@@ -165,6 +153,13 @@ Skills and MCP servers also work in other clients that support Agent Plugins.
 
 ## Add a plugin
 
+<!-- plugin:plugin-authoring -->
+Ask Copilot to add a plugin for your workflow: the
+[add-plugin skill](plugins/plugin-authoring/skills/add-plugin/SKILL.md) helps
+choose its type and uses the same scaffolder shown below. It links to public
+writing guidance; eval authoring stays in [the eval guide](docs/eval-authoring.md).
+<!-- /plugin:plugin-authoring -->
+
 ```sh
 npm run new-plugin -- release-notes
 npm run new-plugin -- sql-helper --with mcp --with agent --description "Review SQL migrations."
@@ -174,8 +169,9 @@ npm run verify
 ```
 
 `new-plugin` creates `plugins/<name>/` with `plugin.json`, a skill, a README
-with Install and Host checks sections, and a CHANGELOG, plus
-`evals/<name>/eval.yaml` with cases that already meet the coverage rules. It
+with Install and Host checks sections, and a CHANGELOG, plus a placeholder eval
+for each asset under `evals/<name>/`, at a path that mirrors the asset, with
+cases that already meet the coverage rules. It
 adds the plugin to the catalog, the repository overlay, `.vally.yaml`, and this
 README's plugin table and install commands.
 
@@ -184,8 +180,8 @@ README's plugin table and install commands.
   tool, and builds it.
 - `--with hook` adds a `postToolUse` hook, a model-free test for it, and an eval
   that proves it ran. See [Hooks](docs/hooks.md).
-- `--with extension` adds a canvas extension, an eval through the shared
-  headless canvas host, and its grader.
+- `--with extension` adds a canvas extension, and an eval and grader in its own
+  eval folder that use the shared headless canvas host.
 - `--no-skill` leaves out the skill, for a plugin such as a hook on its own.
 
 Then replace the scaffolded instructions, README, and eval prompts with your
@@ -206,13 +202,14 @@ npm run remove-plugin -- release-notes
 npm run verify
 ```
 
-`remove-plugin` deletes `plugins/<name>/` and `evals/<name>/`, its catalog
-entry, its repository overlay key, its `.vally.yaml` skill path and params, and
-support files named after it, such as `evals/graders/<name>.mjs` and
-`test/<name>-*.test.mjs`. For a remote plugin, it removes the catalog entry.
-For a shipped example, `remove-example` also deletes the graders, eval support
-files, fixtures, and tests that only that example uses, and the last one takes
-the examples guide with it. Both commands remove install commands, table rows,
+`remove-plugin` deletes `plugins/<name>/` and `evals/<name>/` (with all of the
+plugin's evals, graders, and fixtures), its catalog entry, its repository
+overlay key, its `.vally.yaml` skill path and params, and tests named after it,
+such as `test/<name>-*.test.mjs`. Shared files in `evals/graders/` and
+`evals/support/` stay. For a remote plugin, it removes the catalog entry. For
+an included plugin, `remove-example` also deletes the tests listed for it in
+`scripts/examples.mjs`, and the last one takes the included-plugins guide with
+it. Both commands remove install commands, table rows,
 and marked sections in Markdown that name the plugin, and turn other links to
 its files into plain text. A table that loses every row gets a "None yet" row.
 Use `--dry-run` to see what would go. `npm run verify` warns about any prose
@@ -264,8 +261,14 @@ plugins/<name>/            # One self-contained plugin per workflow
   skills/<skill>/SKILL.md
   com.github.copilot/      # Copilot-only parts: agents, hooks, extensions, and more
   mcp.json, src/, dist/    # A local MCP server, its source, and its bundle
-evals/<name>/eval.yaml     # Behavioral evals, kept outside the plugins
-evals/graders/, support/, fixtures/
+evals/                     # Behavioral evals, kept outside the plugins
+  <name>/                  # Mirrors plugins/<name>/
+    graders.mjs            # Only when several of the plugin's evals share it
+    skills/<skill>/eval.yaml
+    agents/<agent>/eval.yaml, fixtures/
+    hooks/eval.yaml, mcp/eval.yaml, extensions/<name>/eval.yaml
+  graders/common.mjs       # Shared by more than one plugin's graders
+  support/                 # Shared eval hosts and workspaces
 .vally.yaml                # Skill paths, eval file names, params, and suites
 scripts/                   # verify, build, new-plugin, remove-plugin, rename, eval launcher
 test/                      # Model-free tests
@@ -274,6 +277,14 @@ docs/                      # Reference guides
 .github/copilot/           # The repository overlay
 .github/workflows/         # validate.yml and evals.yml
 ```
+
+<!-- examples -->
+The included workflows are `plugins/plugin-authoring/` and
+`plugins/marketplace-maintainer/`. Their evals live under the matching `evals/`
+directories, one per skill or agent, and the reviewer's fixtures sit in its own
+eval folder.
+The shared scaffolder still supports every type shown above.
+<!-- /examples -->
 
 ## Licensing
 
@@ -333,9 +344,6 @@ to everyone who's contributed since.
   [Local development](docs/local-development.md),
   [Remote plugins](docs/remote-plugins.md), and
   [Security and data handling](docs/security.md)
-<!-- examples -->
-- [Examples](docs/examples.md)
-<!-- /examples -->
 - [Agent Plugins standard](https://agent-plugins.org/)
 - [GitHub Copilot plugins](https://docs.github.com/en/copilot/concepts/agents/about-plugins)
 - [Creating a team marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace)

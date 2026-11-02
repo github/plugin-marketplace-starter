@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { parse } from "yaml";
-import { checkCoverage, discoverAssets, readEvals, root, suiteTags } from "../scripts/validate-evals.mjs";
+import { checkCoverage, checkLayout, discoverAssets, mirroredEvalFolder, readEvals, root, suiteTags } from "../scripts/validate-evals.mjs";
 import { evalFilenameMatcher, parseTagSelectors, readCatalog, readVallyConfig } from "../scripts/catalog.mjs";
 import { defaultRuntime, pluginDirectories, runtimeArguments, runtimeEntry } from "../scripts/eval-runtime.js";
 import { evalParams, isPathParam, pathParams, reportArguments, runtimeBridge, runtimeEnvironment, vallyArguments, vallyCliPath, vallySelection } from "../scripts/evals.mjs";
@@ -21,6 +21,8 @@ test("all local assets have positive, smoke, and negative coverage", async () =>
   for (const asset of assets) assert.ok(localPlugins.some((plugin) => asset.id.split(":")[1].startsWith(`${plugin.name}/`)));
   const stimuli = specs.flatMap(({ spec }) => spec.stimuli);
   assert.equal(checkCoverage(assets, specs, { suites: suiteTags(config) }), stimuli.length);
+  // Each asset's eval lives at the path that mirrors it under plugins/.
+  assert.doesNotThrow(() => checkLayout(assets, specs));
   for (const asset of assets) {
     const withoutPositive = specs.map((item) => ({ ...item, spec: { ...item.spec,
       stimuli: item.spec.stimuli.filter((stimulus) => !(stimulus.tags.control === "positive" && [stimulus.tags.assets].flat().includes(asset.id))) } }))
@@ -29,26 +31,51 @@ test("all local assets have positive, smoke, and negative coverage", async () =>
   }
 });
 
-test("the brainstorm example keeps explicit headless canvas boundaries", { skip: !existsSync(resolve(root, "plugins/team-brainstorm")) }, async () => {
-  const assets = await discoverAssets();
-  const specs = await readEvals();
-  const canvasCases = specs.flatMap(({ spec }) => spec.stimuli).filter((stimulus) => stimulus.agent_environment?.mcpServers?.["brainstorm-host"]);
-  assert.ok(canvasCases.length >= 2);
-  for (const stimulus of canvasCases) assert.equal(stimulus.tags.boundary, "headless-sdk-contract");
-  const ungradedNegative = structuredClone(specs);
-  const arithmetic = ungradedNegative.flatMap(({ spec }) => spec.stimuli).find((stimulus) => stimulus.name === "brainstorm-does-not-trigger-for-arithmetic");
-  arithmetic.tags.assets = ["skill:team-brainstorm/team-brainstorm"];
-  assert.throws(() => checkCoverage(assets, ungradedNegative), /extension:team-brainstorm\/brainstorm: missing negative control/);
-  const relabeled = structuredClone(specs);
-  relabeled.flatMap(({ spec }) => spec.stimuli).find((stimulus) => stimulus.name === "brainstorm-preserves-and-moves-session-notes").tags.boundary = "native-ui";
-  assert.throws(() => checkCoverage(assets, relabeled), /host boundary honestly/);
+test("each asset's eval must live at the path that mirrors it", () => {
+  const plugin = resolve(root, "plugins/p");
+  const assets = [
+    { id: "skill:p/notes", kind: "skill", name: "notes", plugin: "p", path: resolve(plugin, "skills/notes") },
+    { id: "agent:p/helper", kind: "agent", name: "helper", plugin: "p", path: resolve(plugin, "com.github.copilot/agents/helper.agent.md") },
+    { id: "hook:p/postToolUse", kind: "hook", name: "postToolUse", plugin: "p", path: plugin },
+    { id: "mcp:p/server/echo", kind: "mcp", name: "echo", serverName: "server", plugin: "p", path: plugin },
+    { id: "extension:p/board", kind: "extension", name: "board", plugin: "p", path: resolve(plugin, "com.github.copilot/extensions/board") },
+  ];
+  assert.deepEqual(assets.map(mirroredEvalFolder), ["evals/p/skills/notes", "evals/p/agents/helper", "evals/p/hooks", "evals/p/mcp", "evals/p/extensions/board"]);
+  const at = (folder, asset, file = "eval.yaml") => ({ path: resolve(root, folder, file), spec: { stimuli: [
+    { name: `${asset.name}-yes`, tags: { assets: asset.id, control: "positive" } },
+    { name: `${asset.name}-no`, tags: { assets: asset.id, control: "negative" } },
+  ] } });
+  const mirrored = assets.map((asset) => at(mirroredEvalFolder(asset), asset));
+  assert.doesNotThrow(() => checkLayout(assets, mirrored));
+  // The upstream <name>.eval.yaml file name counts in the mirrored folder.
+  assert.doesNotThrow(() => checkLayout([assets[0]], [at("evals/p/skills/notes", assets[0], "notes.eval.yaml")]));
+  // A plugin-wide or old-style file doesn't count, and the message names the expected path.
+  assert.throws(() => checkLayout([assets[0]], [at("evals/p", assets[0])]), /skill:p\/notes: its eval belongs in evals\/p\/skills\/notes\/eval\.yaml/);
+  assert.throws(() => checkLayout([assets[1]], [at("evals/p/agent", assets[1])]), /evals\/p\/agents\/helper\/eval\.yaml/);
+  assert.throws(() => checkLayout([assets[0]], [at("evals/p/skills/notes/nested", assets[0])]), /evals\/p\/skills\/notes\/eval\.yaml/);
+  // The mirrored file needs both its own positive cases and its own negative control.
+  const positiveOnly = at("evals/p/skills/notes", assets[0]);
+  positiveOnly.spec.stimuli.pop();
+  assert.throws(() => checkLayout([assets[0]], [positiveOnly]), /Add negative cases for it there/);
+  // Tags inherited from the eval's top level count, as they do for coverage.
+  const inherited = { path: resolve(root, "evals/p/hooks/eval.yaml"), spec: { tags: { assets: assets[2].id }, stimuli: [
+    { name: "hook-yes", tags: { control: "positive" } }, { name: "hook-no", tags: { control: "negative" } },
+  ] } };
+  assert.doesNotThrow(() => checkLayout([assets[2]], [inherited]));
 });
 
-test("the bug-report example must load its actual skill", { skip: !existsSync(resolve(root, "plugins/bug-report")) }, async () => {
+test("every discovered skill must be loaded by its positive cases", async (t) => {
   const assets = await discoverAssets();
+  const skill = assets.find((asset) => asset.kind === "skill");
+  if (!skill) return t.skip("No local skills remain after customization.");
   const specs = await readEvals();
   const unloaded = structuredClone(specs);
-  unloaded.find((item) => item.spec.name === "bug-report-behavior").spec.agent_environment.skills = [];
+  for (const { spec } of unloaded) {
+    if (spec.agent_environment) spec.agent_environment.skills = [];
+    for (const stimulus of spec.stimuli) {
+      if (stimulus.agent_environment) stimulus.agent_environment.skills = [];
+    }
+  }
   assert.throws(() => checkCoverage(assets, unloaded), /load the actual skill/);
 });
 
@@ -66,7 +93,7 @@ test("eval-only dependencies stay out of plugins and remote installation stays o
 });
 
 test("runtime setup uses the pinned full runtime bridge and mounts only requested plugin directories", () => {
-  const env = runtimeEnvironment({ Path: "/existing", STARTER_PLUGIN_DIRS: "plugins/format-json" });
+  const env = runtimeEnvironment({ Path: "/existing", STARTER_PLUGIN_DIRS: "plugins/fixture" });
   assert.equal(Object.keys(env).filter((name) => name.toLowerCase() === "path").length, 1);
   assert.equal(env.PATH.split(delimiter)[0], resolve(root, "node_modules/.bin"));
   assert.equal(env.COPILOT_CLI_PATH, runtimeBridge);
@@ -76,7 +103,7 @@ test("runtime setup uses the pinned full runtime bridge and mounts only requeste
   const args = runtimeArguments(["--headless", "--stdio"], env);
   assert.ok(args.includes("--no-ask-user"));
   assert.ok(args.includes("--disable-builtin-mcps"));
-  assert.equal(args[args.indexOf("--plugin-dir") + 1], resolve(root, "plugins/format-json"));
+  assert.equal(args[args.indexOf("--plugin-dir") + 1], resolve(root, "plugins/fixture"));
   assert.ok(!runtimeArguments([], {}).includes("--plugin-dir"));
   const absolute = resolve(root, "plugins/other");
   assert.deepEqual(pluginDirectories({ STARTER_PLUGIN_DIRS: ` plugins/a , ${absolute},,` }), [resolve(root, "plugins/a"), absolute]);
@@ -322,7 +349,7 @@ test("tag selection matches Vally's own filter on this repository's evals", asyn
 
 test("the launcher turns a suite with --plugin, --eval-spec, or --tag into a selection Vally accepts", () => {
   const config = { suites: { smoke: { filter: { suite: "smoke" } }, full: { evals: ["evals/**/eval.yaml"] } } };
-  const specPaths = ["evals/a/eval.yaml", "evals/a/agent/eval.yaml", "evals/b/other.yaml"];
+  const specPaths = ["evals/a/eval.yaml", "evals/a/agents/helper/eval.yaml", "evals/b/other.yaml"];
   assert.deepEqual(vallySelection([], config), ["--suite", "full"]);
   assert.deepEqual(vallySelection(["--model", "x"], config), ["--suite", "full", "--model", "x"]);
   assert.throws(() => vallySelection([], { suites: {} }), /Choose what to run/);
@@ -331,7 +358,7 @@ test("the launcher turns a suite with --plugin, --eval-spec, or --tag into a sel
     ["--eval-spec", "evals/a/eval.yaml", "--tag", "suite=smoke", "--require-pass"]);
   assert.deepEqual(vallySelection(["--suite", "full", "--eval-spec", "evals/a/eval.yaml"], config), ["--eval-spec", "evals/a/eval.yaml"]);
   assert.deepEqual(vallySelection(["--suite", "full", "--tag", "control=negative"], config, { specPaths }),
-    ["--eval-spec", "evals/a/eval.yaml", "--eval-spec", "evals/a/agent/eval.yaml", "--tag", "control=negative"]);
+    ["--eval-spec", "evals/a/eval.yaml", "--eval-spec", "evals/a/agents/helper/eval.yaml", "--tag", "control=negative"]);
   assert.deepEqual(vallySelection(["--suite=smoke", "--tag=control!=negative"], config), ["--tag", "suite=smoke", "--tag", "control!=negative"]);
   assert.throws(() => vallySelection(["--suite", "smoke", "--tag", "suite=full"], config), /already filters on suite/);
   assert.throws(() => vallySelection(["--suite", "full", "--eval-spec", "evals/b/other.yaml"], config), /None of the selected eval specs are in the full suite/);
