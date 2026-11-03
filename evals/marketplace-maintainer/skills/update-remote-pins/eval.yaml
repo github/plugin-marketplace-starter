@@ -22,9 +22,9 @@ stimuli:
       upstream code, commit, or publish. State the offline verification limit.
     agent_environment:
       files:
-        - src: ../../../_shared/support/marketplace
+        - src: ../../../_shared/fixtures/sample-marketplace
           dest: .
-        - src: fixture
+        - src: fixtures
           dest: .
     tags:
       assets: skill:marketplace-maintainer/update-remote-pins

@@ -25,9 +25,9 @@ stimuli:
       commit, push, or open a PR.
     agent_environment:
       files:
-        - src: ../../../_shared/support/marketplace
+        - src: ../../../_shared/fixtures/sample-marketplace
           dest: .
-        - src: fixture
+        - src: fixtures
           dest: .
     tags:
       assets: skill:plugin-authoring/submit-plugin

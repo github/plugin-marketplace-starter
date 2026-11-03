@@ -22,9 +22,9 @@ stimuli:
       test was run.
     agent_environment:
       files:
-        - src: ../../../_shared/support/marketplace
+        - src: ../../../_shared/fixtures/sample-marketplace
           dest: .
-        - src: fixture
+        - src: fixtures
           dest: .
     tags:
       assets: skill:marketplace-maintainer/release-plugins
@@ -84,9 +84,9 @@ stimuli:
       existing real copy.
     agent_environment:
       files:
-        - src: ../../../_shared/support/marketplace
+        - src: ../../../_shared/fixtures/sample-marketplace
           dest: .
-        - src: fixture
+        - src: fixtures
           dest: .
     tags:
       assets: skill:marketplace-maintainer/release-plugins

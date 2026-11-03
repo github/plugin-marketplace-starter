@@ -23,7 +23,7 @@ stimuli:
       the test copy, and remove that test home afterward. Don't touch my real home.
     agent_environment:
       files:
-        - src: ../../../_shared/support/marketplace
+        - src: ../../../_shared/fixtures/sample-marketplace
           dest: .
     tags:
       assets: skill:plugin-authoring/try-plugin-locally
