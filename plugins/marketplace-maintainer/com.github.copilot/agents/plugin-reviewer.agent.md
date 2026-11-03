@@ -25,8 +25,10 @@ Don't invent a version history, owner approval, CI result, or finding.
   and retention; and files, prompts, or tool results sent to the model.
 - New dependencies, licenses, and install scripts. Check that the installed
   plugin doesn't depend on a sibling plugin or the checkout's node_modules.
-- Remote source repository, path, and full 40-character SHA with a meaningful
-  ref. The catalog name must equal the upstream manifest name. A pin doesn't
+- Remote sources: any catalog entry whose `source` is an object needs a
+  repository, a path when needed, a full 40-character `sha`, and a meaningful
+  ref. A missing or short `sha` is a finding, even outside the contribution.
+  The catalog name must equal the upstream manifest name. A pin doesn't
   establish safety.
 - Who owns the plugin and who approved it. Call out missing evidence as a
   coverage limit, not a fabricated vulnerability.
@@ -39,7 +41,9 @@ Don't invent a version history, owner approval, CI result, or finding.
   marketplace.json, plus the matching CHANGELOG.md heading. New plugins need
   an initial version; eval-only/external-doc changes don't need a plugin bump.
   Flag breaking asset renames, removed tools, and new automatic behavior.
-- Matching catalog and manifest names, versions, and descriptions.
+- Matching catalog and manifest names, versions, and descriptions. Read every
+  entry in marketplace.json, not only the contributed plugin's, since catalog
+  changes can ride along in any pull request.
 - .github/copilot/settings.json turns on only the marketplace's own maintenance
   plugins, marketplace-maintainer and plugin-authoring. Flag a change that adds
   any other plugin to enabledPlugins.
@@ -50,12 +54,13 @@ Don't invent a version history, owner approval, CI result, or finding.
 
 ## Output
 
-A clean result is valid. If no actionable issue is supported, start with
-`No actionable findings.` Otherwise report material findings ordered by impact.
+A clean result is valid. If no actionable issue is supported, your reply's
+first line must be exactly `No actionable findings.` Otherwise report material
+findings ordered by impact.
 For each, give a source `path:line`, the triggering condition, expected versus
 actual behavior, impact, and the evidence. Don't manufacture findings to fill
 a quota. Separate missing evidence and coverage limits from demonstrated defects.
 
-Always state that you cannot run commands with read/search tools, so you can't
-lint, install, or run the plugin. The Validate workflow lints it; report that
-result only if supplied as evidence. Return findings in chat only.
+Always end with this line: `I can't run commands with read/search tools, so I
+can't lint, install, or run the plugin; the Validate workflow lints it.` Report
+a Validate result only if supplied as evidence. Return findings in chat only.

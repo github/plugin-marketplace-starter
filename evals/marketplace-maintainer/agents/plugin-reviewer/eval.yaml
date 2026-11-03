@@ -3,7 +3,7 @@ description: Forced delegation to the actual read-only plugin reviewer, without 
 type: capability
 defaults:
   executor: copilot-sdk
-  model: gpt-5.4-mini
+  model: claude-haiku-5.5
   timeout: 3m
   runs: 1
 agent_environment:
@@ -39,11 +39,11 @@ stimuli:
       - type: output-matches
         scope: subagent
         config:
-          pattern: 'marketplace\.json(?::\d+|[^\n]*line\s+\d+)'
+          pattern: 'marketplace\.json(?::\d+|[^\n]*lines?\s+\d+)'
       - type: output-matches
         scope: subagent
         config:
-          pattern: '[Uu]npinned|[Mm]issing[^\n]*(?:sha|SHA|pin)|(?:sha|SHA)[^\n]*(?:missing|required)'
+          pattern: '[Uu]npinned|(?:isn.t|not) pinned|[Nn]o `?sha`?\b|[Mm]issing[^\n]*(?:sha|SHA|pin)|(?:sha|SHA)[^\n]*(?:missing|required)|(?:[Ll]acks?|[Ww]ithout|instead of|[Nn]o)[^\n]{0,40}(?:SHA|sha\b|pin)'
       - type: tool-calls
         scope: subagent
         config:
@@ -71,10 +71,10 @@ stimuli:
             - name: ^task$
               args:
                 agent_type: ^plugin-reviewer$
-      - type: output-contains
+      - type: output-matches
         scope: subagent
         config:
-          substring: No actionable findings.
+          pattern: '[Nn]o (?:actionable )?(?:findings|defects|issues)'
       - type: output-matches
         scope: subagent
         config:

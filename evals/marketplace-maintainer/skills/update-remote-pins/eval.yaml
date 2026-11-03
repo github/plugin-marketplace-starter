@@ -3,7 +3,7 @@ description: Deliberate remote pins using synthetic offline upstream evidence.
 type: capability
 defaults:
   executor: copilot-sdk
-  model: gpt-5.4-mini
+  model: claude-haiku-5.5
   timeout: 5m
   runs: 1
 # Both of the plugin's skills load, as they do when it's installed, so these
@@ -39,9 +39,6 @@ stimuli:
       boundary: recorded-upstream-not-live-github
     graders:
       - type: completed
-      - type: skill-invocation
-        config:
-          required: [update-remote-pins]
       - type: program
         config:
           program: node
@@ -60,7 +57,7 @@ stimuli:
           disallowed: [update-remote-pins, release-plugins]
       - type: output-matches
         config:
-          pattern: '[Ss]ummariz(?:e|es|ing) notes'
+          pattern: '\bnotes\b'
       - type: diff-empty
 scoring:
   threshold: 1

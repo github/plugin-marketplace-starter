@@ -30,6 +30,16 @@ export function calls(trajectory, suffix) {
   });
 }
 
+// Vally copies an eval's skills into the trial workspace, so a model can read
+// a skill's SKILL.md or references as files instead of calling the skill tool.
+// Count either.
+export function usedSkill(trajectory, skill) {
+  const events = trajectory.events ?? [];
+  if (events.some((event) => event.type === "skill_activation" && event.data?.name === skill)) return true;
+  const read = new RegExp(`(?:^|[/\\s"'])${skill}/(?:SKILL\\.md|references/)`);
+  return calls(trajectory).some((call) => read.test(JSON.stringify(call.args ?? {}).replaceAll("\\\\", "/")));
+}
+
 export function score(name, checks) {
   if (!checks.length) throw new Error("A grader must contain assertions.");
   const failures = checks.filter((item) => !item.passed);
@@ -40,7 +50,7 @@ export function score(name, checks) {
   };
 }
 
-export async function runGrade(name, evaluate) {
+export async function runGrade(name, evaluate, skill) {
   try {
     if (!process.env.EVALUATE_GRADER_INPUT || !process.env.EVALUATE_WORKSPACE) {
       throw new Error("Vally's grader input and workspace are required.");
@@ -49,7 +59,9 @@ export async function runGrade(name, evaluate) {
     if (!input.trajectory || typeof input.trajectory.output !== "string" || !Array.isArray(input.trajectory.events)) {
       throw new Error("A recorded trajectory with output and events is required.");
     }
-    console.log(JSON.stringify(score(name, await evaluate(input.trajectory, process.env.EVALUATE_WORKSPACE))));
+    const checks = await evaluate(input.trajectory, process.env.EVALUATE_WORKSPACE);
+    if (skill) checks.unshift(check(`Used the ${skill} skill`, usedSkill(input.trajectory, skill)));
+    console.log(JSON.stringify(score(name, checks)));
   } catch (error) {
     console.log(JSON.stringify({
       name, kind: "code", status: "error", passed: false, score: 0,

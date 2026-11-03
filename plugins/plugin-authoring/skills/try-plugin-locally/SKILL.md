@@ -16,7 +16,8 @@ host support that official documentation doesn't state.
      `copilot --plugin-dir "<absolute-plugin-directory>"`. Nothing is installed.
    - For an installation check, follow **Test installation without publishing**
      in the local install guide. Use the Copilot CLI on PATH, a fresh isolated
-     `COPILOT_HOME`, and a working directory outside the checkout. Read the actual marketplace name from its catalog.
+     `COPILOT_HOME` (exactly the path the user names, if they name one), and a
+     working directory outside the checkout. Read the actual marketplace name from its catalog.
      Run `plugin marketplace add "<absolute-checkout>"`,
      `plugin install <plugin>@<marketplace>`, `plugin list --json`, and
      `skill list --json` to check the actual enabled skill names.

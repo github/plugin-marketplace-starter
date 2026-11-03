@@ -1,6 +1,6 @@
 ---
 name: submit-plugin
-description: "Prepare a marketplace plugin contribution or update for a pull request. Use to bump plugin versions and changelogs, flag compatibility changes, and write the pull request description. Don't use for a catalog-wide release, generic PRs, or publishing without approval."
+description: "Prepare a marketplace plugin contribution or update for a pull request. Use whenever asked to get a plugin ready for a pull request, bump its version or changelog, flag compatibility changes, and write the pull request description. Don't use for a catalog-wide release, generic PRs, or publishing without approval."
 ---
 
 # Prepare a plugin contribution

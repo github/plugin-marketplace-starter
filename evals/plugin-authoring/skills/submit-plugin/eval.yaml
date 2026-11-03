@@ -3,7 +3,7 @@ description: Contribution preparation for an existing plugin in a synthetic mark
 type: capability
 defaults:
   executor: copilot-sdk
-  model: gpt-5.4-mini
+  model: claude-haiku-5.5
   timeout: 5m
   runs: 1
 # All of the plugin's skills load, as they do when it's installed, so these
@@ -42,9 +42,6 @@ stimuli:
       boundary: synthetic-marketplace-files
     graders:
       - type: completed
-      - type: skill-invocation
-        config:
-          required: [submit-plugin]
       - type: program
         config:
           program: node

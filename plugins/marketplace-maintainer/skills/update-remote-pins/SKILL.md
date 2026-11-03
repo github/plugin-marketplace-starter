@@ -1,6 +1,6 @@
 ---
 name: update-remote-pins
-description: "Add an outside plugin to this marketplace or deliberately update its pinned upstream release. Use for remote catalog entries, full commit SHA pins, and moved refs. Don't use to edit a local plugin, install upstream code, or update npm dependencies."
+description: "Add an outside plugin to this marketplace or deliberately update its pinned upstream release. Use whenever asked to pin, re-pin, or update an outside plugin's release, ref, or commit SHA in the catalog, including from a supplied offline snapshot. Don't use to edit a local plugin, install upstream code, or update npm dependencies."
 ---
 
 # Maintain remote plugin pins

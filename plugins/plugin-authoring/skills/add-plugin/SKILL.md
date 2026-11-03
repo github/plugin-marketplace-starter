@@ -1,6 +1,6 @@
 ---
 name: add-plugin
-description: "Add a new plugin to this marketplace. Use when adding a plugin to a marketplace checkout or turning a workflow into a new plugin there. Don't use for writing a plugin's skills or agents, editing an existing plugin, or Copilot pricing questions."
+description: "Add a new plugin to this marketplace: its folder, plugin.json, README, CHANGELOG, catalog entry, and root README listing. Use whenever asked to add, create, scaffold, or register a new plugin in a marketplace checkout. Don't use for writing a plugin's skills or agents, editing an existing plugin, or Copilot pricing questions."
 ---
 
 # Add a marketplace plugin
@@ -39,8 +39,9 @@ skill needs a checkout of a plugin marketplace and stop without creating files.
 3. Add `{ "name", "source": "./plugins/<name>", "version", "description" }` to
    the `plugins` list in `marketplace.json`, after the other local plugins, with
    the same values as `plugin.json`.
-4. If the root README has a plugin table or install commands, add a row and an
-   install line for the new plugin.
+4. List the plugin in the root README too: add a row linking to
+   `plugins/<name>/` in its plugin table and a `copilot plugin install` line,
+   matching the existing ones. Skip this only if the README has neither.
 5. Don't add the plugin to `.github/copilot/settings.json`. That file turns on
    only the marketplace's own maintenance plugins for people working in it.
 6. Check that every JSON file you changed is still valid and that the catalog

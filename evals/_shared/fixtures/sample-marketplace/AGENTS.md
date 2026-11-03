@@ -10,3 +10,5 @@ This is a synthetic GitHub Copilot plugin marketplace for evals.
   maintenance plugin, sample-notes. Never add other plugins to it.
 - Remote plugins pin a full commit `sha`.
 - A plugin's evals live in `evals/<name>/`.
+- Use the `plugin-authoring` and `marketplace-maintainer` skills and the
+  read-only `plugin-reviewer` agent when they fit the task.

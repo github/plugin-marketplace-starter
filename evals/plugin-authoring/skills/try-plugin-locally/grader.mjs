@@ -10,7 +10,7 @@ export function evaluate(trajectory, workspace) {
   const catalog = json(workspace, "marketplace.json");
   if (!Array.isArray(catalog?.plugins)) return [check("Preserved a valid catalog", false)];
   return [
-    check("Used isolated CLI installation", ran(trajectory, /COPILOT_HOME[\s\S]*fixture-copilot-home/)),
+    check("Used isolated CLI installation", ran(trajectory, /COPILOT_HOME[\s\S]*fixture-copilot-home|fixture-copilot-home[\s\S]*COPILOT_HOME/)),
     check("Installed the selected local copy", ran(trajectory, /plugin\s+install\s+sample-notes@fixture-plugins/)),
     check("Listed the installed plugins", ran(trajectory, /plugin\s+list[\s\S]*--json/)),
     check("Uninstalled the test copy", ran(trajectory, /plugin\s+uninstall\s+sample-notes@fixture-plugins/)),
@@ -20,5 +20,5 @@ export function evaluate(trajectory, workspace) {
 }
 
 if (isMain(import.meta.url)) {
-  await runGrade("plugin-authoring-try", evaluate);
+  await runGrade("plugin-authoring-try", evaluate, "try-plugin-locally");
 }
