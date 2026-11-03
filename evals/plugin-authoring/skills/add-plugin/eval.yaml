@@ -86,6 +86,11 @@ stimuli:
         config:
           path: marketplace.json
           value: ./plugins/sample-notes
+      - type: file-matches
+        name: settings-json-still-enables-only-sample-notes
+        config:
+          path: .github/copilot/settings.json
+          pattern: '"enabledPlugins"\s*:\s*\{\s*"sample-notes@fixture-plugins"\s*:\s*true\s*\}'
       - type: run-command
         name: marketplace-json-is-still-valid-json
         config:

@@ -2,9 +2,9 @@
 
 ## For one session
 
-Opening the marketplace checkout doesn't load or turn on its plugins. To try
-one in a Copilot CLI session, in the checkout or another project, pass it with
-an absolute path. Nothing is installed, and edits take effect in the next
+Opening the marketplace checkout turns on only its own maintenance plugins,
+listed in `.github/copilot/settings.json`. To try any other plugin in a Copilot
+CLI session, in the checkout or another project, pass it with an absolute path. Nothing is installed, and edits take effect in the next
 session:
 
 ```sh

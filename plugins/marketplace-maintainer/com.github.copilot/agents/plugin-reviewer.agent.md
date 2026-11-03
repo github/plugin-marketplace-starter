@@ -40,6 +40,9 @@ Don't invent a version history, owner approval, CI result, or finding.
   an initial version; eval-only/external-doc changes don't need a plugin bump.
   Flag breaking asset renames, removed tools, and new automatic behavior.
 - Matching catalog and manifest names, versions, and descriptions.
+- .github/copilot/settings.json turns on only the marketplace's own maintenance
+  plugins, marketplace-maintainer and plugin-authoring. Flag a change that adds
+  any other plugin to enabledPlugins.
 - Any evals live outside the plugin under evals/<plugin>/ and use only
   synthetic fixtures.
 - README claims about which hosts support the plugin match official GitHub and

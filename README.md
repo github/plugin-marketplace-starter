@@ -9,9 +9,11 @@ for a team in an organization and for one person with a personal account.
 
 One file makes the repository a marketplace: the **catalog**,
 [marketplace.json](marketplace.json), which names the marketplace and lists its
-plugins. Each plugin lives in its own folder under [plugins/](plugins/).
-Nothing is installed or turned on when you clone or open the repository; people
+plugins. Each plugin lives in its own folder under [plugins/](plugins/). People
 add the marketplace and install only the plugins they want.
+[.github/copilot/settings.json](.github/copilot/settings.json) turns on only
+this repository's two maintenance plugins for people working in it; don't add
+other plugins to it.
 
 ## What's in the starter
 
@@ -54,8 +56,10 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 1. Click **Use this template** on GitHub and clone your new repository.
 2. Name your marketplace. In [marketplace.json](marketplace.json), set `name`
-   (unique, lowercase, and hyphenated) and `owner.name`. Set `name` in
-   [package.json](package.json) too.
+   (unique, lowercase, and hyphenated) and `owner.name`. Use the new name in
+   [.github/copilot/settings.json](.github/copilot/settings.json), as the key
+   under `extraKnownMarketplaces` and after the `@` in each `enabledPlugins`
+   key, and set `name` in [package.json](package.json) too.
 3. Update the install commands in this README and in each plugin's README: use
    your repository instead of `github/plugin-marketplace-starter` or
    `OWNER/REPO`, and your marketplace name after the `@`.
@@ -125,7 +129,9 @@ When you change a plugin, bump its version in `plugin.json` and
 
 The `release-plugins` skill can retire a plugin for you. By hand, delete
 `plugins/<name>/` and `evals/<name>/`, then remove the plugin's entry from
-`marketplace.json` and its row and install command from this README.
+`marketplace.json` and its row and install command from this README. If it's
+one of the two plugins in `.github/copilot/settings.json`, remove its key there
+too.
 
 ## Checks
 

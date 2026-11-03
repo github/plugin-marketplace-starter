@@ -1,0 +1,14 @@
+{
+  "extraKnownMarketplaces": {
+    "plugin-marketplace-starter": {
+      "source": {
+        "source": "directory",
+        "path": "."
+      }
+    }
+  },
+  "enabledPlugins": {
+    "marketplace-maintainer@plugin-marketplace-starter": true,
+    "plugin-authoring@plugin-marketplace-starter": true
+  }
+}

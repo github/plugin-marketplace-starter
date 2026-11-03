@@ -12,6 +12,9 @@ its files directly. [README.md](README.md) shows the steps.
   `marketplace.json`, and a matching `## <version>` heading in `CHANGELOG.md`.
 - When you add or remove a plugin, update the catalog and the README's plugin
   table and install commands together.
+- `.github/copilot/settings.json` turns on only this repository's own
+  maintenance plugins, `marketplace-maintainer` and `plugin-authoring`, for
+  people working here. Never add other plugins to it.
 - Remote plugins pin a full 40-character commit `sha` and name their `ref`.
 - A plugin's evals and fixtures live in `evals/<name>/`, outside the plugin.
   Files several plugins share live in `evals/_shared/`, which can't collide
