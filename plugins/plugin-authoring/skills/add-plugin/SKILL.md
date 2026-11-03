@@ -11,8 +11,7 @@ skill needs a checkout of a plugin marketplace and stop without creating files.
 
 1. Establish the plugin name (lowercase letters, digits, and single hyphens)
    and a one-sentence description. Check `marketplace.json` and `plugins/` for a
-   name that's taken. Don't use `graders` or `support`; those folders in
-   `evals/` hold shared files.
+   name that's taken.
 2. Create `plugins/<name>/` with three files:
    - `plugin.json`:
 

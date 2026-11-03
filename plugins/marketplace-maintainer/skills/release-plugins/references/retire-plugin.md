@@ -10,8 +10,8 @@
    Markdown that describes it. If the table is left empty, add a row that says
    `_None yet._`.
 4. Search the repository for the plugin's name and fix any links or mentions
-   that are left. Keep other plugins' files and shared files in `evals/graders/`
-   and `evals/support/`. Check that `marketplace.json` is still valid JSON.
+   that are left. Keep other plugins' files and the shared files in
+   `evals/_shared/`. Check that `marketplace.json` is still valid JSON.
 5. Draft a retirement note with the reason, last supported version, and any
    migration option. Removing a catalog entry doesn't uninstall existing copies
    or block installation from another marketplace. Users may need to uninstall

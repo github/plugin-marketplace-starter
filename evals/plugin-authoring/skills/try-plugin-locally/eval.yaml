@@ -17,7 +17,7 @@ grading_environment:
   files:
     - src: ../../graders.mjs
       dest: .grading/plugin-authoring.mjs
-    - src: ../../../graders/common.mjs
+    - src: ../../../_shared/graders/common.mjs
       dest: .grading/common.mjs
 stimuli:
   - name: try-plugin-locally-installs-and-cleans-cli-copy
@@ -29,7 +29,7 @@ stimuli:
       the test copy, and remove that test home afterward. Don't touch my real home.
     agent_environment:
       files:
-        - src: ../../../support/marketplace
+        - src: ../../../_shared/support/marketplace
           dest: .
     tags:
       assets: skill:plugin-authoring/try-plugin-locally

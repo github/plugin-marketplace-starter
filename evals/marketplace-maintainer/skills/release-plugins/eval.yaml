@@ -16,7 +16,7 @@ grading_environment:
   files:
     - src: ../../graders.mjs
       dest: .grading/marketplace-maintainer.mjs
-    - src: ../../../graders/common.mjs
+    - src: ../../../_shared/graders/common.mjs
       dest: .grading/common.mjs
 stimuli:
   - name: release-plugins-keeps-already-bumped-version
@@ -28,7 +28,7 @@ stimuli:
       test was run.
     agent_environment:
       files:
-        - src: ../../../support/marketplace
+        - src: ../../../_shared/support/marketplace
           dest: .
         - src: fixture
           dest: .
@@ -55,7 +55,7 @@ stimuli:
       existing real copy.
     agent_environment:
       files:
-        - src: ../../../support/marketplace
+        - src: ../../../_shared/support/marketplace
           dest: .
         - src: fixture
           dest: .

@@ -14,8 +14,9 @@ its files directly. [README.md](README.md) shows the steps.
   table and install commands together.
 - Remote plugins pin a full 40-character commit `sha` and name their `ref`.
 - A plugin's evals, graders, and fixtures live in `evals/<name>/`, outside the
-  plugin. Files several plugins share live in `evals/graders/` and
-  `evals/support/`. Use only synthetic data.
+  plugin. Files several plugins share live in `evals/_shared/`, which can't
+  collide with a plugin because plugin names start with a lowercase letter or
+  digit. Use only synthetic data.
 - `npm run lint` checks skills and eval files and never calls a model. CI also
   validates each `plugin.json` against the Agent Plugins schema, matches local
   catalog entries to their `plugin.json`, and checks remote pins.

@@ -17,7 +17,7 @@ grading_environment:
   files:
     - src: ../../graders.mjs
       dest: .grading/plugin-authoring.mjs
-    - src: ../../../graders/common.mjs
+    - src: ../../../_shared/graders/common.mjs
       dest: .grading/common.mjs
 stimuli:
   - name: add-plugin-scaffolds-plugin-shell
@@ -28,7 +28,7 @@ stimuli:
       don't create an issue or PR.
     agent_environment:
       files:
-        - src: ../../../support/marketplace
+        - src: ../../../_shared/support/marketplace
           dest: .
     tags:
       assets: skill:plugin-authoring/add-plugin

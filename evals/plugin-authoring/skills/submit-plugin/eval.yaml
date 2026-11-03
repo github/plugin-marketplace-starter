@@ -17,7 +17,7 @@ grading_environment:
   files:
     - src: ../../graders.mjs
       dest: .grading/plugin-authoring.mjs
-    - src: ../../../graders/common.mjs
+    - src: ../../../_shared/graders/common.mjs
       dest: .grading/common.mjs
 stimuli:
   - name: submit-plugin-prepares-patch-and-pr-body
@@ -31,7 +31,7 @@ stimuli:
       commit, push, or open a PR.
     agent_environment:
       files:
-        - src: ../../../support/marketplace
+        - src: ../../../_shared/support/marketplace
           dest: .
         - src: fixture
           dest: .

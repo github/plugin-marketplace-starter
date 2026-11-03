@@ -16,7 +16,7 @@ grading_environment:
   files:
     - src: ../../graders.mjs
       dest: .grading/marketplace-maintainer.mjs
-    - src: ../../../graders/common.mjs
+    - src: ../../../_shared/graders/common.mjs
       dest: .grading/common.mjs
 stimuli:
   - name: update-remote-pins-uses-reviewed-release
@@ -28,7 +28,7 @@ stimuli:
       upstream code, commit, or publish. State the offline verification limit.
     agent_environment:
       files:
-        - src: ../../../support/marketplace
+        - src: ../../../_shared/support/marketplace
           dest: .
         - src: fixture
           dest: .

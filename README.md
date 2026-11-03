@@ -115,6 +115,8 @@ The `add-plugin` skill does these steps for you. By hand:
 Then add the plugin's skills, agents, or other parts to its folder. The
 [Copilot CLI plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference)
 lists what a plugin can contain. Put any evals for it in `evals/<name>/`.
+Eval files that several plugins share live in `evals/_shared/`, which can't
+clash with a plugin because plugin names start with a lowercase letter or digit.
 
 When you change a plugin, bump its version in `plugin.json` and
 `marketplace.json` together, and add a `CHANGELOG.md` entry.
