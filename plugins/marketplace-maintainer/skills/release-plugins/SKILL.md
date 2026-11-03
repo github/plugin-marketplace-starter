@@ -31,9 +31,8 @@ which changes are being released.
    that each local entry's `name`, `version`, and `description` match its
    manifest. If remote entries changed, check their pins
    as the `update-remote-pins` skill describes. Report what you checked.
-6. Check each changed plugin README's host checks, if it has them. Report
-   untested hosts honestly. Don't run paid evals or model sessions without
-   approval.
+6. Report which hosts the changed plugins were tried in and which weren't.
+   Don't run paid evals or model sessions without approval.
 7. Draft concise release notes in chat, grouped by plugin and version, with
    user-visible changes, compatibility or migration steps, and retirements.
    Separate blockers and missing checks from the notes.

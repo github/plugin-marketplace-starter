@@ -3,5 +3,6 @@
   "name": "plugin-authoring",
   "version": "0.1.0",
   "description": "Scaffold, try locally, and prepare contributions to this plugin marketplace.",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": "https://github.com/github/plugin-marketplace-starter"
 }

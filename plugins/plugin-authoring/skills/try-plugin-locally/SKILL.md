@@ -29,8 +29,8 @@ host support that official documentation doesn't state.
    lists. An installation message counts skills, not proof that a hook, MCP
    server, or other part works. The CLI's plugin list doesn't expose agent names;
    verify agent discovery in the interactive host and mark it unverified if
-   that can't be done here. Use the plugin README's **Host checks** to try one
-   intended task and one non-trigger task. Starting a model session or a paid
+   that can't be done here. Try one task the plugin is meant for, such as a
+   prompt from its README, and one unrelated task it shouldn't trigger on. Starting a model session or a paid
    eval needs the user's approval; an install-only check doesn't call a model.
    If the host can't be exercised here, explicitly leave its behavior unverified.
 3. Clean up after the check, including a failed check. Uninstall only the copy

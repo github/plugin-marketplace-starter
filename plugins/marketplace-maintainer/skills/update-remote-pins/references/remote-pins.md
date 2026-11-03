@@ -7,17 +7,17 @@ in the marketplace, people install them only if they choose to.
 
 ```json
 {
-  "name": "anarlog",
+  "name": "example-plugin",
   "source": {
     "source": "github",
-    "repo": "fastrepl/anarlog",
-    "path": "agent-plugins/anarlog",
-    "ref": "main",
-    "sha": "259b68866a7d6c331cd428aaa33a33300a700c5d"
+    "repo": "OWNER/REPO",
+    "path": "plugins/example-plugin",
+    "ref": "v1.2.0",
+    "sha": "<full 40-character commit SHA>"
   },
-  "version": "1.3.0",
-  "description": "Search local Anarlog meetings or connect to Cloud with OAuth.",
-  "homepage": "https://docs.anarlog.so/agents/overview"
+  "version": "1.2.0",
+  "description": "What the plugin does, in one sentence.",
+  "homepage": "https://github.com/OWNER/REPO"
 }
 ```
 

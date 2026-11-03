@@ -21,9 +21,15 @@ skill needs a checkout of a plugin marketplace and stop without creating files.
        "name": "<name>",
        "version": "0.1.0",
        "description": "<description>",
-       "license": "MIT"
+       "license": "<license>",
+       "repository": "<repository>"
      }
      ```
+
+     For `license`, use the SPDX identifier of the marketplace's license, from
+     its `LICENSE` file or the other plugins' manifests. For `repository`, copy
+     the URL the other plugins use. If either is unclear, leave that field out
+     and say so.
 
    - `README.md`: a title, the description, and an Install section with
      `copilot plugin marketplace add OWNER/REPO` and

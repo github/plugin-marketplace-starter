@@ -62,7 +62,8 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
    key, and set `name` in [package.json](package.json) too.
 3. Update the install commands in this README and in each plugin's README: use
    your repository instead of `github/plugin-marketplace-starter` or
-   `OWNER/REPO`, and your marketplace name after the `@`.
+   `OWNER/REPO`, and your marketplace name after the `@`. Set `repository` in
+   each plugin's `plugin.json` to your repository's URL.
 4. Keep the included plugins if they fit your team, or
    [remove them](#remove-a-plugin).
 5. [Add your first plugin](#add-a-plugin).
@@ -78,7 +79,9 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 ## Use the marketplace
 
 Add the marketplace, browse it, and install only the plugins you want. Nothing
-is installed or turned on for you. In Copilot CLI:
+is installed or turned on for you, except that working inside this repository
+turns on its two maintenance plugins (see
+[.github/copilot/settings.json](.github/copilot/settings.json)). In Copilot CLI:
 
 ```sh
 copilot plugin marketplace add github/plugin-marketplace-starter
@@ -105,12 +108,13 @@ The `add-plugin` skill does these steps for you. By hand:
      "name": "release-notes",
      "version": "0.1.0",
      "description": "Draft release notes from merged pull requests.",
-     "license": "MIT"
+     "license": "MIT",
+     "repository": "https://github.com/OWNER/REPO"
    }
    ```
 
-   Add a `README.md` that says what it does and how to install it, and a
-   `CHANGELOG.md` with a `## 0.1.0` entry.
+   Use your repository's license and URL. Add a `README.md` that says what it
+   does and how to install it, and a `CHANGELOG.md` with a `## 0.1.0` entry.
 2. Add the plugin to the `plugins` list in `marketplace.json` with the same
    `name`, `version`, and `description`, and
    `"source": "./plugins/release-notes"`.
