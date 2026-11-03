@@ -13,12 +13,6 @@ agent_environment:
     - ../../../../plugins/plugin-authoring/skills/add-plugin
     - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
     - ../../../../plugins/plugin-authoring/skills/submit-plugin
-grading_environment:
-  files:
-    - src: ../../graders.mjs
-      dest: .grading/plugin-authoring.mjs
-    - src: ../../../_shared/graders/common.mjs
-      dest: .grading/common.mjs
 stimuli:
   - name: try-plugin-locally-installs-and-cleans-cli-copy
     prompt: >-
@@ -41,10 +35,30 @@ stimuli:
       - type: skill-invocation
         config:
           required: [try-plugin-locally]
-      - type: program
+      - type: tool-calls
+        name: installed-listed-and-uninstalled-in-an-isolated-copilot-home
         config:
-          program: node
-          args: [.grading/plugin-authoring.mjs, try]
+          required:
+            - name: '.'
+              pattern: 'COPILOT_HOME[\s\S]*fixture-copilot-home'
+              result: '^(?![\s\S]*exit(?:ed)? (?:with )?code[: ]+[1-9])'
+            - name: '.'
+              pattern: 'plugin\s+install\s+sample-notes@fixture-plugins'
+              result: '^(?![\s\S]*exit(?:ed)? (?:with )?code[: ]+[1-9])'
+            - name: '.'
+              pattern: 'plugin\s+list[\s\S]*--json'
+              result: '^(?![\s\S]*exit(?:ed)? (?:with )?code[: ]+[1-9])'
+            - name: '.'
+              pattern: 'plugin\s+uninstall\s+sample-notes@fixture-plugins'
+              result: '^(?![\s\S]*exit(?:ed)? (?:with )?code[: ]+[1-9])'
+      - type: file-not-exists
+        name: the-test-home-is-removed
+        config:
+          path: '.fixture-copilot-home/**'
+      - type: file-exists
+        name: the-plugin-itself-is-untouched
+        config:
+          path: plugins/sample-notes/plugin.json
   - name: try-plugin-locally-ignores-pricing-question
     prompt: Is a marketplace plugin the same thing as a paid Copilot subscription? Answer briefly without creating or changing files.
     tags:

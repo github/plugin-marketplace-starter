@@ -13,12 +13,6 @@ agent_environment:
     - ../../../../plugins/plugin-authoring/skills/add-plugin
     - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
     - ../../../../plugins/plugin-authoring/skills/submit-plugin
-grading_environment:
-  files:
-    - src: ../../graders.mjs
-      dest: .grading/plugin-authoring.mjs
-    - src: ../../../_shared/graders/common.mjs
-      dest: .grading/common.mjs
 stimuli:
   - name: submit-plugin-prepares-patch-and-pr-body
     prompt: >-
@@ -45,10 +39,49 @@ stimuli:
       - type: skill-invocation
         config:
           required: [submit-plugin]
-      - type: program
+      - type: file-matches
+        name: plugin-json-is-at-1-0-1
         config:
-          program: node
-          args: [.grading/plugin-authoring.mjs, submit]
+          path: plugins/sample-notes/plugin.json
+          pattern: '"version"\s*:\s*"1\.0\.1"'
+      - type: file-matches
+        name: the-catalog-is-at-1-0-1
+        config:
+          path: marketplace.json
+          pattern: '"version"\s*:\s*"1\.0\.1"'
+      - type: file-matches
+        name: the-changelog-has-a-1-0-1-heading
+        config:
+          path: plugins/sample-notes/CHANGELOG.md
+          pattern: '(?m)^## 1\.0\.1\s*$'
+      - type: output-matches
+        name: the-pr-body-has-its-sections-in-order
+        config:
+          pattern: '## What changed[\s\S]*## Version and changelog[\s\S]*## Checks[\s\S]*## Risk'
+      - type: output-matches
+        name: what-changed-describes-the-empty-input-fix
+        config:
+          pattern: '(?i)## What changed(?:(?!\n## )[\s\S])*empty'
+      - type: output-matches
+        name: version-and-changelog-states-1-0-1
+        config:
+          pattern: '## Version and changelog(?:(?!\n## )[\s\S])*1\.0\.1'
+      - type: output-matches
+        name: risk-says-it-runs-no-code
+        config:
+          pattern: "(?i)## Risk(?:(?!\\n## )[\\s\\S])*(?:no code|runs nothing|doesn't run|does not run|none)"
+      - type: tool-calls
+        name: no-pr-created-and-nothing-pushed
+        config:
+          disallowed:
+            - name: '.'
+              pattern: 'gh\s+pr\s+create|git\s+push'
+      - type: run-command
+        name: marketplace-json-is-still-valid-json
+        config:
+          command: node
+          args: ["-p", "require('./marketplace.json').name"]
+          stdout_contains: fixture-plugins
   - name: submit-plugin-ignores-pricing-question
     prompt: Is a marketplace plugin the same thing as a paid Copilot subscription? Answer briefly without creating or changing files.
     tags:

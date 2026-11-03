@@ -12,12 +12,6 @@ agent_environment:
   skills:
     - ../../../../plugins/marketplace-maintainer/skills/update-remote-pins
     - ../../../../plugins/marketplace-maintainer/skills/release-plugins
-grading_environment:
-  files:
-    - src: ../../graders.mjs
-      dest: .grading/marketplace-maintainer.mjs
-    - src: ../../../_shared/graders/common.mjs
-      dest: .grading/common.mjs
 stimuli:
   - name: update-remote-pins-uses-reviewed-release
     prompt: >-
@@ -42,10 +36,50 @@ stimuli:
       - type: skill-invocation
         config:
           required: [update-remote-pins]
-      - type: program
+      - type: file-matches
+        name: the-pin-moved-to-the-reviewed-sha
         config:
-          program: node
-          args: [.grading/marketplace-maintainer.mjs, remote]
+          path: marketplace.json
+          pattern: '"sha"\s*:\s*"b{40}"'
+      - type: file-matches
+        name: the-pin-names-the-v1-1-0-ref
+        config:
+          path: marketplace.json
+          pattern: '"ref"\s*:\s*"v1\.1\.0"'
+      - type: file-matches
+        name: the-entry-is-at-version-1-1-0
+        config:
+          path: marketplace.json
+          pattern: '"version"\s*:\s*"1\.1\.0"'
+      - type: file-matches
+        name: the-entry-still-points-at-the-same-repo
+        config:
+          path: marketplace.json
+          pattern: '"repo"\s*:\s*"fixture-org/outside-notes"'
+      - type: file-matches
+        name: the-local-plugin-entry-is-kept
+        config:
+          path: marketplace.json
+          pattern: '"source"\s*:\s*"\./plugins/sample-notes"'
+      - type: file-matches
+        name: the-local-plugin-stays-at-1-0-0
+        config:
+          path: marketplace.json
+          pattern: '"version"\s*:\s*"1\.0\.0"'
+      - type: output-matches
+        name: summarizes-the-upstream-change
+        config:
+          pattern: '(?i)empty note lists'
+      - type: output-matches
+        name: states-the-offline-limit
+        config:
+          pattern: '(?i)offline|recorded'
+      - type: run-command
+        name: marketplace-json-is-still-valid-json
+        config:
+          command: node
+          args: ["-p", "require('./marketplace.json').name"]
+          stdout_contains: fixture-plugins
   - name: update-remote-pins-ignores-local-copy-edit
     prompt: >-
       Rewrite this local plugin description in plain English, in chat only:
