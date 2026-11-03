@@ -12,6 +12,12 @@ agent_environment:
   skills:
     - ../../../../plugins/marketplace-maintainer/skills/update-remote-pins
     - ../../../../plugins/marketplace-maintainer/skills/release-plugins
+grading_environment:
+  files:
+    - src: ../../graders.mjs
+      dest: .grading/marketplace-maintainer.mjs
+    - src: ../../../_shared/graders/common.mjs
+      dest: .grading/common.mjs
 stimuli:
   - name: release-plugins-keeps-already-bumped-version
     prompt: >-
@@ -36,45 +42,10 @@ stimuli:
       - type: skill-invocation
         config:
           required: [release-plugins]
-      - type: file-matches
-        name: plugin-json-stays-at-1-0-1
+      - type: program
         config:
-          path: plugins/sample-notes/plugin.json
-          pattern: '"version"\s*:\s*"1\.0\.1"'
-      - type: file-matches
-        name: the-catalog-stays-at-1-0-1
-        config:
-          path: marketplace.json
-          pattern: '"version"\s*:\s*"1\.0\.1"'
-      - type: file-matches
-        name: the-changelog-keeps-its-1-0-1-heading
-        config:
-          path: plugins/sample-notes/CHANGELOG.md
-          pattern: '(?m)^## 1\.0\.1\s*$'
-      - type: output-matches
-        name: the-notes-name-the-plugin
-        config:
-          pattern: sample-notes
-      - type: output-matches
-        name: the-notes-name-the-version
-        config:
-          pattern: '1\.0\.1'
-      - type: output-matches
-        name: the-notes-describe-the-empty-input-change
-        config:
-          pattern: '(?i)empty.input'
-      - type: tool-calls
-        name: nothing-published
-        config:
-          disallowed:
-            - name: '.'
-              pattern: 'gh\s+release\s+create|git\s+(?:push|tag)\b'
-      - type: run-command
-        name: marketplace-json-is-still-valid-json
-        config:
-          command: node
-          args: ["-p", "require('./marketplace.json').name"]
-          stdout_contains: fixture-plugins
+          program: node
+          args: [.grading/marketplace-maintainer.mjs, release]
   - name: release-plugins-retires-approved-plugin
     prompt: >-
       Retire sample-notes from this synthetic marketplace. I approve removing this
@@ -97,42 +68,10 @@ stimuli:
       - type: skill-invocation
         config:
           required: [release-plugins]
-      - type: file-not-exists
-        name: the-plugin-folder-is-gone
+      - type: program
         config:
-          path: 'plugins/sample-notes/**'
-      - type: file-not-exists
-        name: the-plugins-evals-are-gone
-        config:
-          path: 'evals/sample-notes/**'
-      - type: file-not-contains
-        name: the-catalog-entry-is-gone
-        config:
-          path: marketplace.json
-          value: sample-notes
-      - type: file-not-matches
-        name: the-readme-row-and-install-command-are-gone
-        config:
-          path: README.md
-          pattern: 'plugins/sample-notes|install sample-notes@'
-      - type: file-exists
-        name: the-rest-of-the-marketplace-is-kept
-        config:
-          path: AGENTS.md
-      - type: output-matches
-        name: the-note-names-the-plugin
-        config:
-          pattern: sample-notes
-      - type: output-matches
-        name: the-note-is-a-retirement-note
-        config:
-          pattern: '(?i)retir'
-      - type: run-command
-        name: marketplace-json-is-valid-after-retiring
-        config:
-          command: node
-          args: ["-p", "require('./marketplace.json').name"]
-          stdout_contains: fixture-plugins
+          program: node
+          args: [.grading/marketplace-maintainer.mjs, retire]
   - name: release-plugins-ignores-local-copy-edit
     prompt: >-
       Rewrite this local plugin description in plain English, in chat only:

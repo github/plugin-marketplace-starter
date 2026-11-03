@@ -13,6 +13,12 @@ agent_environment:
     - ../../../../plugins/plugin-authoring/skills/add-plugin
     - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
     - ../../../../plugins/plugin-authoring/skills/submit-plugin
+grading_environment:
+  files:
+    - src: ../../graders.mjs
+      dest: .grading/plugin-authoring.mjs
+    - src: ../../../_shared/graders/common.mjs
+      dest: .grading/common.mjs
 stimuli:
   - name: add-plugin-scaffolds-plugin-shell
     prompt: >-
@@ -34,69 +40,15 @@ stimuli:
       - type: skill-invocation
         config:
           required: [add-plugin]
-      - type: file-matches
-        name: plugin-json-is-named-yaml-after-edit
+      - type: program
         config:
-          path: plugins/yaml-after-edit/plugin.json
-          pattern: '"name"\s*:\s*"yaml-after-edit"'
-      - type: file-matches
-        name: plugin-json-starts-at-version-0-1-0
-        config:
-          path: plugins/yaml-after-edit/plugin.json
-          pattern: '"version"\s*:\s*"0\.1\.0"'
-      - type: file-matches
-        name: plugin-json-has-a-description
-        config:
-          path: plugins/yaml-after-edit/plugin.json
-          pattern: '"description"\s*:\s*"[^"\s][^"]*"'
-      - type: file-exists
-        name: the-plugin-has-a-readme
-        config:
-          path: plugins/yaml-after-edit/README.md
-      - type: file-matches
-        name: the-changelog-has-a-0-1-0-heading
-        config:
-          path: plugins/yaml-after-edit/CHANGELOG.md
-          pattern: '(?m)^## 0\.1\.0\s*$'
-      - type: file-not-exists
-        name: no-parts-in-subfolders-such-as-skills
-        config:
-          path: 'plugins/yaml-after-edit/*/**'
-      - type: file-not-exists
-        name: no-files-besides-the-three-shell-files
-        config:
-          path: 'plugins/yaml-after-edit/!(plugin.json|README.md|CHANGELOG.md)'
-      - type: file-matches
-        name: the-catalog-points-at-the-new-folder
-        config:
-          path: marketplace.json
-          pattern: '"source"\s*:\s*"\./plugins/yaml-after-edit"'
-      - type: file-matches
-        name: the-catalog-lists-version-0-1-0
-        config:
-          path: marketplace.json
-          pattern: '"version"\s*:\s*"0\.1\.0"'
-      - type: file-contains
-        name: the-readme-lists-the-plugin
-        config:
-          path: README.md
-          value: plugins/yaml-after-edit/
-      - type: file-contains
-        name: the-existing-plugin-is-kept
-        config:
-          path: marketplace.json
-          value: ./plugins/sample-notes
+          program: node
+          args: [.grading/plugin-authoring.mjs, add]
       - type: file-matches
         name: settings-json-still-enables-only-sample-notes
         config:
           path: .github/copilot/settings.json
           pattern: '"enabledPlugins"\s*:\s*\{\s*"sample-notes@fixture-plugins"\s*:\s*true\s*\}'
-      - type: run-command
-        name: marketplace-json-is-still-valid-json
-        config:
-          command: node
-          args: ["-p", "require('./marketplace.json').name"]
-          stdout_contains: fixture-plugins
   - name: add-plugin-ignores-pricing-question
     prompt: Is a marketplace plugin the same thing as a paid Copilot subscription? Answer briefly without creating or changing files.
     tags:

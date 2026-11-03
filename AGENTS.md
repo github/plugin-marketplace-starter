@@ -16,12 +16,11 @@ its files directly. [README.md](README.md) shows the steps.
   maintenance plugins, `marketplace-maintainer` and `plugin-authoring`, for
   people working here. Never add other plugins to it.
 - Remote plugins pin a full 40-character commit `sha` and name their `ref`.
-- A plugin's evals and fixtures live in `evals/<name>/`, outside the plugin.
-  Files several plugins share live in `evals/_shared/`, such as the fixtures in
-  `evals/_shared/fixtures/`. `_shared` can't collide with a plugin because
-  plugin names start with a lowercase letter or digit.
-  Use Vally's built-in graders rather than custom grader code, and only
-  synthetic data.
+- A plugin's evals, graders, and fixtures live in `evals/<name>/`, outside the
+  plugin. Files several plugins share live in `evals/_shared/`, such as the
+  graders in `evals/_shared/graders/` and the fixtures in `evals/_shared/fixtures/`.
+  `_shared` can't collide with a plugin because plugin names start with a
+  lowercase letter or digit. Use only synthetic data.
 - `npm run lint` checks skills and eval files and never calls a model. CI also
   validates each `plugin.json` against the Agent Plugins schema, matches local
   catalog entries to their `plugin.json`, and checks remote pins.
