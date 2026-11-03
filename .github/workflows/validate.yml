@@ -1,5 +1,5 @@
 name: Validate
-# Lints every plugin's skills and every eval, and checks the catalog. Never calls a model.
+# Lints skills and evals, checks plugin.json files and the catalog, and checks remote pins. Never calls a model.
 on:
   pull_request:
   push:
@@ -22,8 +22,12 @@ jobs:
       - run: npm run lint
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
-      # Vally doesn't read marketplace.json or plugin.json, so parse them and match each local entry to its folder.
-      - name: Check the catalog
+      - name: Validate plugin.json files against the Agent Plugins schema
+        run: |
+          curl -fsSL https://agent-plugins.org/schemas/1.0.0/plugin.schema.json -o "$RUNNER_TEMP/plugin.schema.json"
+          npx --yes ajv-cli@5.0.0 validate --spec=draft2020 -s "$RUNNER_TEMP/plugin.schema.json" -d "plugins/*/plugin.json"
+      # Vally doesn't read marketplace.json, so match each local entry to its plugin.json.
+      - name: Check local catalog entries
         run: |
           node -e '
           const fs = require("fs");
@@ -32,5 +36,28 @@ jobs:
           for (const plugin of read("marketplace.json").plugins.filter((entry) => typeof entry.source === "string")) {
             const manifest = read(plugin.source + "/plugin.json");
             if (manifest.name !== plugin.name || manifest.version !== plugin.version) throw new Error(plugin.name + ": marketplace.json and plugin.json disagree on name or version.");
+          }
+          '
+      # Remote entries must pin a real commit whose plugin.json has the entry's name. A private repo needs a token that can read it.
+      - name: Check remote pins
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node -e '
+          const { execFileSync } = require("child_process");
+          const fs = require("fs");
+          const gh = (...args) => execFileSync("gh", ["api", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+          for (const entry of JSON.parse(fs.readFileSync("marketplace.json", "utf8")).plugins.filter((p) => typeof p.source === "object")) {
+            const { source, repo, path, sha } = entry.source;
+            const fail = (message) => { throw new Error(entry.name + ": " + message); };
+            if (source !== "github") fail("only github remote sources are supported.");
+            if (!/^[0-9a-f]{40}$/.test(sha ?? "")) fail("source.sha must be a full 40-character commit.");
+            try { gh("repos/" + repo + "/commits/" + sha, "--jq", ".sha"); } catch { fail("commit " + sha + " not found in " + repo + "."); }
+            const base = path ? path + "/" : "";
+            const manifest = ["plugin.json", ".github/plugin/plugin.json", ".claude-plugin/plugin.json", ".plugin/plugin.json"].map((file) => {
+              try { return JSON.parse(gh("repos/" + repo + "/contents/" + base + file + "?ref=" + sha, "-H", "Accept: application/vnd.github.raw")); } catch { return undefined; }
+            }).find(Boolean) ?? fail("no plugin.json under " + (path || "the repository root") + " at " + sha + ".");
+            if (manifest.name !== entry.name) fail("upstream plugin.json is named " + manifest.name + ".");
+            console.log(entry.name + ": " + repo + "@" + sha + " ok");
           }
           '

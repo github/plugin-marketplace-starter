@@ -16,7 +16,9 @@ its files directly. [README.md](README.md) shows the steps.
 - A plugin's evals, graders, and fixtures live in `evals/<name>/`, outside the
   plugin. Files several plugins share live in `evals/graders/` and
   `evals/support/`. Use only synthetic data.
-- `npm run lint` checks skills and eval files and never calls a model.
+- `npm run lint` checks skills and eval files and never calls a model. CI also
+  validates each `plugin.json` against the Agent Plugins schema, matches local
+  catalog entries to their `plugin.json`, and checks remote pins.
   `npm run eval` and the evals workflow run real Copilot sessions and spend AI
   credits; don't run them unless the user asks.
 - Use the `plugin-authoring` and `marketplace-maintainer` skills and the

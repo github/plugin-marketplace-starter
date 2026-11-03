@@ -135,8 +135,12 @@ npm run lint
 `npm run lint` checks every skill under `plugins/` and every eval under `evals/`
 with the pinned [Vally](https://microsoft.github.io/vally/) CLI. It never calls
 a model. [validate.yml](.github/workflows/validate.yml) runs it on every pull
-request, and also checks that each local entry in `marketplace.json` matches
-its `plugin.json`.
+request. It also validates each `plugins/*/plugin.json` against the
+[Agent Plugins schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json),
+checks that each local entry in `marketplace.json` matches its `plugin.json`,
+and checks that each remote entry pins a commit that exists and has a
+`plugin.json` with the entry's name. A private remote repository needs a token
+that can read it.
 
 The evals in `evals/` run real Copilot sessions and cost AI credits. The
 `plugin-reviewer` eval needs the full Copilot CLI that `npm ci` installs, so
