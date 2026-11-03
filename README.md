@@ -147,12 +147,20 @@ npm run lint
 `npm run lint` checks every skill under `plugins/` and every eval under `evals/`
 with the pinned [Vally](https://microsoft.github.io/vally/) CLI. It never calls
 a model. [validate.yml](.github/workflows/validate.yml) runs it on every pull
-request. It also validates each `plugins/*/plugin.json` against the
+request. CI-owned checks and their deterministic tests live in
+[.github/scripts/](.github/scripts/); run the tests with
+`node --test .github/scripts/*.test.mjs`. The recipe tests use fake CLI functions
+and need both bash and PowerShell (`pwsh`), available on CI's Ubuntu runner.
+CI also validates each `plugins/*/plugin.json` against the
 [Agent Plugins schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json),
 checks that each local entry in `marketplace.json` matches its `plugin.json`,
 and checks that each remote entry pins a commit that exists and has a
-`plugin.json` with the entry's name. A private remote repository needs a token
-that can read it.
+`plugin.json` with the entry's name and matching version when both specify one.
+A root manifest declaring a supported Agent Plugins schema wins; unsupported
+Agent Plugins versions fail. Otherwise the check uses Copilot CLI's legacy
+order: `.plugin/plugin.json`, `plugin.json`,
+`.github/plugin/plugin.json`, then `.claude-plugin/plugin.json`. A private
+remote repository needs a token that can read it.
 
 The evals in `evals/` run real Copilot sessions and cost AI credits. The
 `plugin-reviewer` eval needs the full Copilot CLI that `npm ci` installs, so
@@ -166,9 +174,9 @@ npm run eval -- --suite smoke
 In PowerShell, set it with
 `$env:COPILOT_CLI_PATH = "$PWD\node_modules\@github\copilot\npm-loader.js"`.
 Results go to `vally-results/`. [evals.yml](.github/workflows/evals.yml) runs
-the smoke suite when you start it by hand, or on pull requests that change
-`plugins/` or `evals/` once you set the repository variable `ENABLE_EVALS` to
-`true`.
+the smoke suite only when you explicitly start it with **Run workflow** in
+GitHub Actions (`workflow_dispatch`). Pull requests never start paid evals.
+Review the selected branch and its eval code before dispatching a run.
 
 ## License
 

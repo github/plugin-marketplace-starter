@@ -17,7 +17,12 @@ host support that official documentation doesn't state.
    - For an installation check, follow **Test installation without publishing**
      in the local install guide. Use the Copilot CLI on PATH, a fresh isolated
      `COPILOT_HOME` (exactly the path the user names, if they name one), and a
-     working directory outside the checkout. Read the actual marketplace name from its catalog.
+     working directory outside the checkout. Exclusively create that absolute
+     home without overwriting or reusing anything. If it already exists or
+     creation fails, stop before any CLI invocation and leave it untouched.
+     Put `COPILOT_CACHE_HOME` inside the owned test home too. Preserve prior
+     environment values and location, and check every CLI exit code.
+     Read the actual marketplace name from its catalog.
      Run `plugin marketplace add "<absolute-checkout>"`,
      `plugin install <plugin>@<marketplace>`, `plugin list --json`, and
      `skill list --json` to check the actual enabled skill names.
@@ -34,12 +39,16 @@ host support that official documentation doesn't state.
    prompt from its README, and one unrelated task it shouldn't trigger on. Starting a model session or a paid
    eval needs the user's approval; an install-only check doesn't call a model.
    If the host can't be exercised here, explicitly leave its behavior unverified.
-3. Clean up after the check, including a failed check. Uninstall only the copy
+3. Use the guide's `finally` or subshell cleanup after the check, including a
+   failed check. On success, uninstall only the copy
    installed for this test with `plugin uninstall <plugin>@<marketplace>` in
    that same isolated home, and confirm the test entry is no longer enabled.
    Remove the isolated marketplace registration if one was added. Restore
-   environment variables, working directory, and any VS Code settings changed
-   for the test. Delete only the fresh, explicitly resolved test directory.
+   environment variables (including the home and cache), working directory,
+   and any VS Code settings changed for the test. Delete only the fresh,
+   exclusively created, explicitly resolved test directory. On failure, deleting
+   that owned home and cache discards all isolated install state, even if
+   uninstall or marketplace removal failed.
    For `--plugin-dir`, end the test session; there is no installed copy to remove.
    Never uninstall a pre-existing plugin or delete the user's real Copilot home.
    Report any cleanup failure rather than hiding it.

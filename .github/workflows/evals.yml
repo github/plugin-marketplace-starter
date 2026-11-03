@@ -1,20 +1,12 @@
 name: Evals
 # Runs the smoke evals with real Copilot sessions, which cost AI credits.
-# Pull requests run them only when the repository variable ENABLE_EVALS is true.
+# Start by explicit manual dispatch only; pull requests never start paid runs.
 on:
-  pull_request:
-    paths: [plugins/**, evals/**]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   evals:
-    # Never on forks or drafts.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (vars.ENABLE_EVALS == 'true' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
