@@ -132,13 +132,15 @@ npm ci
 npm run lint
 ```
 
-`npm run lint` checks the plugins' skills and the eval files with the pinned
-[Vally](https://microsoft.github.io/vally/) CLI. It never calls a model.
-[validate.yml](.github/workflows/validate.yml) runs it on every pull request.
+`npm run lint` checks every skill under `plugins/` and every eval under `evals/`
+with the pinned [Vally](https://microsoft.github.io/vally/) CLI. It never calls
+a model. [validate.yml](.github/workflows/validate.yml) runs it on every pull
+request, and also checks that each local entry in `marketplace.json` matches
+its `plugin.json`.
 
-The included plugins have behavioral evals in `evals/`. They run real Copilot
-sessions and cost AI credits. The `plugin-reviewer` eval needs the full Copilot
-CLI that `npm ci` installs, so point `COPILOT_CLI_PATH` at it:
+The evals in `evals/` run real Copilot sessions and cost AI credits. The
+`plugin-reviewer` eval needs the full Copilot CLI that `npm ci` installs, so
+point `COPILOT_CLI_PATH` at it:
 
 ```sh
 export COPILOT_CLI_PATH="$PWD/node_modules/@github/copilot/npm-loader.js"
@@ -147,12 +149,10 @@ npm run eval -- --suite smoke
 
 In PowerShell, set it with
 `$env:COPILOT_CLI_PATH = "$PWD\node_modules\@github\copilot\npm-loader.js"`.
-
-Results go to `vally-results/`.
-[evals.yml](.github/workflows/evals.yml) runs the evals when you start it by
-hand, or on pull requests once you set the repository variable `ENABLE_EVALS`
-to `true`. Add required reviewers to the `evals` environment to approve each
-run.
+Results go to `vally-results/`. [evals.yml](.github/workflows/evals.yml) runs
+the smoke suite when you start it by hand, or on pull requests that change
+`plugins/` or `evals/` once you set the repository variable `ENABLE_EVALS` to
+`true`.
 
 ## License
 

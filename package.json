@@ -6,7 +6,7 @@
   "engines": { "node": ">=22.14.0" },
   "scripts": {
     "lint": "vally lint plugins --eval-spec evals --strict",
-    "eval": "vally eval --workers 1 --max-retries 1 --junit"
+    "eval": "vally eval --workers 1 --max-retries 1"
   },
   "devDependencies": {
     "@github/copilot": "1.0.98",
