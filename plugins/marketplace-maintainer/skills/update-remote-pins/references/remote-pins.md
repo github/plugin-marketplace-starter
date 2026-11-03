@@ -1,9 +1,7 @@
 # Remote pins
 
-The catalog can list plugins that live in another repository. They're opt-in:
-the repository overlay never enables a remote plugin, because checking out the
-marketplace must not activate code fetched from somewhere else. Each developer
-installs remote plugins themselves.
+The catalog can list plugins that live in another repository. Like every plugin
+in the marketplace, people install them only if they choose to.
 
 ## The entry
 

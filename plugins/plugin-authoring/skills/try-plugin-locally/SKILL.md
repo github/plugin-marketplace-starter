@@ -12,10 +12,8 @@ requested host is missing, ask for it before changing settings. Don't promise
 host support that official documentation doesn't state.
 
 1. Choose the least invasive path:
-   - In the trusted checkout, the repository overlay already enables local
-     plugins. Start a new session; don't install a global duplicate.
-   - For an interactive CLI session in another project, use
-     `copilot --plugin-dir "<absolute-plugin-directory>"`.
+   - For an interactive CLI session, in the checkout or another project, use
+     `copilot --plugin-dir "<absolute-plugin-directory>"`. Nothing is installed.
    - For an installation check, follow **Test installation without publishing**
      in the local install guide. Use the Copilot CLI on PATH, a fresh isolated
      `COPILOT_HOME`, and a working directory outside the checkout. Read the actual marketplace name from its catalog.

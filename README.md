@@ -7,13 +7,11 @@ for a team in an organization and for one person with a personal account.
 **Status:** active development. GitHub maintains this template; see
 [Maintainers](#maintainers) and [Support](#support).
 
-Two files make the repository a marketplace:
-
-- The **catalog**, [marketplace.json](marketplace.json), names the marketplace
-  and lists its plugins.
-- The **repository overlay**,
-  [.github/copilot/settings.json](.github/copilot/settings.json), makes Copilot
-  load this checkout's plugins while you work in it, without a global install.
+One file makes the repository a marketplace: the **catalog**,
+[marketplace.json](marketplace.json), which names the marketplace and lists its
+plugins. Each plugin lives in its own folder under [plugins/](plugins/).
+Nothing is installed or turned on when you clone or open the repository; people
+add the marketplace and install only the plugins they want.
 
 ## What's in the starter
 
@@ -56,10 +54,8 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 1. Click **Use this template** on GitHub and clone your new repository.
 2. Name your marketplace. In [marketplace.json](marketplace.json), set `name`
-   (unique, lowercase, and hyphenated) and `owner.name`. In
-   [.github/copilot/settings.json](.github/copilot/settings.json), use the new
-   name as the key under `extraKnownMarketplaces` and after the `@` in each
-   key under `enabledPlugins`. Set `name` in [package.json](package.json) too.
+   (unique, lowercase, and hyphenated) and `owner.name`. Set `name` in
+   [package.json](package.json) too.
 3. Update the install commands in this README and in each plugin's README: use
    your repository instead of `github/plugin-marketplace-starter` or
    `OWNER/REPO`, and your marketplace name after the `@`.
@@ -77,7 +73,8 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## Use the marketplace
 
-In Copilot CLI:
+Add the marketplace, browse it, and install only the plugins you want. Nothing
+is installed or turned on for you. In Copilot CLI:
 
 ```sh
 copilot plugin marketplace add github/plugin-marketplace-starter
@@ -91,7 +88,6 @@ Code, run **Chat: Install Plugin from Source** and enter the repository, and
 make sure `chat.plugins.enabled` is on.
 
 Review a plugin before you trust it: plugins can run code on your machine.
-Remote plugins, which live in another repository, are never enabled for you.
 
 ## Add a plugin
 
@@ -114,9 +110,7 @@ The `add-plugin` skill does these steps for you. By hand:
 2. Add the plugin to the `plugins` list in `marketplace.json` with the same
    `name`, `version`, and `description`, and
    `"source": "./plugins/release-notes"`.
-3. Enable it in `.github/copilot/settings.json` with
-   `"release-notes@plugin-marketplace-starter": true` under `enabledPlugins`.
-4. Add it to the table and install commands in this README.
+3. Add it to the table and install commands in this README.
 
 Then add the plugin's skills, agents, or other parts to its folder. The
 [Copilot CLI plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference)
@@ -129,9 +123,7 @@ When you change a plugin, bump its version in `plugin.json` and
 
 The `release-plugins` skill can retire a plugin for you. By hand, delete
 `plugins/<name>/` and `evals/<name>/`, then remove the plugin's entry from
-`marketplace.json`, its key from `enabledPlugins` in
-`.github/copilot/settings.json`, and its row and install command from this
-README.
+`marketplace.json` and its row and install command from this README.
 
 ## Checks
 

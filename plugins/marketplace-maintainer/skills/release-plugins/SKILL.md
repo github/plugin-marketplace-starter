@@ -15,7 +15,7 @@ which changes are being released.
    and tightly coupled inconsistencies; don't loosen eval checks to make it pass.
 2. For every changed plugin, compare the released and candidate versions in
    `plugin.json` and `marketplace.json`, the matching `## <version>` changelog
-   entry, descriptions, and overlay settings. Use patch for fixes and wording,
+   entry, and descriptions. Use patch for fixes and wording,
    minor for new compatible behavior, and major for breaking changes. Don't
    increment a version already correctly bumped for this release. New plugins
    start at their initial version; changes outside a plugin's folder don't need
@@ -29,8 +29,7 @@ which changes are being released.
    its checks fail.
 5. Check that `marketplace.json` and every changed `plugin.json` are valid JSON,
    that each local entry's `name`, `version`, and `description` match its
-   manifest, and that every local plugin is enabled in
-   `.github/copilot/settings.json`. If remote entries changed, check their pins
+   manifest. If remote entries changed, check their pins
    as the `update-remote-pins` skill describes. Report what you checked.
 6. Check each changed plugin README's host checks, if it has them. Report
    untested hosts honestly. Don't run paid evals or model sessions without

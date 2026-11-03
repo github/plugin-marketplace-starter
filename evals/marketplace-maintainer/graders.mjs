@@ -14,10 +14,7 @@ const json = (workspace, path) => {
 
 export function evaluate(trajectory, workspace, mode) {
   const catalog = json(workspace, "marketplace.json");
-  const settings = json(workspace, ".github/copilot/settings.json");
-  if (!Array.isArray(catalog?.plugins) || !settings?.enabledPlugins) {
-    return [check("Preserved a valid catalog and overlay", false)];
-  }
+  if (!Array.isArray(catalog?.plugins)) return [check("Preserved a valid catalog", false)];
   if (mode === "remote") {
     const entry = catalog.plugins.find((item) => item.name === "outside-notes");
     return [
@@ -25,7 +22,6 @@ export function evaluate(trajectory, workspace, mode) {
         && entry?.source?.ref === "v1.1.0" && entry?.version === "1.1.0"
         && entry?.source?.repo === "fixture-org/outside-notes"),
       check("Preserved the unrelated local entry", catalog.plugins.some((item) => item.name === "sample-notes" && item.version === "1.0.0")),
-      check("Kept the remote opt-in", Object.keys(settings.enabledPlugins).every((key) => !key.startsWith("outside-notes@"))),
       check("Reported the upstream change and offline limit", /empty note lists/i.test(trajectory.output)
         && /offline|recorded/i.test(trajectory.output)),
     ];
@@ -47,7 +43,6 @@ export function evaluate(trajectory, workspace, mode) {
       check("Removed plugin files and catalog entry", !existsSync(resolve(workspace, "plugins/sample-notes"))
         && catalog.plugins.every((item) => item.name !== "sample-notes")),
       check("Removed the plugin's evals", !existsSync(resolve(workspace, "evals/sample-notes"))),
-      check("Removed the overlay registration", !Object.keys(settings.enabledPlugins).some((key) => key.startsWith("sample-notes@"))),
       check("Removed its README row and install command", !/plugins\/sample-notes|install sample-notes@/.test(readFileSync(resolve(workspace, "README.md"), "utf8"))),
       check("Kept the rest of the marketplace", catalog.name === "fixture-plugins" && existsSync(resolve(workspace, "AGENTS.md"))),
       check("Drafted a retirement note", /sample-notes/.test(trajectory.output) && /retir/i.test(trajectory.output)),

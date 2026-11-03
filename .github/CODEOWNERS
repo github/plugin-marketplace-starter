@@ -5,7 +5,6 @@
 #
 # *                              @your-org/ai-customizations
 # /.github/workflows/            @your-org/ai-customizations-admins
-# /.github/copilot/settings.json @your-org/ai-customizations-admins
 # /evals/                        @your-org/ai-customizations
 # /marketplace.json              @your-org/ai-customizations-admins
 # /plugins/<plugin-with-hooks>/  @your-org/ai-customizations-admins

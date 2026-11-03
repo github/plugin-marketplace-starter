@@ -1,11 +1,10 @@
 # Synthetic contribution scope
 
 This is the initial 1.0.0 release of the local review-notes skill.
-Review the supplied manifest, skill, README, changelog, catalog, and overlay.
+Review the supplied manifest, skill, README, changelog, and catalog.
 No previous installed version exists. Agent Plugins 1.0 uses root plugin.json,
 and only schema-declared manifest fields are allowed. Local catalog descriptions
-and versions must match; remote entries must pin a full 40-character commit SHA
-and must never be enabled in the overlay.
+and versions must match; remote entries must pin a full 40-character commit SHA.
 
 Runtime and risk facts are recorded in the plugin README. No additional code,
 dependencies, network activity, credential use, or persistence is proposed.

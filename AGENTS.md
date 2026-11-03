@@ -5,15 +5,14 @@ its files directly. [README.md](README.md) shows the steps.
 
 - Each local plugin lives in `plugins/<name>/` with `plugin.json`,
   `README.md`, and `CHANGELOG.md`. It's listed in `marketplace.json` with the
-  same `name`, `version`, and `description`, and enabled in
-  `.github/copilot/settings.json` as `<name>@<marketplace>`. Keep each plugin
-  self-contained and installable on its own.
+  same `name`, `version`, and `description`. Keep each plugin self-contained
+  and installable on its own. Don't add repository settings that install or
+  turn on plugins; people install only the plugins they want.
 - Any change under `plugins/<name>/` needs a new version in `plugin.json` and
   `marketplace.json`, and a matching `## <version>` heading in `CHANGELOG.md`.
-- When you add or remove a plugin, update the catalog, the overlay, and the
-  README's plugin table and install commands together.
+- When you add or remove a plugin, update the catalog and the README's plugin
+  table and install commands together.
 - Remote plugins pin a full 40-character commit `sha` and name their `ref`.
-  Never enable a remote plugin in `.github/copilot/settings.json`.
 - A plugin's evals, graders, and fixtures live in `evals/<name>/`, outside the
   plugin. Files several plugins share live in `evals/graders/` and
   `evals/support/`. Use only synthetic data.

@@ -24,7 +24,7 @@ stimuli:
       Pin outside-notes at its latest release using the reviewed offline
       upstream-snapshot.json instead of GitHub. Its current catalog pin is the
       previous release. Review and summarize the supplied upstream changes, update
-      the selected entry, and keep it opt-in. Don't access the network, install
+      the selected entry. Don't access the network, install
       upstream code, commit, or publish. State the offline verification limit.
     agent_environment:
       files:

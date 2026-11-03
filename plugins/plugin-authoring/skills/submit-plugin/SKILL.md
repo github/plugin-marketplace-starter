@@ -23,9 +23,8 @@ guessing its rules.
    heading with a short entry to `CHANGELOG.md`. Don't bump twice if the
    contribution already has the correct new version and changelog. A new plugin
    keeps its initial version.
-4. Check that the catalog description matches `plugin.json`, the plugin is
-   enabled in `.github/copilot/settings.json`, the JSON files are valid, and the
-   README describes the change. If the plugin has evals in `evals/<name>/`,
+4. Check that the catalog entry's name, version, and description match
+   `plugin.json`, the JSON files are valid, and the README describes the change. If the plugin has evals in `evals/<name>/`,
    check that they use only synthetic data.
 5. Write the pull request description in chat with these sections:
 

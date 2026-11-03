@@ -8,7 +8,7 @@ workflows edit that checkout's catalog and plugin files.
 | Asset | Job |
 |---|---|
 | [plugin-reviewer](com.github.copilot/agents/plugin-reviewer.agent.md) | Read-only contribution review: runtime and data risks, layout, versions, and registrations |
-| [update-remote-pins](skills/update-remote-pins/SKILL.md) | Review upstream changes and deliberately add or update an opt-in remote pin |
+| [update-remote-pins](skills/update-remote-pins/SKILL.md) | Review upstream changes and deliberately add or update a remote pin |
 | [release-plugins](skills/release-plugins/SKILL.md) | Check versions and changelogs, draft release notes, fix catalog inconsistencies, or retire a plugin |
 
 Review is an agent only, with `read` and `search` tools and no matching skill.
@@ -35,8 +35,7 @@ Replace `OWNER/REPO` with the GitHub repository that hosts this marketplace.
 
 The skills can edit the catalog/workspace and run maintenance commands.
 Remote-pin checks read GitHub using host authentication, but don't install or
-execute upstream code. Pinning isn't proof of safety, and remote plugins remain
-opt-in. Retirement needs explicit approval. Commits, pushes, publishing, and
+execute upstream code. Pinning isn't proof of safety. Retirement needs explicit approval. Commits, pushes, publishing, and
 paid evals need a separate request. There are no automatic hooks or servers.
 
 ## Host checks
@@ -50,7 +49,7 @@ and evals don't prove that a host loads or shows everything.
   agent cites the evidence, edits nothing, and states its validation limit.
 - Review a clean contribution; a clean finding is accepted.
 - In a disposable checkout, update a reviewed remote pin and confirm full
-  SHA/ref/version, upstream-change summary, and no overlay enablement.
+  SHA/ref/version and an upstream-change summary.
 - Prepare release notes; confirm versions and changelogs are checked and no tag or release is published.
 - Retire a disposable plugin only after approval and confirm registrations and
   owned files are removed without deleting shared tooling.

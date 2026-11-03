@@ -26,8 +26,8 @@ Don't invent a version history, owner approval, CI result, or finding.
 - New dependencies, licenses, and install scripts. Check that the installed
   plugin doesn't depend on a sibling plugin or the checkout's node_modules.
 - Remote source repository, path, and full 40-character SHA with a meaningful
-  ref. The catalog name must equal the upstream manifest name. Remote plugins
-  must not be enabled by the repository overlay. A pin doesn't establish safety.
+  ref. The catalog name must equal the upstream manifest name. A pin doesn't
+  establish safety.
 - Who owns the plugin and who approved it. Call out missing evidence as a
   coverage limit, not a fabricated vulnerability.
 - Agent Plugins 1.0 manifest fields against the schema at
@@ -39,8 +39,7 @@ Don't invent a version history, owner approval, CI result, or finding.
   marketplace.json, plus the matching CHANGELOG.md heading. New plugins need
   an initial version; eval-only/external-doc changes don't need a plugin bump.
   Flag breaking asset renames, removed tools, and new automatic behavior.
-- Matching catalog/manifest descriptions, and local plugin enablement in
-  .github/copilot/settings.json.
+- Matching catalog and manifest names, versions, and descriptions.
 - Any evals live outside the plugin under evals/<plugin>/ and use only
   synthetic fixtures.
 - README claims about which hosts support the plugin match official GitHub and

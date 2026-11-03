@@ -1,16 +1,11 @@
 # Try a plugin locally
 
-## In the marketplace checkout
+## For one session
 
-Opening the checkout in a trusted Copilot CLI session makes every local plugin
-available from the working files. The repository overlay,
-`.github/copilot/settings.json`, declares the checkout as a marketplace and
-enables each plugin, so no global install is needed, and edits take effect in
-the next session. The CLI ignores an untrusted checkout's settings, so if the
-plugins are missing, check folder trust first. Trusting the checkout lets every
-local plugin run, so trust it only if you'd install all of them.
-
-To try one plugin in another project, pass it with an absolute path:
+Opening the marketplace checkout doesn't load or turn on its plugins. To try
+one in a Copilot CLI session, in the checkout or another project, pass it with
+an absolute path. Nothing is installed, and edits take effect in the next
+session:
 
 ```sh
 copilot --plugin-dir /absolute/path/to/plugins/<name>
@@ -34,7 +29,7 @@ Confirm the plugin's skills appear in **Chat: Configure Skills**. See
 
 This checks what a teammate's `copilot plugin install` does, without starting a
 session or calling a model. It uses an isolated Copilot home and runs from
-outside the checkout so the checkout's overlay doesn't mix in. Replace `MARKETPLACE` with the `name` in `marketplace.json` and
+outside the checkout. Replace `MARKETPLACE` with the `name` in `marketplace.json` and
 `PLUGIN` with the plugin to install.
 
 PowerShell:

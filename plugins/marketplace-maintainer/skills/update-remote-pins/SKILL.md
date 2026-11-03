@@ -37,8 +37,7 @@ report that.
    40-character `sha`, and the release `ref` together. Keep `version` and
    `description` in step with the pinned manifest. Preserve other entries, and
    keep the file valid JSON.
-5. Never add a remote plugin to `.github/copilot/settings.json`: remote plugins
-   stay opt-in. Document private-repository access requirements without tokens.
+5. Document private-repository access requirements without tokens.
 
 Return the old and new SHA, ref, and version, the upstream evidence and changes
 reviewed, and access requirements. Pinning identifies the code reviewed; it

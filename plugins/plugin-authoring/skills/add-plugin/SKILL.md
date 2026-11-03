@@ -34,11 +34,9 @@ skill needs a checkout of a plugin marketplace and stop without creating files.
 3. Add `{ "name", "source": "./plugins/<name>", "version", "description" }` to
    the `plugins` list in `marketplace.json`, after the other local plugins, with
    the same values as `plugin.json`.
-4. Add `"<name>@<marketplace>": true` to `enabledPlugins` in
-   `.github/copilot/settings.json`.
-5. If the root README has a plugin table or install commands, add a row and an
+4. If the root README has a plugin table or install commands, add a row and an
    install line for the new plugin.
-6. Check that every JSON file you changed is still valid and that the catalog
+5. Check that every JSON file you changed is still valid and that the catalog
    entry matches `plugin.json`.
 
 The plugin has no skills, agents, or other parts yet. For what can go in it,

@@ -23,7 +23,6 @@ export function evaluate(trajectory, workspace, mode) {
     const folder = resolve(workspace, "plugins/yaml-after-edit");
     const plugin = json(workspace, "plugins/yaml-after-edit/plugin.json");
     const entry = catalog.plugins.find((item) => item.name === "yaml-after-edit");
-    const settings = json(workspace, ".github/copilot/settings.json");
     const contents = existsSync(folder) ? readdirSync(folder).sort().join(",") : "";
     return [
       check("Created only the plugin shell", plugin?.name === "yaml-after-edit" && contents === "CHANGELOG.md,README.md,plugin.json"),
@@ -32,10 +31,8 @@ export function evaluate(trajectory, workspace, mode) {
         && text(workspace, "plugins/yaml-after-edit/CHANGELOG.md").replaceAll("\r\n", "\n").includes(`## ${plugin.version}\n`)),
       check("Catalog and manifest agree", entry?.source === "./plugins/yaml-after-edit" && entry?.version === plugin?.version
         && entry?.description === plugin?.description),
-      check("Enabled the local plugin", settings?.enabledPlugins?.["yaml-after-edit@fixture-plugins"] === true),
       check("Listed it in the marketplace README", text(workspace, "README.md").includes("plugins/yaml-after-edit/")),
-      check("Kept the existing plugin", catalog.plugins.some((item) => item.name === "sample-notes")
-        && settings?.enabledPlugins?.["sample-notes@fixture-plugins"] === true),
+      check("Kept the existing plugin", catalog.plugins.some((item) => item.name === "sample-notes")),
     ];
   }
   if (mode === "try") {
