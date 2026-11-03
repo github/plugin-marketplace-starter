@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,6 +7,16 @@ export const check = (label, passed) => ({ label, passed: Boolean(passed) });
 // Real paths, because Node resolves import.meta.url through symlinks but not argv.
 export const isMain = (url) => Boolean(process.argv[1]) && real(resolve(process.argv[1])) === real(fileURLToPath(url));
 export const normalize = (text) => text.replaceAll("\r\n", "\n");
+export const json = (workspace, path) => {
+  const file = resolve(workspace, path);
+  if (!existsSync(file)) return undefined;
+  try { return JSON.parse(readFileSync(file, "utf8")); }
+  catch (error) {
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
+  }
+};
+export const text = (workspace, path) => existsSync(resolve(workspace, path)) ? readFileSync(resolve(workspace, path), "utf8") : "";
 export const matchesTool = (name, suffix) => typeof name === "string"
   && (name === suffix || [".", "-", "_", "/"].some((separator) => name.endsWith(`${separator}${suffix}`)));
 

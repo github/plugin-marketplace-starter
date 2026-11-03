@@ -1,31 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { calls, check, isMain, runGrade } from "./common.mjs";
+import { calls, check, isMain, json, runGrade } from "./common.mjs";
 
-const json = (workspace, path) => {
-  const file = resolve(workspace, path);
-  if (!existsSync(file)) return undefined;
-  try { return JSON.parse(readFileSync(file, "utf8")); }
-  catch (error) {
-    if (error instanceof SyntaxError) return undefined;
-    throw error;
-  }
-};
-
+// One skill, two scenarios: pass "release" or "retire".
 export function evaluate(trajectory, workspace, mode) {
   const catalog = json(workspace, "marketplace.json");
   if (!Array.isArray(catalog?.plugins)) return [check("Preserved a valid catalog", false)];
-  if (mode === "remote") {
-    const entry = catalog.plugins.find((item) => item.name === "outside-notes");
-    return [
-      check("Updated the exact reviewed SHA, ref and version", entry?.source?.sha === "b".repeat(40)
-        && entry?.source?.ref === "v1.1.0" && entry?.version === "1.1.0"
-        && entry?.source?.repo === "fixture-org/outside-notes"),
-      check("Preserved the unrelated local entry", catalog.plugins.some((item) => item.name === "sample-notes" && item.version === "1.0.0")),
-      check("Reported the upstream change and offline limit", /empty note lists/i.test(trajectory.output)
-        && /offline|recorded/i.test(trajectory.output)),
-    ];
-  }
   if (mode === "release") {
     const plugin = json(workspace, "plugins/sample-notes/plugin.json");
     const entry = catalog.plugins.find((item) => item.name === "sample-notes");
@@ -48,7 +28,7 @@ export function evaluate(trajectory, workspace, mode) {
       check("Drafted a retirement note", /sample-notes/.test(trajectory.output) && /retir/i.test(trajectory.output)),
     ];
   }
-  throw new Error(`Unknown marketplace-maintainer grader mode: ${mode}`);
+  throw new Error(`Unknown release-plugins grader mode: ${mode}`);
 }
 
 if (isMain(import.meta.url)) {

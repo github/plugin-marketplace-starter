@@ -15,8 +15,8 @@ agent_environment:
     - ../../../../plugins/plugin-authoring/skills/submit-plugin
 grading_environment:
   files:
-    - src: ../../graders.mjs
-      dest: .grading/plugin-authoring.mjs
+    - src: grader.mjs
+      dest: .grading/grader.mjs
     - src: ../../../_shared/graders/common.mjs
       dest: .grading/common.mjs
 stimuli:
@@ -44,7 +44,7 @@ stimuli:
       - type: program
         config:
           program: node
-          args: [.grading/plugin-authoring.mjs, try]
+          args: [.grading/grader.mjs]
   - name: try-plugin-locally-ignores-pricing-question
     prompt: Is a marketplace plugin the same thing as a paid Copilot subscription? Answer briefly without creating or changing files.
     tags:

@@ -14,8 +14,8 @@ agent_environment:
     - ../../../../plugins/marketplace-maintainer/skills/release-plugins
 grading_environment:
   files:
-    - src: ../../graders.mjs
-      dest: .grading/marketplace-maintainer.mjs
+    - src: grader.mjs
+      dest: .grading/grader.mjs
     - src: ../../../_shared/graders/common.mjs
       dest: .grading/common.mjs
 stimuli:
@@ -45,7 +45,7 @@ stimuli:
       - type: program
         config:
           program: node
-          args: [.grading/marketplace-maintainer.mjs, remote]
+          args: [.grading/grader.mjs]
   - name: update-remote-pins-ignores-local-copy-edit
     prompt: >-
       Rewrite this local plugin description in plain English, in chat only:
