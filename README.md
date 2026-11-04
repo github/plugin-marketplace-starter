@@ -11,9 +11,6 @@ One file makes the repository a marketplace: the **catalog**,
 [marketplace.json](marketplace.json), which names the marketplace and lists its
 plugins. Each plugin lives in its own folder under [plugins/](plugins/). People
 add the marketplace and install only the plugins they want.
-[.github/copilot/settings.json](.github/copilot/settings.json) turns on only
-this repository's two maintenance plugins for people working in it; don't add
-other plugins to it.
 
 ## What's in the starter
 
@@ -23,18 +20,6 @@ Two plugins that help you run the marketplace:
 |---|---|
 | [plugin-authoring](plugins/plugin-authoring/) | Scaffold, try locally, and prepare contributions to this plugin marketplace. |
 | [marketplace-maintainer](plugins/marketplace-maintainer/) | Review contributed plugins, maintain remote pins, and prepare marketplace releases. |
-
-`plugin-authoring`, for people who add plugins:
-
-- `add-plugin` skill: creates a new plugin's folder and files and registers it in the catalog.
-- `try-plugin-locally` skill: installs a plugin from your checkout to try it before you open a pull request, then cleans up.
-- `submit-plugin` skill: bumps the version and changelog and writes the pull request description.
-
-`marketplace-maintainer`, for people who own the marketplace:
-
-- `plugin-reviewer` agent: reviews a plugin pull request without changing anything: what it runs, what it reaches, and whether it's registered correctly.
-- `update-remote-pins` skill: adds a plugin from another repository, or moves its pin, to a commit you've reviewed.
-- `release-plugins` skill: checks versions and changelogs, drafts release notes, and retires a plugin.
 
 ## Background
 
@@ -50,7 +35,9 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 - To use the plugins: a current Copilot CLI, the GitHub Copilot app, or VS Code
   with agent plugins turned on, and a GitHub Copilot plan.
-- To lint the plugins and run their evals: Node.js 22.14 or newer and npm.
+- Node.js 22.14 or newer for repository tooling and the bundled
+  [local-install validator](plugins/plugin-authoring/skills/try-plugin-locally/references/local-install.md#test-installation-without-publishing).
+  Repository checks and evals also need npm.
 
 ## Make it yours
 
@@ -144,39 +131,17 @@ npm ci
 npm run lint
 ```
 
-`npm run lint` checks every skill under `plugins/` and every eval under `evals/`
-with the pinned [Vally](https://microsoft.github.io/vally/) CLI. It never calls
-a model. [validate.yml](.github/workflows/validate.yml) runs it on every pull
-request. CI-owned checks and their deterministic tests live in
-[.github/scripts/](.github/scripts/); run the tests with
-`node --test .github/scripts/*.test.mjs`. The recipe tests use fake CLI functions
-and need both bash and PowerShell (`pwsh`), available on CI's Ubuntu runner.
-CI also validates each `plugins/*/plugin.json` against the
-[Agent Plugins schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json),
-checks that each local entry in `marketplace.json` matches its `plugin.json`,
-and checks that each remote entry pins a commit that exists and has a
-`plugin.json` with the entry's name and matching version when both specify one.
-A root manifest declaring a supported Agent Plugins schema wins; unsupported
-Agent Plugins versions fail. Otherwise the check uses Copilot CLI's legacy
-order: `.plugin/plugin.json`, `plugin.json`,
-`.github/plugin/plugin.json`, then `.claude-plugin/plugin.json`. A private
-remote repository needs a token that can read it.
+`npm run lint` checks skill and eval files without calling a model.
+[Validate](.github/workflows/validate.yml) also runs script tests, schema
+validation, catalog consistency checks, and remote-pin checks on every pull
+request.
 
-The evals in `evals/` run real Copilot sessions and cost AI credits. The
-`plugin-reviewer` eval needs the full Copilot CLI that `npm ci` installs, so
-point `COPILOT_CLI_PATH` at it:
+**Paid evals:** `npm run eval` runs real Copilot sessions and costs AI credits.
+[Evals](.github/workflows/evals.yml) runs only when manually started; pull
+requests never trigger paid evals.
 
-```sh
-export COPILOT_CLI_PATH="$PWD/node_modules/@github/copilot/npm-loader.js"
-npm run eval -- --suite smoke
-```
-
-In PowerShell, set it with
-`$env:COPILOT_CLI_PATH = "$PWD\node_modules\@github\copilot\npm-loader.js"`.
-Results go to `vally-results/`. [evals.yml](.github/workflows/evals.yml) runs
-the smoke suite only when you explicitly start it with **Run workflow** in
-GitHub Actions (`workflow_dispatch`). Pull requests never start paid evals.
-Review the selected branch and its eval code before dispatching a run.
+See [Checks and evals](docs/checks-and-evals.md) for CI details, local test
+commands, and Bash and PowerShell eval setup.
 
 ## License
 

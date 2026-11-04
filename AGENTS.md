@@ -3,6 +3,8 @@
 This repository is a GitHub Copilot plugin marketplace, maintained by editing
 its files directly. [README.md](README.md) shows the steps.
 
+- Keep documentation README-first. Every page under `docs/` must have a direct,
+  descriptive README link and only expand a topic already introduced there.
 - Each local plugin lives in `plugins/<name>/` with `plugin.json`,
   `README.md`, and `CHANGELOG.md`. It's listed in `marketplace.json` with the
   same `name`, `version`, and `description`. Keep each plugin self-contained
