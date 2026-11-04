@@ -1,0 +1,25 @@
+{
+  "repo": "fixture-org/outside-notes",
+  "path": "",
+  "old": {
+    "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "ref": "v1.0.0",
+    "version": "1.0.0"
+  },
+  "latest": {
+    "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "ref": "v1.1.0",
+    "version": "1.1.0"
+  },
+  "manifest": {
+    "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+    "name": "outside-notes",
+    "version": "1.1.0",
+    "description": "Read synthetic outside notes.",
+    "license": "MIT"
+  },
+  "changes": [
+    "Add support for empty note lists. No new hooks, network destinations, credentials, or dependencies."
+  ],
+  "access": "Synthetic public upstream; recorded responses only."
+}

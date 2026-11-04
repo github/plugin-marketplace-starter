@@ -1,111 +1,35 @@
 # Maintaining this marketplace
 
-Follow [README.md](README.md), [CONTRIBUTING.md](CONTRIBUTING.md), and the
-guides in [docs/](docs/) for team setup, package layout, installation,
-versioning, validation, evals, CI, and host checks. Update those instructions in
-place; don't duplicate them here.
+This repository is a GitHub Copilot plugin marketplace, maintained by editing
+its files directly. [README.md](README.md) shows the steps.
 
-## Agent-specific rules
-
-- Scaffold a plugin with `npm run new-plugin -- <name>` (with `--with agent`,
-  `mcp`, `hook`, or `extension`, and `--no-skill` when it has no skill), remove
-  one with `npm run remove-plugin -- <name>` (`remove-example` for the shipped
-  examples), and rename the marketplace with `npm run rename-marketplace`,
-  rather than editing the catalog, overlay, and `.vally.yaml` by hand. Name a
-  plugin's support files after it (`evals/graders/<name>.mjs`,
-  `test/<name>-*.test.mjs`) so removal finds them.
-- Group plugins by workflow, not by asset type. Keep every in-repo example
-  self-contained and independently installable, without external services.
-  Remote catalog references are separate from the local examples.
-- Keep `.vally.yaml` in step with the plugins: `paths.skills` lists every
-  plugin's `skills` directory, and path `params` point at files that exist.
-  Live-repository tests check invariants, not a fixed plugin list; put
-  example-specific assertions in tests that skip when the example is gone, and
-  list every file an example owns in [scripts/examples.mjs](scripts/examples.mjs).
-- Use the Agent Plugins 1.0 layout: root `plugin.json`, `skills/`, and `mcp.json`.
-  Copilot agents (`agents/`), slash commands (`commands/`), rules (`rules/`),
-  hooks (`hooks/hooks.json`), LSP servers (`lsp.json`), and SDK extensions
-  (`extensions/`) live under `com.github.copilot/`. Check the
-  [plugin reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference#components)
-  before adding a component type the examples don't show. Don't ship rules or
-  slash commands until the reference documents their file format; validation
-  only checks that those files aren't empty. Use a skill for shared standards.
-  Don't adopt legacy `.plugin/` or `.claude-plugin/` layouts from documentation.
-  VS Code automation templates (`automations/*.automation.md` at the plugin
-  root) are a VS Code-only capability, not an Agent Plugins 1.0 component, and
-  `verify` doesn't check them.
-- Instruction files (`.github/copilot-instructions.md`, `*.instructions.md`,
-  `AGENTS.md`) and prompt files apply only to the repository they're in. To
-  share guidance through the marketplace, package it as a skill or agent, as
-  [docs/customization-types.md](docs/customization-types.md) explains.
-- Don't add a UI framework or database. Never vendor the runtime SDK. The only
-  build step regenerates committed artifacts (the MCP server bundle, the
-  authoring grader, and their notices). Run `npm run build` after changing their
-  sources and commit the generated files with the change. Never make an
-  installed plugin depend on this checkout's `node_modules`.
-- Skill and agent descriptions explain when to invoke them. Put detailed
-  instructions in the body, and don't duplicate a skill as a command.
-- Formatter hooks must not return permission decisions. Return `{}` for no-ops,
-  and never describe the hook as a security boundary or replacement for CI.
-  Prefix hook messages with `<plugin-name>:`, and never put file contents or raw
-  parser messages in them. See [docs/hooks.md](docs/hooks.md).
-- Don't claim a customization type works in a host unless official docs say so;
-  keep the matrix in [docs/customization-types.md](docs/customization-types.md)
-  in step, and write "not verified" where they don't.
-- Preserve coverage when replacing an example; don't delete tests just to
-  make validation pass.
-- Keep evals outside plugins, grouped by workflow under `evals/`. Update the
-  corresponding evals whenever adding or changing an in-repo skill, agent, hook,
-  extension, or MCP tool. Don't replace real skill, tool, or agent invocation
-  assertions with output keywords. Keep eval-only transports and development
-  dependencies outside `plugins/`. Headless contract results aren't proof of
-  native canvas rendering.
-- Never stage answer keys or eval specifications into the agent's workspace. Use
-  only synthetic fixtures and disposable directories, not git worktrees.
-- Inspect failed trajectories before changing assertions. Don't loosen a check
-  just to get green results, and don't accept the default agent's answer when a
-  custom agent failed to launch. A grader infrastructure exception must report
-  `status: error`, not a failed behavioral verdict.
-- Valid behavioral failures may be report-only locally; tooling, configuration,
-  and grader errors must fail. Never hide failures with blanket catches or
-  `continue-on-error`.
-- `npm run eval:smoke`, `npm run eval`, and the evals workflow spend AI
-  credits. Don't run them unless the user asks, and don't turn on
-  `ENABLE_EVALS` for anyone. Static checks don't establish behavioral quality.
-- When upgrading Vally or Copilot, update the pins in `package.json` and the
-  lockfile together, and verify real custom-agent delegation and MCP behavior,
-  not only schema validity. CI runs evals through the same launcher as local
-  runs. When you touch the workflows, refresh every action's commit SHA (with
-  its version comment), and keep the evals workflow on a Node major that
-  `validate.yml` tests.
-- Keep remote plugins opt-in. The repository settings overlay must never enable
-  a remote plugin; that's a deliberate security rule, so developers install
-  remote plugins themselves. A remote entry's `name` must match the upstream
-  `plugin.json` name, and its source must pin a full `sha` and should name its
-  `ref`. `npm run check-remotes` checks pins against GitHub; it uses the
-  network, so keep it out of `verify`. Validate
-  catalog metadata without fetching or executing upstream code in checks, and
-  document private-repository access. Don't claim the local evals cover remote
-  assets.
-- Keep secrets and token-bearing URLs out of files. Use host authentication
-  for private repositories, not embedded credentials. Never copy private
-  organizational code into the examples.
-- Do not commit, push, publish, change visibility, or modify GitHub permissions
-  unless the user requests it.
-
-## Authoring references
-
-Consult the relevant contract before changing package or catalog fields:
-
-- [Agent Plugins 1.0 specification](https://agent-plugins.org/specification).
-- [Canonical manifest schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json)
-  and [MCP configuration schema](https://agent-plugins.org/schemas/1.0.0/mcp.schema.json),
-  vendored in [schemas/](schemas/NOTICE).
-- [Creating Copilot plugins](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-creating).
-- [Creating a team marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace).
-- [CLI plugin and catalog reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference).
-- [Vally eval schema](https://microsoft.github.io/vally/reference/eval-spec/) and
-  [Vally CI guide](https://microsoft.github.io/vally/get-started/add-to-ci/).
-
-The README's [references](README.md#references) cover skills, hooks, VS Code,
-and this repository's guides.
+- Keep documentation README-first. Every page under `docs/` must have a direct,
+  descriptive README link and only expand a topic already introduced there.
+- Each local plugin lives in `plugins/<name>/` with `plugin.json`,
+  `README.md`, and `CHANGELOG.md`. It's listed in `marketplace.json` with the
+  same `name`, `version`, and `description`. Keep each plugin self-contained
+  and installable on its own. Don't add repository settings that install or
+  turn on plugins; people install only the plugins they want.
+- Any change under `plugins/<name>/` needs a new version in `plugin.json` and
+  `marketplace.json`, and a matching `## <version>` heading in `CHANGELOG.md`.
+- When you add or remove a plugin, update the catalog and the README's plugin
+  table and install commands together.
+- `.github/copilot/settings.json` turns on only this repository's own
+  maintenance plugins, `marketplace-maintainer` and `plugin-authoring`, for
+  people working here. Never add other plugins to it.
+- Remote plugins pin a full 40-character commit `sha` and name their `ref`.
+- A plugin's evals and fixtures live in `evals/<name>/`, outside the plugin,
+  mirroring its folders. A skill's custom grader sits next to its eval as
+  `grader.mjs`. Files several plugins share live in `evals/_shared/`: grader
+  helpers in `evals/_shared/graders/` and fixtures in `evals/_shared/fixtures/`.
+  `_shared` can't collide with a plugin because plugin names start with a
+  lowercase letter or digit. Use only synthetic data.
+- `npm run lint` checks skills and eval files and never calls a model. CI also
+  validates each `plugin.json` against the Agent Plugins schema, matches local
+  catalog entries to their `plugin.json`, and checks remote pins.
+  `npm run eval` and the evals workflow run real Copilot sessions and spend AI
+  credits; don't run them unless the user asks.
+- Use the `plugin-authoring` and `marketplace-maintainer` skills and the
+  read-only `plugin-reviewer` agent when they fit the task.
+- Keep secrets and token-bearing URLs out of files. Don't commit, push, publish,
+  change visibility, or change GitHub permissions unless the user asks.

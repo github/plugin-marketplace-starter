@@ -1,0 +1,64 @@
+name: add-plugin
+description: Creating a plugin shell by hand in a synthetic marketplace.
+type: capability
+defaults:
+  executor: copilot-sdk
+  model: claude-haiku-5.5
+  timeout: 5m
+  runs: 1
+# All of the plugin's skills load, as they do when it's installed, so these
+# cases also check that Copilot picks the right one.
+agent_environment:
+  skills:
+    - ../../../../plugins/plugin-authoring/skills/add-plugin
+    - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
+    - ../../../../plugins/plugin-authoring/skills/submit-plugin
+grading_environment:
+  files:
+    - src: grader.mjs
+      dest: .grading/grader.mjs
+    - src: ../../../_shared/graders/common.mjs
+      dest: .grading/common.mjs
+stimuli:
+  - name: add-plugin-scaffolds-plugin-shell
+    prompt: >-
+      Add a plugin named yaml-after-edit to this marketplace. It will format YAML
+      after edits, but I'll write its parts myself later, so create only the
+      plugin shell and register it. I have approved the contribution scope;
+      don't create an issue or PR.
+    agent_environment:
+      files:
+        - src: ../../../_shared/fixtures/sample-marketplace
+          dest: .
+    tags:
+      assets: skill:plugin-authoring/add-plugin
+      control: positive
+      suite: smoke
+      boundary: synthetic-marketplace-files
+    graders:
+      - type: completed
+      - type: program
+        config:
+          program: node
+          args: [.grading/grader.mjs]
+      - type: file-matches
+        name: settings-json-still-enables-only-sample-notes
+        config:
+          path: .github/copilot/settings.json
+          pattern: '"enabledPlugins"\s*:\s*\{\s*"sample-notes@fixture-plugins"\s*:\s*true\s*\}'
+  - name: add-plugin-ignores-pricing-question
+    prompt: Is a marketplace plugin the same thing as a paid Copilot subscription? Answer briefly without creating or changing files.
+    tags:
+      assets: skill:plugin-authoring/add-plugin
+      control: negative
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          disallowed: [add-plugin, try-plugin-locally, submit-plugin]
+      - type: output-matches
+        config:
+          pattern: '[Nn]o\b|[Nn]ot the same'
+      - type: diff-empty
+scoring:
+  threshold: 1

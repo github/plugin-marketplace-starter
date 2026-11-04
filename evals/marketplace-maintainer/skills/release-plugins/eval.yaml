@@ -1,0 +1,86 @@
+name: release-plugins
+description: Release readiness and retirement in a synthetic marketplace.
+type: capability
+defaults:
+  executor: copilot-sdk
+  model: claude-haiku-5.5
+  timeout: 5m
+  runs: 1
+# Both of the plugin's skills load, as they do when it's installed, so these
+# cases also check that Copilot picks the right one.
+agent_environment:
+  skills:
+    - ../../../../plugins/marketplace-maintainer/skills/update-remote-pins
+    - ../../../../plugins/marketplace-maintainer/skills/release-plugins
+grading_environment:
+  files:
+    - src: grader.mjs
+      dest: .grading/grader.mjs
+    - src: ../../../_shared/graders/common.mjs
+      dest: .grading/common.mjs
+stimuli:
+  - name: release-plugins-keeps-already-bumped-version
+    prompt: >-
+      Get this catalog ready to release against released.json. sample-notes has
+      already been bumped and its changelog describes the wording fix. Check the
+      versions and changelog, and draft short release notes in chat. Don't
+      increment its version again or publish. No model-backed eval or manual host
+      test was run.
+    agent_environment:
+      files:
+        - src: ../../../_shared/fixtures/sample-marketplace
+          dest: .
+        - src: fixtures
+          dest: .
+    tags:
+      assets: skill:marketplace-maintainer/release-plugins
+      control: positive
+      suite: smoke
+      boundary: synthetic-marketplace-files
+    graders:
+      - type: completed
+      - type: program
+        config:
+          program: node
+          args: [.grading/grader.mjs, release]
+  - name: release-plugins-retires-approved-plugin
+    prompt: >-
+      Retire sample-notes from this synthetic marketplace. I approve removing this
+      exact local plugin, its folder, and its evals because it is no longer
+      maintained. Update the catalog and the README, and
+      draft a retirement note. Don't commit, push, publish, or uninstall anyone's
+      existing real copy.
+    agent_environment:
+      files:
+        - src: ../../../_shared/fixtures/sample-marketplace
+          dest: .
+        - src: fixtures
+          dest: .
+    tags:
+      assets: skill:marketplace-maintainer/release-plugins
+      control: positive
+      boundary: synthetic-marketplace-files
+    graders:
+      - type: completed
+      - type: program
+        config:
+          program: node
+          args: [.grading/grader.mjs, retire]
+  - name: release-plugins-ignores-local-copy-edit
+    prompt: >-
+      Rewrite this local plugin description in plain English, in chat only:
+      "Facilitates the summarization of notes." Don't change files or prepare a release.
+    tags:
+      assets: skill:marketplace-maintainer/release-plugins
+      control: negative
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          disallowed: [update-remote-pins, release-plugins]
+      - type: output-matches
+        config:
+          pattern: '\bnotes\b'
+      - type: diff-empty
+scoring:
+  threshold: 1

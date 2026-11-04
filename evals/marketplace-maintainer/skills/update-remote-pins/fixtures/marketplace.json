@@ -1,0 +1,25 @@
+{
+  "name": "fixture-plugins",
+  "owner": {
+    "name": "Fixture"
+  },
+  "plugins": [
+    {
+      "name": "sample-notes",
+      "source": "./plugins/sample-notes",
+      "version": "1.0.0",
+      "description": "Summarize synthetic release notes."
+    },
+    {
+      "name": "outside-notes",
+      "source": {
+        "source": "github",
+        "repo": "fixture-org/outside-notes",
+        "ref": "v1.0.0",
+        "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "version": "1.0.0",
+      "description": "Read synthetic outside notes."
+    }
+  ]
+}
