@@ -15,6 +15,19 @@
       "source": "./plugins/marketplace-maintainer",
       "version": "0.1.0",
       "description": "Review contributed plugins, maintain remote pins, and prepare marketplace releases."
+    },
+    {
+      "name": "eval",
+      "source": {
+        "source": "github",
+        "repo": "github/evals",
+        "path": "packages/plugin",
+        "ref": "copilot-evals-v0.23.3",
+        "sha": "be7b4ee0d58b7bea143e74fd64275b2c47091cab"
+      },
+      "version": "0.23.3",
+      "description": "GitHub Copilot Evals (Preview): set up a project with /eval setup, create and save evals with /eval create, save revised copies with /eval improve, run with /eval run, review with /eval review, and compare saved runs or explore one skill with /eval compare. Setup is optional; saves use normal host permissions and runs require cost/effect approval.",
+      "homepage": "https://github.com/github/evals"
     }
   ]
 }

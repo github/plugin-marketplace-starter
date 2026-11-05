@@ -9,17 +9,18 @@ for a team in an organization and for one person with a personal account.
 
 One file makes the repository a marketplace: the **catalog**,
 [marketplace.json](marketplace.json), which names the marketplace and lists its
-plugins. Each plugin lives in its own folder under [plugins/](plugins/). People
+plugins. Local plugins live in their own folders under [plugins/](plugins/). People
 add the marketplace and install only the plugins they want.
 
 ## What's in the starter
 
-Two plugins that help you run the marketplace:
+Two local maintenance plugins and one optional remote plugin:
 
 | Plugin | What it does |
 |---|---|
 | [plugin-authoring](plugins/plugin-authoring/) | Scaffold, try locally, and prepare contributions to this plugin marketplace. |
 | [marketplace-maintainer](plugins/marketplace-maintainer/) | Review contributed plugins, maintain remote pins, and prepare marketplace releases. |
+| [GitHub Copilot Evals (Preview)](https://github.com/github/evals/blob/copilot-evals-v0.23.3/README.md) (`eval`, optional remote) | Create, run, review, and compare evals for your Copilot customizations. |
 
 ## Background
 
@@ -38,6 +39,9 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 - Node.js 22.14 or newer for repository tooling and the bundled
   [local-install validator](plugins/plugin-authoring/skills/try-plugin-locally/references/local-install.md#test-installation-without-publishing).
   Repository checks and evals also need npm.
+- Optional GitHub Copilot Evals requires Node.js 24+ in Copilot CLI. See its
+  [upstream README](https://github.com/github/evals/blob/copilot-evals-v0.23.3/README.md#runner-setup)
+  for all host-specific requirements.
 
 ## Make it yours
 
@@ -76,6 +80,17 @@ copilot plugin marketplace browse plugin-marketplace-starter
 copilot plugin install plugin-authoring@plugin-marketplace-starter
 copilot plugin install marketplace-maintainer@plugin-marketplace-starter
 ```
+
+For optional GitHub Copilot Evals, install it explicitly:
+
+```sh
+copilot plugin install eval@plugin-marketplace-starter
+```
+
+See its [upstream setup guidance](https://github.com/github/evals/blob/copilot-evals-v0.23.3/README.md#install),
+including experimental mode for Copilot CLI commands and Canvas. For remote-entry
+checks and the local-directory install limitation, see
+[Remote pin testing](plugins/marketplace-maintainer/skills/update-remote-pins/references/remote-pins.md#testing-a-remote-entry).
 
 Each plugin installs on its own. Start a new session after installing. In VS
 Code, run **Chat: Install Plugin from Source** and enter the repository, and
@@ -145,10 +160,13 @@ commands, and Bash and PowerShell eval setup.
 
 ## License
 
-This project is licensed under the terms of the MIT open source license. Please
-refer to [LICENSE](LICENSE) for the full terms. That one file covers every
-plugin here. Keep its `Copyright` line for the code you kept from the
-template, and add your own line below it.
+This template and its local plugins use the [MIT License](LICENSE). Keep its
+`Copyright` line for code you kept from the template, and add your own line
+below it.
+
+Remote plugins retain their upstream licenses. GitHub Copilot Evals is source
+available under the [GitHub Limited Use Source License](https://github.com/github/evals/blob/be7b4ee0d58b7bea143e74fd64275b2c47091cab/LICENSE).
+It isn't MIT-licensed or open source.
 
 ## Maintainers
 
