@@ -4,7 +4,6 @@ This repository is a marketplace of Copilot plugins. Before changing anything,
 read [AGENTS.md](../AGENTS.md) for the maintenance rules and
 [CONTRIBUTING.md](../CONTRIBUTING.md) for the change checklist.
 
-- Run `npm run build` after changing generated-file sources, then `npm run verify`.
 - Don't run `npm run eval`, `npm run eval:smoke`, or the evals workflow unless
   asked; they spend AI credits.
   `npm run eval:list` and `npm run check-remotes` don't call a model.
