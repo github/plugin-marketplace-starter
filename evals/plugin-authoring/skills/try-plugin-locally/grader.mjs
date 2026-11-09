@@ -1,5 +1,5 @@
 import { isAbsolute, relative, resolve } from "node:path";
-import { calls, check, isMain, json, runGrade } from "./common.mjs";
+import { calls, check, isMain, json, matchesTool, runGrade } from "./common.mjs";
 
 export function evaluate(trajectory, workspace) {
   const catalog = json(workspace, "marketplace.json");
@@ -15,8 +15,10 @@ export function evaluate(trajectory, workspace) {
     .map((match) => match.slice(1).find((value) => value !== undefined));
   const selectedPath = (value) => typeof value === "string" && isAbsolute(value) && relative(selected, resolve(value)) === "";
   // Grade guidance, not an echoed command or a CLI install as evidence of discovery.
-  const attempted = calls(trajectory).flatMap((call) => typeof call.args === "string" ? [call.args]
-    : Object.values(call.args ?? {}).filter((value) => typeof value === "string")).join("\n");
+  const attempted = calls(trajectory).filter((call) => ["bash", "powershell", "shell"].some((tool) =>
+    matchesTool(call.event.data?.toolName, tool)))
+    .map((call) => typeof call.args === "string" ? call.args : call.args?.command)
+    .filter((command) => typeof command === "string").join("\n");
   const invokedCopilot = /(?:^|[;&|\r\n])\s*(?:&\s*)?(?:(?:["'](?:[^"'\r\n]*[/\\])?)?copilot(?:\.(?:exe|cmd))?["']?(?=\s|$)|node(?:\.exe)?\s+["']?[^;\r\n]*[/\\]copilot[/\\]npm-loader\.js\b)/i.test(attempted);
   return [
     check("Preserved the selected local plugin", Array.isArray(catalog?.plugins) && catalog.plugins.some((entry) =>

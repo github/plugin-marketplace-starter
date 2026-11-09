@@ -37,7 +37,8 @@ export function usedSkill(trajectory, skill) {
   const events = trajectory.events ?? [];
   if (events.some((event) => event.type === "skill_activation" && event.data?.name === skill)) return true;
   const read = new RegExp(`(?:^|[/\\s"'])${skill}/(?:SKILL\\.md|references/)`);
-  return calls(trajectory).some((call) => read.test(JSON.stringify(call.args ?? {}).replaceAll("\\\\", "/")));
+  return calls(trajectory).some((call) => call.success
+    && read.test(JSON.stringify(call.args ?? {}).replaceAll("\\\\", "/")));
 }
 
 export function score(name, checks) {

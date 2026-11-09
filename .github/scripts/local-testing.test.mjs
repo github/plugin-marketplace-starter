@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { copyFileSync, cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { usedSkill } from "../../evals/_shared/graders/common.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -22,10 +23,10 @@ async function fixture(t) {
     "```sh", `copilot --plugin-dir "${path}"`, "```",
     "Session: not started", "Discovery: unverified", "Behavior: unverified",
   ].join("\n");
-  const grade = (text = output(), commands = []) => score("local-guidance", evaluate({
+  const grade = (text = output(), commands = [], toolCalls = []) => score("local-guidance", evaluate({
     output: text,
-    events: commands.map((command, index) => ({
-      type: "tool_call", data: { toolCallId: String(index), toolName: "powershell", arguments: { command } },
+    events: [...commands.map((command) => ({ toolName: "powershell", arguments: { command } })), ...toolCalls].map((call, index) => ({
+      type: "tool_call", data: { toolCallId: String(index), ...call },
     })),
   }, directory));
   return { directory, selected, output, grade };
@@ -75,6 +76,39 @@ test("local guidance rejects attempted install, uninstall, profile, session, and
     assert.match(result.evidence, /Did not launch Copilot/);
   }
   assert.equal(grade(output().replace("Session: not started", "```sh\ncopilot plugin install $spec\n```\nSession: not started")).passed, false);
+});
+
+test("local guidance ignores read-only and descriptive arguments but still checks shell commands", async (t) => {
+  const { output, grade, selected } = await fixture(t);
+  for (const call of [
+    { toolName: "grep", arguments: { pattern: "copilot --plugin-dir" } },
+    { toolName: "report_intent", arguments: { intent: "Copilot command preparation" } },
+    { toolName: "report_intent", arguments: { intent: "Checking git state without checkout" } },
+    { toolName: "functions.powershell", arguments: { command: "git status --short", description: "Checking git state without checkout" } },
+  ]) {
+    assert.equal(grade(output(), [], [call]).passed, true, JSON.stringify(call));
+  }
+  for (const toolName of ["bash", "powershell", "shell", "functions.powershell", "functions.bash"]) {
+    for (const command of [`copilot --plugin-dir "${selected}"`, "git checkout candidate"]) {
+      assert.equal(grade(output(), [], [{ toolName, arguments: { command } }]).passed, false, `${toolName}: ${command}`);
+    }
+  }
+});
+
+test("skill usage requires a successful file read or an explicit activation", () => {
+  const name = "try-plugin-locally";
+  const call = {
+    type: "tool_call",
+    data: { toolCallId: "read-skill", toolName: "view", arguments: { path: `/skills/${name}/SKILL.md` } },
+  };
+  const result = (success) => ({
+    type: "tool_result", data: { toolCallId: "read-skill", success, result: success ? "Skill contents" : "File not found" },
+  });
+  assert.equal(usedSkill({ events: [call, result(false)] }, name), false);
+  assert.equal(usedSkill({ events: [call] }, name), false);
+  assert.equal(usedSkill({ events: [call, result(true)] }, name), true);
+  assert.equal(usedSkill({ events: [call, result(true)] }, "another-skill"), false);
+  assert.equal(usedSkill({ events: [{ type: "skill_activation", data: { name } }] }, name), true);
 });
 
 test("local guidance doesn't count an echoed command as verified host discovery or behavior", async (t) => {
