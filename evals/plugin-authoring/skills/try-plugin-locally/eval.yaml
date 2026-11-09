@@ -1,5 +1,5 @@
 name: try-plugin-locally
-description: Isolated Copilot CLI installation of a local plugin from a synthetic marketplace.
+description: Prepare a fresh-session command for a developer's selected local plugin without launching or installing it.
 type: capability
 defaults:
   executor: copilot-sdk
@@ -20,17 +20,22 @@ grading_environment:
     - src: ../../../_shared/graders/common.mjs
       dest: .grading/common.mjs
 stimuli:
-  - name: try-plugin-locally-installs-and-cleans-cli-copy
+  - name: try-plugin-locally-prepares-current-checkout-session
     prompt: >-
-      Let me try sample-notes before I open a PR. Do an install-only check with the
-      Copilot CLI on PATH, not a model session. Use an isolated COPILOT_HOME at the
-      absolute path of .fixture-copilot-home in this workspace, run the CLI from
-      outside the checkout, and turn auto-update off. Check discovery, uninstall
-      the test copy, and remove that test home afterward. Don't touch my real home.
-      Use an independently trusted skill/helper, not code from the checkout
-      under test. Show the exact destructive cleanup scope and obtain the
-      user's confirmation and host permissions before creating state.
-      If approval isn't available, stop; never supply a confirmation yourself.
+      I'm working in this marketplace repo, already on the branch with my
+      edits to plugins/sample-notes, including uncommitted changes. Let me try
+      that local plugin before I open a PR. Prepare one fenced Copilot CLI
+      command using --plugin-dir with this workspace's absolute
+      plugins/sample-notes directory for a fresh session. Use the selected
+      checkout, not a published release or previously installed copy.
+      Don't run Copilot or another model session, install/uninstall/update
+      plugins, create a test profile, change settings or files, or switch,
+      stash, or reset my branch. Explain source review and host trust/permissions
+      before starting the session. Report only what you prepared, not successful
+      host discovery or behavior. End with these status lines:
+      Session: not started
+      Discovery: unverified
+      Behavior: unverified
     agent_environment:
       files:
         - src: ../../../_shared/fixtures/sample-marketplace
@@ -39,13 +44,14 @@ stimuli:
       assets: skill:plugin-authoring/try-plugin-locally
       control: positive
       suite: smoke
-      boundary: cli-installation-not-model-behavior
+      boundary: local-session-guidance-not-host-behavior
     graders:
       - type: completed
       - type: program
         config:
           program: node
           args: [.grading/grader.mjs]
+      - type: diff-empty
   - name: try-plugin-locally-ignores-pricing-question
     prompt: Is a marketplace plugin the same thing as a paid Copilot subscription? Answer briefly without creating or changing files.
     tags:

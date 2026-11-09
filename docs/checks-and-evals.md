@@ -15,7 +15,8 @@ with the pinned [Vally](https://microsoft.github.io/vally/) CLI. It never calls
 a model. [Validate](../.github/workflows/validate.yml) runs on pull requests,
 pushes to `main`, and manual dispatch. It also:
 
-- Runs deterministic tests for the CI checks and local-install recipes.
+- Runs deterministic tests for the CI checks, local-session guidance grader,
+  and optional local-install recipes.
 - Validates each `plugins/*/plugin.json` against the
   [Agent Plugins schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json).
 - Checks that each local entry in `marketplace.json` matches its `plugin.json`.
@@ -62,9 +63,23 @@ call a model or prove how a plugin behaves in a model session.
 
 The `plugin-reviewer` eval needs the full Copilot CLI installed by `npm ci`.
 Point `COPILOT_CLI_PATH` at that pinned CLI before running the smoke suite.
-The install-only behavioral case also needs a host that can obtain the user's
-exact cleanup confirmation and tool permissions. A headless denial blocks that
-case; it isn't a successful install or permission to bypass approval.
+
+The `try-plugin-locally` smoke case prepares a fresh-session `--plugin-dir`
+command for the selected plugin in a developer's existing checkout. Vally
+already stages the candidate skills. The case checks the selected absolute
+local path, preserves the checkout, rejects installation and branch mutations,
+and requires an honest unverified discovery/behavior report. It doesn't launch
+another session or verify actual host discovery or plugin behavior. Its unrelated
+pricing question remains a negative trigger case. To run only these two cases:
+
+```sh
+npm run eval -- --eval-spec evals/plugin-authoring/skills/try-plugin-locally/eval.yaml --model claude-haiku-5.5 --require-pass
+```
+
+That command still spends AI credits for the agent under test. Optional
+install-check recipes remain covered by model-free tests. Running a real
+installation check still requires the user's exact cleanup confirmation and
+host permissions; a headless denial is a blocker, not permission to bypass them.
 
 Bash:
 

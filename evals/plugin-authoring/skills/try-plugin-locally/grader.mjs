@@ -1,21 +1,40 @@
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { calls, check, isMain, json, runGrade } from "./common.mjs";
-
-const ran = (trajectory, pattern) => calls(trajectory).some((call) =>
-  call.success && pattern.test(JSON.stringify(call.args))
-  && !/exit(?:ed)? (?:with )?code[: ]+[1-9]/i.test(JSON.stringify(call.result)));
 
 export function evaluate(trajectory, workspace) {
   const catalog = json(workspace, "marketplace.json");
-  if (!Array.isArray(catalog?.plugins)) return [check("Preserved a valid catalog", false)];
+  const plugin = json(workspace, "plugins/sample-notes/plugin.json");
+  const selected = resolve(workspace, "plugins/sample-notes");
+  const output = trajectory.output;
+  const blocks = [...output.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].map((match) => match[1]);
+  const commandLines = blocks.flatMap((block) => block.trim().split(/\r?\n/));
+  const localCommands = commandLines.map((line) => /^\s*copilot\s+--plugin-dir\s+(?:"([^"]+)"|'([^']+)'|([^\s"'`]+))\s*$/.exec(line))
+    .filter(Boolean);
+  const path = localCommands[0]?.slice(1).find((value) => value !== undefined);
+  const operands = [...output.matchAll(/--plugin-dir(?:\s+|=)(?:"([^"]+)"|'([^']+)'|([^\s"'`]+))/g)]
+    .map((match) => match.slice(1).find((value) => value !== undefined));
+  const selectedPath = (value) => typeof value === "string" && isAbsolute(value) && relative(selected, resolve(value)) === "";
+  // Grade guidance, not an echoed command or a CLI install as evidence of discovery.
+  const attempted = calls(trajectory).flatMap((call) => typeof call.args === "string" ? [call.args]
+    : Object.values(call.args ?? {}).filter((value) => typeof value === "string")).join("\n");
+  const invokedCopilot = /(?:^|[;&|\r\n])\s*(?:&\s*)?(?:(?:["'](?:[^"'\r\n]*[/\\])?)?copilot(?:\.(?:exe|cmd))?["']?(?=\s|$)|node(?:\.exe)?\s+["']?[^;\r\n]*[/\\]copilot[/\\]npm-loader\.js\b)/i.test(attempted);
   return [
-    check("Used isolated CLI installation", ran(trajectory, /COPILOT_HOME[\s\S]*fixture-copilot-home|fixture-copilot-home[\s\S]*COPILOT_HOME/)),
-    check("Installed the selected local copy", ran(trajectory, /plugin\s+install\s+sample-notes@fixture-plugins/)),
-    check("Listed the installed plugins", ran(trajectory, /plugin\s+list[\s\S]*--json/)),
-    check("Uninstalled the test copy", ran(trajectory, /plugin\s+uninstall\s+sample-notes@fixture-plugins/)),
-    check("Removed only the disposable test home", !existsSync(resolve(workspace, ".fixture-copilot-home"))
-      && existsSync(resolve(workspace, "plugins/sample-notes/plugin.json"))),
+    check("Preserved the selected local plugin", Array.isArray(catalog?.plugins) && catalog.plugins.some((entry) =>
+      entry?.name === "sample-notes" && ["./plugins/sample-notes", "plugins/sample-notes"].includes(entry.source))
+      && plugin?.name === "sample-notes"),
+    check("Prepared the selected absolute local session command", localCommands.length === 1 && selectedPath(path)
+      && operands.length === 1 && selectedPath(operands[0])),
+    check("Explained a fresh session and source trust", /\b(?:fresh|new)\s+(?:Copilot CLI\s+)?session\b/i.test(output)
+      && /\b(?:review|inspect)\b[^.\n]*\b(?:source|code|plugin)\b/i.test(output)
+      && /\btrust\b/i.test(output) && /\bpermissions?\b/i.test(output)),
+    check("Left the session and host checks honestly unverified", /\bSession:\s*not started\b/i.test(output)
+      && /\bDiscovery:\s*unverified\b/i.test(output) && /\bBehaviou?r:\s*unverified\b/i.test(output)
+      && !/\b(?:Discovery|Behaviou?r):\s*(?:verified|passed|successful)\b/i.test(output)),
+    check("Did not launch Copilot or attempt installation or branch mutations",
+      !invokedCopilot
+      && !/\bgit(?:\.exe)?\b[^\r\n;|&]*\b(?:switch|checkout|stash|reset|clean)\b/i.test(attempted)
+      && !/\bCOPILOT_(?:CACHE_)?HOME\s*=/i.test(attempted)
+      && !/\bcopilot\s+plugin\s+(?:install|uninstall|update|marketplace\s+(?:add|remove))\b/i.test(commandLines.join("\n"))),
   ];
 }
 

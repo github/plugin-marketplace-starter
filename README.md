@@ -147,6 +147,27 @@ including during template customization. Don't bump twice, lower a version, or
 rewrite version history. If the released base or first-release status is
 unknown, ask before changing versions.
 
+## Try a local change
+
+Work in your marketplace repo on the branch with your new plugin or edits.
+Keep your uncommitted changes. Start a fresh Copilot CLI session with that
+plugin's absolute local folder:
+
+```sh
+copilot --plugin-dir "/absolute/path/to/your-marketplace/plugins/release-notes"
+```
+
+Review the source and approve the host's trust and permission prompts before
+testing. This loads your local edits for one session without installing anything
+or changing settings. Entering the checkout doesn't load every plugin; its
+repository settings enable only the two maintenance plugins. Edits take effect
+on `/restart` or in a new session, without `plugin update`.
+
+Use `try-plugin-locally` to prepare the command or check discovery and behavior
+in an approved session. A prepared command doesn't verify either. See the
+[local testing guide](plugins/plugin-authoring/skills/try-plugin-locally/references/local-install.md)
+for host details and a separate, optional installation check.
+
 ## Remove a plugin
 
 The `release-plugins` skill can retire a plugin for you. By hand, delete

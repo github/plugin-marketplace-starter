@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Make fresh-session testing of new and edited plugins from the current checkout the default, with a command-preparation smoke case and separate optional installation checks.
 - Create the complete scaffold before registration and use known install URLs.
 - Distinguish released changes from unreleased first versions without lowering versions.
 - Verify recorded cleanup scope before each destructive step, require cleanup confirmation, and clarify validator provenance.

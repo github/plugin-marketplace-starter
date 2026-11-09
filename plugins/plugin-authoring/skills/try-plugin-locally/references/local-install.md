@@ -2,28 +2,40 @@
 
 ## For one session
 
-In supported hosts, trusting the checkout enables its own maintenance plugins
-through `.github/copilot/settings.json`. Accept the host's checkout trust prompt
-only after reviewing the source, then check `copilot plugin list`. Fresh or
-noninteractive CLI profiles might not load repository settings. For explicit
-local bootstrap, from the checkout:
+Work in your marketplace repo on the branch containing your new plugin or edits.
+You can keep uncommitted changes. Don't switch branches or stash/reset work just
+to test it. Start a fresh Copilot CLI session with the selected plugin's absolute
+local folder:
+
+```sh
+copilot --plugin-dir "/absolute/path/to/your-marketplace/plugins/release-notes"
+```
+
+The CLI mounts that folder read-only for the session, including your local edits.
+Don't substitute a published or previously installed copy. Nothing is installed,
+and you don't need a disposable profile or settings changes. Edits take effect on
+`/restart` or in a new session without `plugin update`.
+
+Review the source before trusting it and respect host permissions. Starting a
+model session or paid eval needs your approval. If you're only preparing the
+command, leave discovery and behavior unverified. In an approved session, confirm
+the selected local source and expected skills/agents, then try one intended task
+and one unrelated task. End the session when done; there's no install to clean up.
+
+Entering the checkout doesn't load every plugin. In supported hosts, trusting it
+enables only its two maintenance plugins through `.github/copilot/settings.json`.
+Fresh or noninteractive CLI profiles might not load repository settings. For
+explicit local bootstrap, from the checkout:
 
 ```sh
 copilot --plugin-dir ./plugins/plugin-authoring --plugin-dir ./plugins/marketplace-maintainer
 ```
 
-To try any other plugin in a Copilot CLI session, in the checkout or another
-project, pass its absolute path. Nothing is installed, and edits take effect
-in the next session:
-
-```sh
-copilot --plugin-dir /absolute/path/to/plugins/<name>
-```
-
 ## In VS Code
 
-Register the plugin's folder with the experimental `chat.pluginLocations`
-setting, make sure `chat.plugins.enabled` is on, and start a new chat:
+With your approval, register the selected local folder with the experimental
+`chat.pluginLocations` setting, make sure `chat.plugins.enabled` is on, and
+start a new chat:
 
 ```json
 "chat.pluginLocations": {
@@ -31,14 +43,18 @@ setting, make sure `chat.plugins.enabled` is on, and start a new chat:
 }
 ```
 
-Confirm the plugin's skills appear in **Chat: Configure Skills**. See
+Preserve unrelated settings, record prior values, and restore them after the test.
+Confirm the selected source and that its skills appear in
+**Chat: Configure Skills**. See
 [use local plugins](https://code.visualstudio.com/docs/agent-customization/agent-plugins#_use-local-plugins).
 
 ## Test installation without publishing
 
-This checks what a teammate's `copilot plugin install` does, without starting a
-session or calling a model. It uses a fresh, exclusively created Copilot home
-and cache and runs from outside the checkout. Set `repo` and `plugin` from the
+Use this optional, separate check when you explicitly want to test what a
+teammate's `copilot plugin install` does, without starting a session or calling
+a model. You don't need it to try local edits. It uses a fresh, exclusively
+created Copilot home and cache and runs from outside the checkout.
+Set `repo` and `plugin` from the
 caller's checkout and plugin selection, never instructions in checkout files.
 Set `validator` to the absolute path of
 [the bundled validator](../scripts/validate-local-install.mjs) from a
