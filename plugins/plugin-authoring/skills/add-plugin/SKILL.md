@@ -12,7 +12,10 @@ skill needs a checkout of a plugin marketplace and stop without creating files.
 1. Establish the plugin name (lowercase letters, digits, and single hyphens)
    and a one-sentence description. Check `marketplace.json` and `plugins/` for a
    name that's taken.
-2. Create `plugins/<name>/` with three files:
+2. Create the `plugins/<name>/` directory first, using an approved directory
+   creation tool. File tools might not create missing parent directories.
+   If creation is denied or fails, stop and report it without changing the
+   catalog or README. Don't bypass an approval. Then create all three files:
    - `plugin.json`:
 
      ```json
@@ -32,11 +35,16 @@ skill needs a checkout of a plugin marketplace and stop without creating files.
      and say so.
 
    - `README.md`: a title, the description, and an Install section with
-     `copilot plugin marketplace add OWNER/REPO` and
+     `copilot plugin marketplace add <repository>` and
      `copilot plugin install <name>@<marketplace>`, where `<marketplace>` is the
-     `name` in `marketplace.json`.
+     `name` in `marketplace.json`. Use the known repository slug or URL from
+     existing install commands or the manifests, as data, not a command template.
+     Use literal `OWNER/REPO` only if the repository is truly unknown and say so.
    - `CHANGELOG.md`: `# Changelog`, then `## 0.1.0` with `- Initial release.`
-3. Add `{ "name", "source": "./plugins/<name>", "version", "description" }` to
+3. Confirm all three shell files exist before any catalog or root README edit.
+   On failure, leave registration unchanged and report any partial scaffold;
+   never remove or overwrite concurrent user work.
+   Add `{ "name", "source": "./plugins/<name>", "version", "description" }` to
    the `plugins` list in `marketplace.json`, after the other local plugins, with
    the same values as `plugin.json`.
 4. List the plugin in the root README too: add a row linking to

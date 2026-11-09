@@ -37,8 +37,12 @@ Don't invent a version history, owner approval, CI result, or finding.
   top-level fields. Root plugin.json, skills/, and mcp.json; Copilot-only
   components under com.github.copilot/. Check that referenced files exist,
   stay inside the plugin, and use the documented component format.
-- For an existing changed plugin, a suitable version bump in plugin.json and
-  marketplace.json, plus the matching CHANGELOG.md heading. New plugins need
+- For changes since a known released base, a suitable version bump in
+  plugin.json and marketplace.json, plus the matching CHANGELOG.md heading.
+  An explicitly unreleased first version keeps its current version and
+  changelog heading, including during customization. Don't infer release
+  history from a PR base; unknown release status is a coverage limit.
+  Flag lowered versions or rewritten version history. New plugins need
   an initial version; eval-only/external-doc changes don't need a plugin bump.
   Flag breaking asset renames, removed tools, and new automatic behavior.
 - Matching catalog and manifest names, versions, and descriptions. Read every

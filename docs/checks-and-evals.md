@@ -23,6 +23,20 @@ pushes to `main`, and manual dispatch. It also:
   whose name matches, and whose version matches when both specify one.
   Private remote repositories need a token that can read them.
 
+Vally lint doesn't validate `marketplace.json` or `plugin.json`. Run the same
+metadata checks as CI when you change manifests, the catalog, or remote pins:
+
+```sh
+node .github/scripts/check-local-catalog.mjs
+bash .github/scripts/validate-schema.sh
+node .github/scripts/check-remote-pins.mjs
+```
+
+The schema check downloads the Agent Plugins schema and runs
+`ajv-cli@5.0.0` through `npx --yes`; review that network/tool execution before
+running it. The pin check makes read-only GitHub API calls through your
+authenticated `gh` CLI. Neither starts a model.
+
 Remote checks prefer a root manifest declaring a supported Agent Plugins schema
 (1.0.0 or 1.1.0); unsupported Agent Plugins versions fail. Otherwise they use
 Copilot CLI's legacy order: `.plugin/plugin.json`, `plugin.json`,
@@ -35,7 +49,7 @@ Run the tests without calling a model:
 node --test .github/scripts/*.test.mjs
 ```
 
-The recipe tests use fake CLI functions and need both Bash and PowerShell
+The recipe tests can take several minutes. They use fake CLI functions and need both Bash and PowerShell
 (`pwsh`), available on CI's Ubuntu runner. For an actual install-only check,
 follow the skill's
 [local-install guide](../plugins/plugin-authoring/skills/try-plugin-locally/references/local-install.md#test-installation-without-publishing),
@@ -48,6 +62,9 @@ call a model or prove how a plugin behaves in a model session.
 
 The `plugin-reviewer` eval needs the full Copilot CLI installed by `npm ci`.
 Point `COPILOT_CLI_PATH` at that pinned CLI before running the smoke suite.
+The install-only behavioral case also needs a host that can obtain the user's
+exact cleanup confirmation and tool permissions. A headless denial blocks that
+case; it isn't a successful install or permission to bypass approval.
 
 Bash:
 

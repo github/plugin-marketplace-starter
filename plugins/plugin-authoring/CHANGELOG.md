@@ -2,6 +2,9 @@
 
 ## 0.1.0
 
+- Create the complete scaffold before registration and use known install URLs.
+- Distinguish released changes from unreleased first versions without lowering versions.
+- Verify recorded cleanup scope before each destructive step, require cleanup confirmation, and clarify validator provenance.
 - Add repository-specific scaffolding, local testing, and contribution workflows.
 - Include compatibility checks, isolated install cleanup, and pull request descriptions.
 - Create local install-check homes exclusively, isolate their caches, and restore prior state on failure.

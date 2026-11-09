@@ -1,5 +1,6 @@
-import { lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync } from "node:fs";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const fail = (message) => { throw new Error(message); };
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -71,9 +72,14 @@ function pluginTree(path) {
   }
 }
 
-function selection(repoInput, plugin, homeInput, workInput) {
+function selection(repoInput, plugin, homeInput, workInput, origin = "external-review") {
   if (!identifier(plugin)) fail("Select one valid plugin name from caller input, not checkout instructions.");
   const repo = directory(repoInput);
+  const helperPath = relative(repo, fileURLToPath(import.meta.url));
+  if (!["external-review", "own-development"].includes(origin)) fail("Select an explicit validator trust mode.");
+  if (origin === "external-review" && !isAbsolute(helperPath) && helperPath !== ".." && !helperPath.startsWith(`..${sep}`)) {
+    fail("A contributor checkout can't supply its own trusted validator. Use a user-trusted installed or default-branch copy.");
+  }
   const work = directory(workInput);
   const fromRepo = relative(repo, work);
   if (!fromRepo || (!isAbsolute(fromRepo) && fromRepo !== ".." && !fromRepo.startsWith(`..${sep}`))) {
@@ -124,14 +130,93 @@ function selection(repoInput, plugin, homeInput, workInput) {
   return [repo, `${plugin}@${catalog.name}`, catalog.name, home, work];
 }
 
+function selectedNames(spec, marketplace) {
+  const parts = spec.split("@");
+  if (parts.length !== 2 || !identifier(parts[0]) || !identifier(marketplace) || parts[1] !== marketplace) {
+    fail("Cleanup requires the exact validated plugin and marketplace identifiers.");
+  }
+}
+
+function identity(path) {
+  const item = noLinks(path);
+  if (!item?.isDirectory()) fail(`Refusing a replaced test home, cache, or parent: ${path}`);
+  return { path, dev: item.dev, ino: item.ino, birthtimeMs: item.birthtimeMs };
+}
+
+function sameIdentity(record) {
+  const current = identity(record.path);
+  if (["dev", "ino", "birthtimeMs"].some((key) => current[key] !== record[key])) {
+    fail(`Refusing a replaced test home, cache, or parent: ${record.path}`);
+  }
+}
+
+function createHome(homeInput, workInput, spec, marketplace) {
+  selectedNames(spec, marketplace);
+  const home = absolute(homeInput);
+  const work = directory(workInput);
+  directory(dirname(home));
+  if (noLinks(home)) fail("The test home already exists; leave it untouched.");
+  const parents = [];
+  for (let path = dirname(home); ; path = dirname(path)) {
+    parents.push(identity(path));
+    if (path === dirname(path)) break;
+  }
+  mkdirSync(home, { mode: 0o700 });
+  const owned = identity(home);
+  const cache = join(home, "cache");
+  let ownedCache;
+  try {
+    mkdirSync(cache, { mode: 0o700 });
+    ownedCache = identity(cache);
+    for (const record of [owned, ...parents, ownedCache]) sameIdentity(record);
+    return { home, cache, work, spec, marketplace, paths: [owned, ...parents, ownedCache] };
+  } catch (error) {
+    // Only remove empty directories still owned by this failed creation.
+    try {
+      for (const record of [owned, ...parents]) sameIdentity(record);
+      if (ownedCache) { sameIdentity(ownedCache); rmdirSync(cache); }
+      rmdirSync(home);
+    } catch (cleanupError) {
+      fail(`Home creation failed (${error.message}); cleanup failed (${cleanupError.message}). Retained test home: ${home}`);
+    }
+    throw error;
+  }
+}
+
+function verifyCleanup(receiptText, homeInput, cacheInput, spec, marketplace) {
+  const receipt = JSON.parse(receiptText);
+  selectedNames(spec, marketplace);
+  const samePath = (left, right) => typeof left === "string" && relative(absolute(left), absolute(right)) === "";
+  if (!object(receipt) || !samePath(receipt.home, homeInput) || !samePath(receipt.cache, cacheInput)
+      || receipt.cache !== join(receipt.home, "cache") || receipt.spec !== spec || receipt.marketplace !== marketplace
+      || !Array.isArray(receipt.paths) || !receipt.paths.length) {
+    fail("Cleanup scope doesn't match the recorded owned values.");
+  }
+  if (!samePath(receipt.home, process.env.COPILOT_HOME) || !samePath(receipt.cache, process.env.COPILOT_CACHE_HOME)) {
+    fail("Cleanup home/cache environment changed; refusing destructive actions.");
+  }
+  if (!samePath(directory(process.cwd()), receipt.work)) {
+    fail("Cleanup working directory changed; refusing destructive actions.");
+  }
+  const expectedPaths = [receipt.cache];
+  for (let path = receipt.home; ; path = dirname(path)) {
+    expectedPaths.push(path);
+    if (path === dirname(path)) break;
+  }
+  if (receipt.paths.length !== expectedPaths.length || expectedPaths.some((path) => receipt.paths.filter((item) => item.path === path).length !== 1)) {
+    fail("Cleanup ownership record is incomplete or ambiguous.");
+  }
+  for (const record of receipt.paths) sameIdentity(record);
+}
+
 try {
   const [mode, ...inputs] = process.argv.slice(2);
-  if (mode === "owned-home" && inputs.length === 1) {
-    const home = absolute(inputs[0]);
-    if (!noLinks(home)?.isDirectory()) fail("Refusing to clean up a replaced test home.");
-    noLinks(join(home, "cache"));
+  if (mode === "create-home" && inputs.length === 4) {
+    console.log(JSON.stringify(createHome(...inputs)));
+  } else if (mode === "verify-cleanup" && inputs.length === 5) {
+    verifyCleanup(...inputs);
   } else {
-    if (!["powershell", "shell"].includes(mode) || inputs.length !== 4) fail("Invalid validation arguments.");
+    if (!["powershell", "shell"].includes(mode) || ![4, 5].includes(inputs.length)) fail("Invalid validation arguments.");
     const fields = selection(...inputs);
     for (const field of fields) {
       console.log(mode === "shell" && process.platform === "win32"

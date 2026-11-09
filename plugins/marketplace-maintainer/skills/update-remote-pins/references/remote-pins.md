@@ -51,6 +51,23 @@ commit to pin.
 whose own object ID differs. Some projects tag a release and then build it in
 a later commit; pin the commit their own catalog uses.
 
+For "latest stable", `gh api repos/OWNER/REPO/releases/latest` excludes
+prereleases and drafts. If it returns 404, first confirm repository access with
+`gh api repos/OWNER/REPO`, then inspect
+`gh api --paginate 'repos/OWNER/REPO/releases?per_page=100'`. Only a successful
+listing establishes whether accessible non-draft releases are prerelease-only
+or absent. Don't turn auth, network, or server failures into "no releases".
+Preserve the user's channel and named ref. The starter's `eval` pin is in the
+`copilot-evals` prerelease channel; a stable-only request mustn't select it.
+If the channel isn't established, ask before selecting a prerelease.
+
+For a successfully confirmed tag-only repo, inspect
+`gh api --paginate 'repos/OWNER/REPO/tags?per_page=100'` (or `git ls-remote --tags`).
+Tags aren't necessarily ordered by plugin version, and monorepos can mix
+products. Use the requested product/ref, or ask for an explicit candidate;
+don't guess the newest plugin from the first tag. Resolve and review that
+candidate as above before editing the pin.
+
 ## Check a pin
 
 Before and after an update, confirm with `gh api` that the SHA exists, that

@@ -79,6 +79,8 @@ function verifyFiles(paths, scenario) {
     assert.equal(readFileSync(resolve(paths.home, "marker"), "utf8"), "keep");
   } else if (scenario.replace) {
     assert.ok(lstatSync(scenario.replace === "cache" ? resolve(paths.home, "cache") : paths.home).isSymbolicLink());
+  } else if (scenario.retained) {
+    assert.ok(existsSync(paths.home), "refused cleanup must retain owned state");
   } else {
     assert.equal(existsSync(paths.home), false, "owned home must be removed");
     if (collision === "parent") assert.equal(existsSync(resolve(paths.checkout, "missing")), false);
@@ -110,6 +112,15 @@ cases.push(
   } },
   { label: "home replaced with junction during CLI failure", replace: "home", failAt: 1 },
   { label: "cache replaced with junction during CLI failure", replace: "cache", failAt: 1 },
+  { label: "cleanup confirmation denied before creation", approval: "no", expectedCalls: 0 },
+  { label: "cleanup confirmation unavailable before creation", approval: "", expectedCalls: 0 },
+  { label: "home environment changed before uninstall", drift: "home", retained: true, expectedCalls: 4 },
+  { label: "cache environment changed before uninstall", drift: "cache", retained: true, expectedCalls: 4 },
+  { label: "working directory changed before uninstall", drift: "work", retained: true, expectedCalls: 4 },
+  { label: "home environment changed before marketplace removal", drift: "home", driftAt: 5, retained: true, expectedCalls: 5 },
+  { label: "cache environment changed before deletion", drift: "cache", driftAt: 6, retained: true, expectedCalls: 6 },
+  { label: "cleanup deletion denied", deletionDenied: true, retained: true },
+  { label: "catalog renamed after discovery doesn't change cleanup identifiers", renameCatalog: true },
   invalid("malformed catalog JSON", { catalogText: "{" }),
   invalid("malformed manifest JSON", { manifestText: "{" }),
   invalid("catalog isn't an object", { catalogText: "[]" }),
@@ -193,7 +204,7 @@ for (const configured of [true, false]) {
       if (!scenario.defaults) recipe = recipe
         .replace(/\$testHome = Join-Path[^\n]*/, `$testHome = ${psQuote(scenario.homeInput ?? paths.home)}`)
         .replace(/\$workDir = \$HOME[^\n]*/, `$workDir = ${psQuote(scenario.workInput ?? paths.outside)}`);
-      const expectedCalls = scenario.collision || scenario.invalid ? 0 : scenario.failAt || 6;
+      const expectedCalls = scenario.expectedCalls ?? (scenario.collision || scenario.invalid ? 0 : scenario.failAt || 6);
       const script = `
 $ErrorActionPreference = 'Continue'
 ${scenario.defaults ? `Set-Variable -Name HOME -Value ${psQuote(scenario.defaults === "outside" ? paths.outside : paths.checkout)} -Force` : ""}
@@ -204,6 +215,8 @@ $beforeCache = $env:COPILOT_CACHE_HOME
 $beforeLocation = (Get-Location).Path
 $script:calls = 0
 $caught = $null
+function Read-Host { return ${psQuote(scenario.approval ?? "yes")} }
+${scenario.deletionDenied ? "function Remove-Item { throw 'Synthetic cleanup deletion denied' }" : ""}
 function copilot {
     $script:calls++
     ${scenario.defaults ? `[IO.File]::WriteAllText(${psQuote(paths.homeRecord)}, $env:COPILOT_HOME)` : `if ($env:COPILOT_HOME -ne ${psQuote(paths.home)}) { throw 'CLI home is not isolated' }`}
@@ -211,6 +224,12 @@ function copilot {
     if ((Get-Location).Path -ne ${psQuote(paths.outside)}) { throw 'CLI location is not isolated' }
     [IO.File]::AppendAllText(${psQuote(paths.log)}, (ConvertTo-Json -Compress -InputObject @($args)) + [Environment]::NewLine)
     [IO.File]::WriteAllText((Join-Path $env:COPILOT_HOME 'test-state'), 'synthetic')
+    ${scenario.drift ? `if ($script:calls -eq ${scenario.driftAt ?? 4}) {
+      ${scenario.drift === "work" ? `Set-Location -LiteralPath ${psQuote(paths["prior-home"])}` : `$env:${scenario.drift === "home" ? "COPILOT_HOME" : "COPILOT_CACHE_HOME"} = ${psQuote(paths["prior-home"])}`}
+    }` : ""}
+    ${scenario.renameCatalog ? `if ($script:calls -eq 4) {
+      [IO.File]::WriteAllText(${psQuote(resolve(paths.checkout, "marketplace.json"))}, '{"name":"changed","plugins":[]}')
+    }` : ""}
     ${scenario.replace ? `
     $target = ${scenario.replace === "home" ? "$env:COPILOT_HOME" : "$env:COPILOT_CACHE_HOME"}
     Move-Item -LiteralPath $target -Destination ($target + '-held')
@@ -226,7 +245,7 @@ if ($env:COPILOT_HOME -ne $beforeHome -or $env:COPILOT_CACHE_HOME -ne $beforeCac
 if ((Get-Location).Path -ne $beforeLocation) { throw 'Prior location changed' }
 if ($ErrorActionPreference -ne 'Continue') { throw 'Prior error preference changed' }
 if ($script:calls -ne ${expectedCalls}) { throw "Wrong CLI call count: $script:calls" }
-${scenario.replace ? "if ($caught -notmatch 'replaced test home') { throw \"Expected cleanup refusal, got $caught\" }" : scenario.collision || scenario.invalid ? "if (-not $caught) { throw 'Invalid input must fail' }" : scenario.failAt ? "if ($caught -notmatch 'exit 17') { throw \"Expected CLI error, got $caught\" }" : "if ($caught) { throw $caught }"}
+${scenario.replace || scenario.drift ? "if ($caught -notmatch 'Cleanup verification failed') { throw \"Expected cleanup refusal, got $caught\" }" : scenario.approval !== undefined || scenario.deletionDenied || scenario.collision || scenario.invalid ? "if (-not $caught) { throw 'Invalid input or denied cleanup must fail' }" : scenario.failAt ? "if ($caught -notmatch 'exit 17') { throw \"Expected CLI error, got $caught\" }" : "if ($caught) { throw $caught }"}
 `;
       const result = spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-Command", script], { cwd: paths.checkout, encoding: "utf8" });
       assert.ifError(result.error);
@@ -253,13 +272,14 @@ ${scenario.replace ? "if ($caught -notmatch 'replaced test home') { throw \"Expe
       if (!scenario.defaults) recipe = recipe
         .replace(/test_home="\$HOME[^\n]*/, `test_home=${shQuote(shellPath(scenario.homeInput ?? paths.home))}`)
         .replace(/work_dir="\$HOME"[^\n]*/, `work_dir=${shQuote(shellPath(scenario.workInput ?? paths.outside))}`);
-      const expectedCalls = scenario.collision || scenario.invalid ? 0 : scenario.failAt || 6;
+      const expectedCalls = scenario.expectedCalls ?? (scenario.collision || scenario.invalid ? 0 : scenario.failAt || 6);
       const script = `
 ${configured ? `export COPILOT_HOME=${shQuote(shellPath(paths["prior-home"]))}; export COPILOT_CACHE_HOME=${shQuote(shellPath(paths["prior-cache"]))}` : "unset COPILOT_HOME COPILOT_CACHE_HOME"}
 ${scenario.defaults ? `export HOME=${shQuote(shellPath(scenario.defaults === "outside" ? paths.outside : paths.checkout))}` : ""}
 before_home="\${COPILOT_HOME-}"
 before_cache="\${COPILOT_CACHE_HOME-}"
 before_location="$PWD"
+${scenario.deletionDenied ? "rm() { printf '%s\\n' 'Synthetic cleanup deletion denied' >&2; return 19; }" : ""}
 copilot() {
     ${scenario.defaults ? `printf '%s' "$COPILOT_HOME" | node -e 'const fs = require("node:fs"); let p = fs.readFileSync(0, "utf8"); if (process.platform === "win32") p = p.replace(/^\\/([A-Za-z])\\//, "$1:/"); fs.writeFileSync(process.argv[1], p)' ${shQuote(paths.homeRecord.replaceAll("\\", "/"))}` : `[ "$COPILOT_HOME" = ${shQuote(home)} ] || return 90`}
     [ "$COPILOT_CACHE_HOME" = "$COPILOT_HOME/cache" ] || return 91
@@ -267,6 +287,12 @@ copilot() {
     printf '%s\\0' "$@" >> ${shQuote(log)}
     printf '\\n' >> ${shQuote(log)}
     printf 'synthetic' > "$COPILOT_HOME/test-state"
+    ${scenario.drift ? `if [ "$(wc -l < ${shQuote(log)})" -eq ${scenario.driftAt ?? 4} ]; then
+      ${scenario.drift === "work" ? `cd ${shQuote(shellPath(paths["prior-home"]))}` : `export ${scenario.drift === "home" ? "COPILOT_HOME" : "COPILOT_CACHE_HOME"}=${shQuote(shellPath(paths["prior-home"]))}`}
+    fi` : ""}
+    ${scenario.renameCatalog ? `if [ "$(wc -l < ${shQuote(log)})" -eq 4 ]; then
+      printf '%s' '{"name":"changed","plugins":[]}' > ${shQuote(shellPath(resolve(paths.checkout, "marketplace.json")))}
+    fi` : ""}
     ${scenario.replace ? `
     target=${scenario.replace === "home" ? '"$COPILOT_HOME"' : '"$COPILOT_CACHE_HOME"'}
     mv -- "$target" "$target-held"
@@ -281,9 +307,9 @@ result=$?
 [ "\${COPILOT_CACHE_HOME-}" = "$before_cache" ] || exit 81
 [ "$PWD" = "$before_location" ] || exit 82
 ${configured ? '[ "${COPILOT_HOME+x}" = x ] && [ "${COPILOT_CACHE_HOME+x}" = x ] || exit 83' : '[ "${COPILOT_HOME+x}" != x ] && [ "${COPILOT_CACHE_HOME+x}" != x ] || exit 83'}
-${scenario.collision || scenario.invalid || scenario.replace ? '[ "$result" -ne 0 ] || exit 84' : `[ "$result" -eq ${scenario.failAt ? 17 : 0} ] || exit 84`}
+${scenario.approval !== undefined || scenario.deletionDenied || scenario.drift || scenario.collision || scenario.invalid || scenario.replace ? '[ "$result" -ne 0 ] || exit 84' : `[ "$result" -eq ${scenario.failAt ? 17 : 0} ] || exit 84`}
 `;
-      const result = spawnSync("bash", ["-c", script], { cwd: paths.checkout, encoding: "utf8" });
+      const result = spawnSync("bash", ["-c", script], { cwd: paths.checkout, encoding: "utf8", input: `${scenario.approval ?? "yes"}\n` });
       assert.ifError(result.error);
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
       if (scenario.invalid && /junction|symlink/.test(scenario.label)) assert.match(result.stderr, /symlink|junction/);
@@ -306,6 +332,68 @@ test("recipes use fresh defaults and keep the caller-specified home rather than 
   assert.doesNotMatch(powershell, /Remove-Item.*\$env:COPILOT_HOME/);
   assert.match(shell, /rm -rf -- "\$owned_home"/);
   assert.doesNotMatch(shell, /rm -rf.*"\$COPILOT_HOME"/);
+});
+
+test("cleanup independently rejects tampered ownership records and mismatched selected operands", (t) => {
+  const paths = fixture(t, {});
+  const run = (mode, args, extra = {}) => spawnSync(process.execPath, [validator, mode, ...args], {
+    cwd: paths.outside, encoding: "utf8", ...extra,
+  });
+  const created = run("create-home", [paths.home, paths.outside, spec, marketplaceName]);
+  assert.equal(created.status, 0, created.stderr);
+  const record = JSON.parse(created.stdout);
+  const operands = [paths.home, resolve(paths.home, "cache"), spec, marketplaceName];
+  const env = { ...process.env, COPILOT_HOME: paths.home, COPILOT_CACHE_HOME: operands[1] };
+  assert.equal(run("verify-cleanup", [JSON.stringify(record), ...operands], { env }).status, 0);
+  for (const changed of [
+    { ...record, home: paths["prior-home"] },
+    { ...record, cache: paths["prior-cache"] },
+    { ...record, spec: `different@${marketplaceName}` },
+    { ...record, marketplace: "different" },
+    { ...record, paths: [] },
+    { ...record, paths: [...record.paths, record.paths[0]] },
+  ]) {
+    const result = run("verify-cleanup", [JSON.stringify(changed), ...operands], { env });
+    assert.notEqual(result.status, 0, "tampered record must not authorize cleanup");
+  }
+  for (const [index, value] of [[0, paths["prior-home"]], [1, paths["prior-cache"]], [2, `other@${marketplaceName}`], [3, "other"]]) {
+    const changed = operands.with(index, value);
+    assert.notEqual(run("verify-cleanup", [created.stdout.trim(), ...changed], { env }).status, 0);
+  }
+  verifyFiles(paths, { retained: true });
+});
+
+for (const replacement of ["home", "cache", "parent junction", "parent directory"]) {
+  test(`cleanup rejects replaced ${replacement} before destructive actions`, (t) => {
+    const paths = fixture(t, {});
+    const cache = resolve(paths.home, "cache");
+    const created = spawnSync(process.execPath, [validator, "create-home", paths.home, paths.outside, spec, marketplaceName], { encoding: "utf8" });
+    assert.equal(created.status, 0, created.stderr);
+    const target = replacement.startsWith("parent") ? paths.checkout : replacement === "home" ? paths.home : cache;
+    renameSync(target, `${target}-held`);
+    if (replacement === "parent directory") mkdirSync(cache, { recursive: true });
+    else link(paths["prior-home"], target);
+    const result = spawnSync(process.execPath, [validator, "verify-cleanup", created.stdout.trim(), paths.home, cache, spec, marketplaceName], {
+      cwd: paths.outside, encoding: "utf8",
+      env: { ...process.env, COPILOT_HOME: paths.home, COPILOT_CACHE_HOME: cache },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Refusing|symlink|junction/);
+    assert.equal(readFileSync(resolve(paths["prior-home"], "marker"), "utf8"), "keep");
+  });
+}
+
+test("external-review mode refuses a helper from the selected checkout, unlike explicit own development", (t) => {
+  const paths = fixture(t, {});
+  const localHelper = resolve(paths.checkout, "synthetic-helper.mjs");
+  writeFileSync(localHelper, readFileSync(validator));
+  const args = ["powershell", paths.checkout, pluginName, paths.home, paths.outside];
+  const denied = spawnSync(process.execPath, [localHelper, ...args], { encoding: "utf8" });
+  assert.notEqual(denied.status, 0);
+  assert.match(denied.stderr, /can't supply its own trusted validator/);
+  const own = spawnSync(process.execPath, [localHelper, ...args, "own-development"], { encoding: "utf8" });
+  assert.equal(own.status, 0, own.stderr);
+  assert.equal(existsSync(paths.home), false);
 });
 
 test("skill policy treats checkout content as untrusted data immediately beside the document-read instruction", () => {

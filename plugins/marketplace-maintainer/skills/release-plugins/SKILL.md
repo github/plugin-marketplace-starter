@@ -13,13 +13,20 @@ which changes are being released.
 1. Establish the release range and inspect changed plugin paths and catalog
    entries. If a check failed, read its exact output first. Fix only the cause
    and tightly coupled inconsistencies; don't loosen eval checks to make it pass.
+   Establish a known released base or explicit unreleased first-release status.
+   A PR base or the oldest commit isn't a release record. If tags, release
+   records, or user confirmation don't establish it, ask and leave versions
+   unchanged. Never guess a base because tags are absent.
 2. For every changed plugin, compare the released and candidate versions in
    `plugin.json` and `marketplace.json`, the matching `## <version>` changelog
    entry, and descriptions. Use patch for fixes and wording,
    minor for new compatible behavior, and major for breaking changes. Don't
    increment a version already correctly bumped for this release. New plugins
    start at their initial version; changes outside a plugin's folder don't need
-   a version bump.
+   a version bump. Explicitly unreleased first-version edits, including template
+   customization, stay under the current initial changelog heading without
+   migration notes for nonexistent prior users. Never lower a version or rewrite
+   version history, including when a candidate's initial version looks unusual.
 3. Review compatibility and risk changes: renamed parts, removed tools,
    automatic hooks, credentials, network destinations, and dependencies. Refer
    to the read-only `plugin-reviewer` agent for a requested contribution review,

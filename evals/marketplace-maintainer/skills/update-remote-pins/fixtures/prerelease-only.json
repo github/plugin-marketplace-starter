@@ -1,0 +1,16 @@
+{
+  "repo": "fixture-org/outside-notes",
+  "requestedChannel": "stable",
+  "responses": {
+    "repository": { "status": 200, "body": { "full_name": "fixture-org/outside-notes" } },
+    "releases/latest": { "status": 404 },
+    "releases": {
+      "status": 200,
+      "body": [
+        { "tag_name": "v1.1.0-preview.1", "draft": false, "prerelease": true },
+        { "tag_name": "v2.0.0", "draft": true, "prerelease": false }
+      ]
+    }
+  },
+  "access": "Reviewed synthetic offline responses, not live verification."
+}

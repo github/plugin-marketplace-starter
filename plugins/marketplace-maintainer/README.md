@@ -12,15 +12,14 @@ checkout of this marketplace.
 ## Install
 
 ```sh
-copilot plugin marketplace add OWNER/REPO
+copilot plugin marketplace add github/plugin-marketplace-starter
 copilot plugin install marketplace-maintainer@plugin-marketplace-starter
 ```
 
-Replace `OWNER/REPO` with the GitHub repository that hosts this marketplace.
-
 ## Try it
 
-> Delegate this plugin contribution review to plugin-reviewer.
+> Delegate this contribution review to plugin-reviewer using the attached
+> diff, its explicit comparison base, and the base catalog/manifests.
 >
 > Pin an outside plugin at its latest release.
 >
@@ -28,3 +27,9 @@ Replace `OWNER/REPO` with the GitHub repository that hosts this marketplace.
 
 The skills edit the checkout's files, but don't commit, push, or publish unless
 you ask.
+
+The reviewer has read/search tools, not Git or shell access. Supply the actual
+diff and base files, not just changed paths, or it can only review the current
+files. For CLI `--agent` selection, use
+`--agent marketplace-maintainer:plugin-reviewer`; the portable agent name
+remains `plugin-reviewer`.

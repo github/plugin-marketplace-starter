@@ -22,7 +22,15 @@ If the checkout isn't available, report that.
 2. Resolve the requested tag or branch to its full commit with
    `gh api repos/OWNER/REPO/commits/REF --jq .sha` or
    `git ls-remote https://github.com/OWNER/REPO REF`. For "latest", first read
-   `gh api repos/OWNER/REPO/releases/latest`. Read the upstream `plugin.json` at
+   `gh api repos/OWNER/REPO/releases/latest` for stable releases. A 404 alone
+   doesn't prove a prerelease-only or tag-only repo. Confirm repository access
+   and list accessible non-draft releases with
+   `gh api --paginate repos/OWNER/REPO/releases?per_page=100`. Preserve the
+   requested channel/ref: don't silently move stable users to prereleases.
+   For an established prerelease channel, choose a matching non-draft release;
+   for tag-only repos, inspect tags and ask for an explicit candidate if the
+   channel or ordering is unclear. Stop on auth, network, or comparison errors.
+   See the remote pin rules for this fallback. Read the upstream `plugin.json` at
    that exact SHA, including its name, version, description, and license. Use
    `source.path` only for a subdirectory, with no leading slash, `./`, `..`, or
    backslashes. The remote pin rules cover annotated tags and releases whose

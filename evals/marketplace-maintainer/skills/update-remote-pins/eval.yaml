@@ -59,5 +59,28 @@ stimuli:
         config:
           pattern: '\bnotes\b'
       - type: diff-empty
+  - name: update-remote-pins-preserves-stable-channel-after-latest-404
+    prompt: >-
+      Check outside-notes for the latest stable release using only the reviewed
+      offline prerelease-only.json responses. Don't access the network. The
+      releases/latest endpoint returned 404, but repository access and the
+      complete release listing succeeded. Explain the available channel and
+      leave the pin alone if there's no eligible stable release. Don't install,
+      commit, or publish.
+    agent_environment:
+      files:
+        - src: ../../../_shared/fixtures/sample-marketplace
+          dest: .
+        - src: fixtures
+          dest: .
+    tags:
+      assets: skill:marketplace-maintainer/update-remote-pins
+      boundary: stable-channel-not-prerelease
+    graders:
+      - type: completed
+      - type: diff-empty
+      - type: output-matches
+        config:
+          pattern: '[Pp]rerelease|[Pp]re-release|[Pp]review'
 scoring:
   threshold: 1

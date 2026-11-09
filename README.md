@@ -14,7 +14,7 @@ add the marketplace and install only the plugins they want.
 
 ## What's in the starter
 
-Two local maintenance plugins and one optional remote plugin:
+Included local maintenance plugins and optional remote plugins:
 
 | Plugin | What it does |
 |---|---|
@@ -50,11 +50,16 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
    (unique, lowercase, and hyphenated) and `owner.name`. Use the new name in
    [.github/copilot/settings.json](.github/copilot/settings.json), as the key
    under `extraKnownMarketplaces` and after the `@` in each `enabledPlugins`
-   key, and set `name` in [package.json](package.json) too.
+   key, and set `name` in [package.json](package.json) too. Sync just the two
+   root `name` fields in `package-lock.json` (top-level and `packages[""]`);
+   no dependency install is needed.
 3. Update the install commands in this README and in each plugin's README: use
    your repository instead of `github/plugin-marketplace-starter` or
    `OWNER/REPO`, and your marketplace name after the `@`. Set `repository` in
-   each plugin's `plugin.json` to your repository's URL.
+   each plugin's `plugin.json` to your repository's URL. Before your first
+   release, keep initial plugin versions and add changes to their existing
+   changelog entries. For plugins you've already released, use the
+   [version rules](#add-a-plugin).
 4. Keep the included plugins if they fit your team, or
    [remove them](#remove-a-plugin).
 5. [Add your first plugin](#add-a-plugin).
@@ -62,7 +67,10 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
    [LICENSE](LICENSE) below GitHub's, rewrite this README's title,
    introduction, Background, Maintainers, Support, and Acknowledgement, name
    real owners in [.github/CODEOWNERS](.github/CODEOWNERS), and put your own
-   contacts in [SECURITY.md](SECURITY.md) and [SUPPORT.md](SUPPORT.md).
+   contacts in [SECURITY.md](SECURITY.md), [SUPPORT.md](SUPPORT.md), and the
+   enforcement sections of [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Keep
+   applicable legal terms. Point the fork and compare links in
+   [CONTRIBUTING.md](CONTRIBUTING.md) at your repository.
 7. Push, turn on branch protection or a ruleset for your default branch, and
    [add your marketplace in Copilot](#use-the-marketplace) to check that its
    plugins install.
@@ -70,9 +78,13 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 ## Use the marketplace
 
 Add the marketplace, browse it, and install only the plugins you want. Nothing
-is installed or turned on for you, except that working inside this repository
-turns on its two maintenance plugins (see
-[.github/copilot/settings.json](.github/copilot/settings.json)). In Copilot CLI:
+is installed or turned on for you outside the checkout. In supported hosts,
+after you trust the checkout, its
+[repository settings](.github/copilot/settings.json) enable only the two local
+maintenance plugins. Check with `copilot plugin list`. If they're absent, start
+CLI with `--plugin-dir` for each local plugin as shown in the
+[local bootstrap guide](plugins/plugin-authoring/skills/try-plugin-locally/references/local-install.md#for-one-session).
+For installation from GitHub after publication:
 
 ```sh
 copilot plugin marketplace add github/plugin-marketplace-starter
@@ -128,8 +140,12 @@ lists what a plugin can contain. Put any evals for it in `evals/<name>/`.
 Eval files that several plugins share live in `evals/_shared/`, which can't
 clash with a plugin because plugin names start with a lowercase letter or digit.
 
-When you change a plugin, bump its version in `plugin.json` and
-`marketplace.json` together, and add a `CHANGELOG.md` entry.
+For changes since a known released base, bump the plugin's version in
+`plugin.json` and `marketplace.json` together and add a `CHANGELOG.md` entry.
+An unreleased first version keeps its initial version and changelog heading,
+including during template customization. Don't bump twice, lower a version, or
+rewrite version history. If the released base or first-release status is
+unknown, ask before changing versions.
 
 ## Remove a plugin
 

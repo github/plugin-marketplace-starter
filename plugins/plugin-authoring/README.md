@@ -11,11 +11,9 @@ Scaffold, try locally, and prepare contributions to this plugin marketplace.
 ## Install
 
 ```sh
-copilot plugin marketplace add OWNER/REPO
+copilot plugin marketplace add github/plugin-marketplace-starter
 copilot plugin install plugin-authoring@plugin-marketplace-starter
 ```
-
-Replace `OWNER/REPO` with the GitHub repository that hosts this marketplace.
 
 ## Try it
 

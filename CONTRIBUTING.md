@@ -21,9 +21,12 @@ project you agree to abide by its terms.
 1. Make sure the lint passes on your machine: `npm run lint`
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change. For a new plugin, follow [Add a plugin](README.md#add-a-plugin).
-   For a change to an existing plugin, bump its version in `plugin.json` and
-   `marketplace.json` and add a `CHANGELOG.md` entry.
-1. Make sure `npm run lint` still passes.
+   Follow the [version rules](README.md#add-a-plugin): bump changes since a
+   known released base, but keep an unreleased first version. Never lower
+   versions or rewrite history, and ask if release status is unknown.
+1. Run `npm run lint` and the relevant
+   [catalog, schema, pin, and script checks](docs/checks-and-evals.md#model-free-checks).
+   Lint alone doesn't validate marketplace or plugin metadata.
 1. Push to your fork and [submit a pull request][pr]. Say what changed, and for
    a plugin that runs code, what it runs, what it reads, writes, and reaches,
    and what data it keeps or sends to the model.

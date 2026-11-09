@@ -82,5 +82,48 @@ stimuli:
         config:
           pattern: '\bnotes\b'
       - type: diff-empty
+  - name: release-plugins-asks-for-unknown-release-base
+    prompt: >-
+      Get this catalog ready to release. I haven't supplied any release record,
+      tags, or confirmed first-release status. The oldest local commit and PR
+      base aren't released versions. Tell me what you need before editing.
+      Don't run model sessions, publish, or access the network.
+    agent_environment:
+      files:
+        - src: ../../../_shared/fixtures/sample-marketplace
+          dest: .
+        - src: fixtures
+          dest: .
+    tags:
+      assets: skill:marketplace-maintainer/release-plugins
+      boundary: unknown-release-base
+    graders:
+      - type: completed
+      - type: diff-empty
+      - type: output-matches
+        config:
+          pattern: '[Bb]ase|[Rr]elease record|[Ff]irst.release'
+  - name: release-plugins-preserves-unreleased-initial-version
+    prompt: >-
+      Prepare release notes for this marketplace's confirmed first release.
+      sample-notes has never been released; its intended initial version is
+      the current 1.0.1 and its changelog already covers the empty-input wording.
+      Keep this history intact. No files need changing. Don't access the network,
+      run models, or publish.
+    agent_environment:
+      files:
+        - src: ../../../_shared/fixtures/sample-marketplace
+          dest: .
+        - src: fixtures
+          dest: .
+    tags:
+      assets: skill:marketplace-maintainer/release-plugins
+      boundary: unreleased-first-version
+    graders:
+      - type: completed
+      - type: diff-empty
+      - type: output-matches
+        config:
+          pattern: '1\.0\.1'
 scoring:
   threshold: 1

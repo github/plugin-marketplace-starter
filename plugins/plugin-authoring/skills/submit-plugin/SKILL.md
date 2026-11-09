@@ -18,17 +18,23 @@ If the checkout can't be read, report that rather than guessing its rules.
 1. Establish the plugin and comparison base with the user or the existing PR.
    Inspect the working-tree changes and relevant history without discarding
    unrelated work. Never invent approval or an issue number.
+   Establish the known released version, or explicit unreleased first-version
+   status, separately from the PR's diff base. If missing, ask and leave
+   versions unchanged; a plugin on the base branch isn't proof of a release.
 2. Compare the public surface with the base: skill and agent names, tools,
    hook events, permissions, network access, and supported hosts. Flag renamed
    or removed parts and behavior changes for current users. A new automatic
    hook needs explicit risk review.
-3. For each changed existing plugin, use semantic versioning: patch for fixes
+3. For each plugin changed since its known released base, use semantic versioning: patch for fixes
    and wording, minor for new compatible behavior, major for breaking changes.
    Ask when compatibility is unclear. Update the version in `plugin.json` and
    the matching `marketplace.json` entry together, and add a `## <version>`
    heading with a short entry to `CHANGELOG.md`. Don't bump twice if the
    contribution already has the correct new version and changelog. A new plugin
-   keeps its initial version.
+   keeps its initial version. This also applies to an explicitly unreleased
+   first version during customization: add to its current changelog heading.
+   Never lower a version or rewrite version history, even to normalize an
+   unexpected initial version. Report inconsistencies for the owner to resolve.
 4. Check that the catalog entry's name, version, and description match
    `plugin.json`, the JSON files are valid, and the README describes the change. If the plugin has evals in `evals/<name>/`,
    check that they use only synthetic data.
