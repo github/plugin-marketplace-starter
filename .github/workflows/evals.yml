@@ -17,7 +17,6 @@ jobs:
       # The pinned Copilot CLI, which the plugin-reviewer eval needs to delegate to a custom agent.
       COPILOT_CLI_PATH: ${{ github.workspace }}/node_modules/@github/copilot/npm-loader.js
       COPILOT_AUTO_UPDATE: 'false'
-      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -28,3 +27,5 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run eval -- --suite smoke --require-pass
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

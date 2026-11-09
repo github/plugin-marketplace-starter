@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { parse } from "yaml";
 import { checkLocalCatalog } from "./check-local-catalog.mjs";
 import { checkRemotePin, githubApi } from "./check-remote-pins.mjs";
 
@@ -55,6 +56,43 @@ test("local catalog checks name, version, and description, including a descripti
   }
   writeFileSync(resolve(directory, "plugins/tool/plugin.json"), "{");
   assert.throws(() => checkLocalCatalog(directory), SyntaxError);
+});
+
+test("validator entrypoints reject invalid catalogs through linked checkouts and stay inert when imported", (t) => {
+  const directory = fixture(t);
+  const checkout = resolve(directory, "checkout");
+  const linked = resolve(directory, "linked-checkout");
+  mkdirSync(resolve(checkout, ".github/scripts"), { recursive: true });
+  mkdirSync(resolve(checkout, "plugins/tool"), { recursive: true });
+  writeFileSync(resolve(checkout, "plugins/tool/plugin.json"), JSON.stringify(manifest({ description: "Actual description." })));
+  writeFileSync(resolve(checkout, "marketplace.json"), JSON.stringify({ plugins: [
+    { ...manifest(), description: "Mismatched description.", source: "./plugins/tool" },
+    entry({ source: { source: "github", repo: "owner/repo", sha: "invalid" } }),
+  ] }));
+  symlinkSync(checkout, linked, process.platform === "win32" ? "junction" : "dir");
+  for (const [script, failure] of [
+    ["check-local-catalog.mjs", /disagree on description/],
+    // An invalid pin fails before gh is called; these processes need no auth or network.
+    ["check-remote-pins.mjs", /source\.sha must be a full 40-character commit/],
+  ]) {
+    copyFileSync(resolve(root, ".github/scripts", script), resolve(checkout, ".github/scripts", script));
+    const linkedScript = resolve(linked, ".github/scripts", script);
+    assert.notEqual(realpathSync(linkedScript), linkedScript, "the validator must really be launched through a linked path");
+    for (const path of [resolve(checkout, ".github/scripts", script), linkedScript]) {
+      const options = { cwd: linked, encoding: "utf8", timeout: 10000 };
+      const result = spawnSync(process.execPath, [path], options);
+      assert.ifError(result.error);
+      assert.ok(result.status > 0, `invalid catalog must fail for ${path}: ${result.stdout}`);
+      assert.match(result.stderr, failure);
+      const importer = resolve(directory, "importer.mjs");
+      writeFileSync(importer, `await import(${JSON.stringify(pathToFileURL(path).href)}); console.log("imported");`);
+      const imported = spawnSync(process.execPath, [importer], options);
+      assert.ifError(imported.error);
+      assert.equal(imported.status, 0, imported.stderr);
+      assert.equal(imported.stdout.trim(), "imported", "importing must not run catalog checks");
+      assert.equal(imported.stderr, "");
+    }
+  }
 });
 
 test("Agent Plugins-schema root wins without reading a competing legacy .plugin manifest", () => {
@@ -200,6 +238,15 @@ test("validation calls CI scripts, and paid eval activation is manual-only", () 
   assert.doesNotMatch(evals, /pull_request:|ENABLE_EVALS|environment:|^\s+if:/m);
   assert.match(evals, /copilot-requests: write/);
   assert.match(evals, /npm run eval -- --suite smoke --require-pass/);
+  const workflow = parse(evals);
+  const job = workflow.jobs.evals;
+  const evalStep = job.steps.find((step) => step.run === "npm run eval -- --suite smoke --require-pass");
+  assert.equal(workflow.env?.GITHUB_TOKEN, undefined);
+  assert.equal(job.env?.GITHUB_TOKEN, undefined);
+  assert.deepEqual(job.steps.filter((step) => step.env?.GITHUB_TOKEN !== undefined), [evalStep],
+    "only the eval step may expose the token, never npm ci lifecycle scripts");
+  assert.equal(evalStep.env.GITHUB_TOKEN, "${{ github.token }}");
+  assert.equal(job.steps.find((step) => step.uses?.startsWith("actions/checkout@")).with["persist-credentials"], false);
   assert.deepEqual(JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")).scripts, {
     lint: "vally lint plugins --eval-spec evals --strict",
     eval: "vally eval --workers 1 --max-retries 1",

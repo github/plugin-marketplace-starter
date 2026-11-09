@@ -1,6 +1,6 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 export function checkLocalCatalog(root = process.cwd()) {
   const read = (path) => JSON.parse(readFileSync(resolve(root, path), "utf8"));
@@ -17,7 +17,7 @@ export function checkLocalCatalog(root = process.cwd()) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]))) {
   checkLocalCatalog();
   console.log("Local catalog entries match their plugin.json files.");
 }

@@ -92,17 +92,23 @@ stimuli:
       files:
         - src: ../../../_shared/fixtures/sample-marketplace
           dest: .
-        - src: fixtures
-          dest: .
+        # Candidate files only: released.json would supply the missing evidence.
+        - src: fixtures/marketplace.json
+          dest: marketplace.json
+        - src: fixtures/plugins/sample-notes/plugin.json
+          dest: plugins/sample-notes/plugin.json
+        - src: fixtures/plugins/sample-notes/CHANGELOG.md
+          dest: plugins/sample-notes/CHANGELOG.md
     tags:
       assets: skill:marketplace-maintainer/release-plugins
       boundary: unknown-release-base
     graders:
       - type: completed
       - type: diff-empty
-      - type: output-matches
+      - type: program
         config:
-          pattern: '[Bb]ase|[Rr]elease record|[Ff]irst.release'
+          program: node
+          args: [.grading/grader.mjs, unknown-base]
   - name: release-plugins-preserves-unreleased-initial-version
     prompt: >-
       Prepare release notes for this marketplace's confirmed first release.

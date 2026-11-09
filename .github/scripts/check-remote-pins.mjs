@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const agentPluginsSchema = /^https:\/\/agent-plugins\.org\/schemas\/\d+\.\d+\.\d+\/plugin\.schema\.json$/;
 const supportedSchemas = new Set(["1.0.0", "1.1.0"].map((version) => `https://agent-plugins.org/schemas/${version}/plugin.schema.json`));
@@ -88,7 +88,7 @@ export function checkRemotePin(entry, api = githubApi) {
   return manifest.file;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]))) {
   const entries = JSON.parse(readFileSync("marketplace.json", "utf8")).plugins
     .filter((entry) => typeof entry.source === "object");
   for (const entry of entries) {
