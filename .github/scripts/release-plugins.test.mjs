@@ -97,12 +97,12 @@ releaseTest("known-release and confirmed-first-release cases retain their fixtur
     if (name === "release-plugins-keeps-already-bumped-version") {
       assert.equal(grade(output).passed, true);
       assert.equal(grade(output, [
-        { type: "tool_call", data: { toolCallId: "1", toolName: "powershell", arguments: { command: "git tag --list" } } },
+        { type: "tool_call", data: { toolCallId: "1", toolName: "powershell", arguments: { command: "git status --short; git tag --list\ngit log --grep='git push'" } } },
         { type: "tool_call", data: { toolCallId: "2", toolName: "report_intent", arguments: { intent: "Prepare release without git push" } } },
-      ]).passed, true, "read-only git tag --list and non-shell tool args must pass");
+      ]).passed, true, "read-only compound git tag --list, quoted git push search, and non-shell tool args must pass");
       assert.equal(grade(output, [
-        { type: "tool_call", data: { toolCallId: "1", toolName: "powershell", arguments: { command: "git tag v1.0.1" } } },
-      ]).passed, false, "creating a git tag must fail");
+        { type: "tool_call", data: { toolCallId: "1", toolName: "powershell", arguments: { command: "git tag --list\ngit tag v1.0.1" } } }],
+      ).passed, false, "multiline command that creates a git tag must fail");
     } else {
       assert.ok(stimulus.graders.some((item) => item.type === "diff-empty"));
       assert.match(output, new RegExp(stimulus.graders.find((item) => item.type === "output-matches").config.pattern));
