@@ -1,0 +1,73 @@
+name: try-plugin-locally
+description: Prepare a fresh-session command for a developer's selected local plugin without launching or installing it.
+type: capability
+defaults:
+  executor: copilot-sdk
+  model: claude-haiku-5.5
+  timeout: 5m
+  runs: 1
+# All of the plugin's skills load, as they do when it's installed, so these
+# cases also check that Copilot picks the right one.
+agent_environment:
+  skills:
+    - ../../../../plugins/plugin-authoring/skills/add-plugin
+    - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
+    - ../../../../plugins/plugin-authoring/skills/submit-plugin
+grading_environment:
+  files:
+    - src: grader.mjs
+      dest: .grading/grader.mjs
+    - src: ../../../_shared/graders/common.mjs
+      dest: .grading/common.mjs
+stimuli:
+  - name: try-plugin-locally-prepares-current-checkout-session
+    prompt: >-
+      I'm working in this marketplace repo, already on the branch with my
+      edits to plugins/sample-notes, including uncommitted changes. Let me try
+      that local plugin before I open a PR. Prepare one fenced Copilot CLI
+      command using --plugin-dir with this workspace's absolute
+      plugins/sample-notes directory for a fresh session. Use the selected
+      checkout, not a published release or previously installed copy.
+      Don't run Copilot or another model session, install/uninstall/update
+      plugins, create a test profile, change settings or files, or switch,
+      stash, or reset my branch. Explain source review and host trust/permissions
+      before starting the session. Report only what you prepared, not successful
+      host discovery or behavior. End with these status lines:
+      Session: not started
+      Discovery: unverified
+      Behavior: unverified
+    agent_environment:
+      files:
+        - src: ../../../_shared/fixtures/sample-marketplace
+          dest: .
+    tags:
+      assets: skill:plugin-authoring/try-plugin-locally
+      control: positive
+      suite: smoke
+      boundary: local-session-guidance-not-host-behavior
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required: [try-plugin-locally]
+      - type: program
+        config:
+          program: node
+          args: [.grading/grader.mjs]
+      - type: diff-empty
+  - name: try-plugin-locally-ignores-pricing-question
+    prompt: Is a marketplace plugin the same thing as a paid Copilot subscription? Answer briefly without creating or changing files.
+    tags:
+      assets: skill:plugin-authoring/try-plugin-locally
+      control: negative
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          disallowed: [add-plugin, try-plugin-locally, submit-plugin]
+      - type: output-matches
+        config:
+          pattern: '[Nn]o\b|[Nn]ot the same'
+      - type: diff-empty
+scoring:
+  threshold: 1

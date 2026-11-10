@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "marketplace-maintainer",
+  "version": "0.1.0",
+  "description": "Review contributed plugins, maintain remote pins, and prepare marketplace releases.",
+  "license": "MIT",
+  "repository": "https://github.com/github/plugin-marketplace-starter"
+}

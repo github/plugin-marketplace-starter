@@ -1,0 +1,92 @@
+name: update-remote-pins
+description: Deliberate remote pins using synthetic offline upstream evidence.
+type: capability
+defaults:
+  executor: copilot-sdk
+  model: claude-haiku-5.5
+  timeout: 5m
+  runs: 1
+# Both of the plugin's skills load, as they do when it's installed, so these
+# cases also check that Copilot picks the right one.
+agent_environment:
+  skills:
+    - ../../../../plugins/marketplace-maintainer/skills/update-remote-pins
+    - ../../../../plugins/marketplace-maintainer/skills/release-plugins
+grading_environment:
+  files:
+    - src: grader.mjs
+      dest: .grading/grader.mjs
+    - src: ../../../_shared/graders/common.mjs
+      dest: .grading/common.mjs
+stimuli:
+  - name: update-remote-pins-uses-reviewed-release
+    prompt: >-
+      Pin outside-notes at its latest release using the reviewed offline
+      upstream-snapshot.json instead of GitHub. Its current catalog pin is the
+      previous release. Review and summarize the supplied upstream changes, update
+      the selected entry. Don't access the network, install
+      upstream code, commit, or publish. State the offline verification limit.
+    agent_environment:
+      files:
+        - src: ../../../_shared/fixtures/sample-marketplace
+          dest: .
+        - src: fixtures
+          dest: .
+    tags:
+      assets: skill:marketplace-maintainer/update-remote-pins
+      control: positive
+      suite: smoke
+      boundary: recorded-upstream-not-live-github
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required: [update-remote-pins]
+      - type: program
+        config:
+          program: node
+          args: [.grading/grader.mjs]
+  - name: update-remote-pins-ignores-local-copy-edit
+    prompt: >-
+      Rewrite this local plugin description in plain English, in chat only:
+      "Facilitates the summarization of notes." Don't change files or prepare a release.
+    tags:
+      assets: skill:marketplace-maintainer/update-remote-pins
+      control: negative
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          disallowed: [update-remote-pins, release-plugins]
+      - type: output-matches
+        config:
+          pattern: '\bnotes\b'
+      - type: diff-empty
+  - name: update-remote-pins-preserves-stable-channel-after-latest-404
+    prompt: >-
+      Check outside-notes for the latest stable release using only the reviewed
+      offline prerelease-only.json responses. Don't access the network. The
+      releases/latest endpoint returned 404, but repository access and the
+      complete release listing succeeded. Explain the available channel and
+      leave the pin alone if there's no eligible stable release. Don't install,
+      commit, or publish.
+    agent_environment:
+      files:
+        - src: ../../../_shared/fixtures/sample-marketplace
+          dest: .
+        - src: fixtures
+          dest: .
+    tags:
+      assets: skill:marketplace-maintainer/update-remote-pins
+      boundary: stable-channel-not-prerelease
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required: [update-remote-pins]
+      - type: diff-empty
+      - type: output-matches
+        config:
+          pattern: '[Pp]rerelease|[Pp]re-release|[Pp]review'
+scoring:
+  threshold: 1

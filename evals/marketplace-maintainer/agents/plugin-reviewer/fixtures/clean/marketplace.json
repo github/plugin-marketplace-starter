@@ -1,0 +1,12 @@
+{
+  "name": "fixture-plugins",
+  "owner": { "name": "Fixture Team" },
+  "plugins": [
+    {
+      "name": "review-notes",
+      "source": "./plugins/review-notes",
+      "version": "1.0.0",
+      "description": "Summarize supplied synthetic notes in chat."
+    }
+  ]
+}

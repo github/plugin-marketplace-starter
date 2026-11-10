@@ -1,42 +1,39 @@
 {
   "name": "plugin-marketplace-starter",
-  "owner": { "name": "GitHub" },
+  "owner": {
+    "name": "GitHub"
+  },
   "plugins": [
     {
-      "name": "bug-report",
-      "source": "./plugins/bug-report",
-      "version": "1.0.4",
-      "description": "Turn rough bug notes into a clear report without inventing missing details."
+      "name": "plugin-authoring",
+      "source": "./plugins/plugin-authoring",
+      "version": "0.1.0",
+      "description": "Scaffold, try locally, and prepare contributions to this plugin marketplace."
     },
     {
-      "name": "team-brainstorm",
-      "source": "./plugins/team-brainstorm",
-      "version": "1.1.2",
-      "description": "Brainstorm together on a small, session-only canvas."
+      "name": "marketplace-maintainer",
+      "source": "./plugins/marketplace-maintainer",
+      "version": "0.1.0",
+      "description": "Review contributed plugins, maintain remote pins, and prepare marketplace releases."
     },
     {
-      "name": "format-json",
-      "source": "./plugins/format-json",
-      "version": "1.1.3",
-      "description": "Format affected JSON files after successful agent edits."
+      "name": "pr-description",
+      "source": "./plugins/pr-description",
+      "version": "0.1.0",
+      "description": "Draft structured pull request descriptions from supplied change notes or diffs without inventing unshipped work."
     },
     {
-      "name": "customization-authoring",
-      "source": "./plugins/customization-authoring",
-      "version": "0.1.5",
-      "description": "Create focused skills with positive and negative behavioral evals."
-    },
-    {
-      "name": "code-review",
-      "source": "./plugins/code-review",
-      "version": "0.1.4",
-      "description": "Challenge assumptions and find material defects using a read-only reviewer."
-    },
-    {
-      "name": "json-configuration",
-      "source": "./plugins/json-configuration",
-      "version": "0.1.7",
-      "description": "Validate JSON and retrieve configuration values with a local MCP server."
+      "name": "eval",
+      "source": {
+        "source": "github",
+        "repo": "github/evals",
+        "path": "packages/plugin",
+        "ref": "copilot-evals-v0.23.3",
+        "sha": "be7b4ee0d58b7bea143e74fd64275b2c47091cab"
+      },
+      "version": "0.23.3",
+      "description": "GitHub Copilot Evals (Preview): set up a project with /eval setup, create and save evals with /eval create, save revised copies with /eval improve, run with /eval run, review with /eval review, and compare saved runs or explore one skill with /eval compare. Setup is optional; saves use normal host permissions and runs require cost/effect approval.",
+      "homepage": "https://github.com/github/evals"
     }
   ]
 }
