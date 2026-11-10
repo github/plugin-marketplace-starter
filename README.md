@@ -35,14 +35,20 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## Requirements
 
-- To use the plugins: a current Copilot CLI, the GitHub Copilot app, or VS Code
-  with agent plugins turned on, and a GitHub Copilot plan.
-- Node.js 22.14 or newer for repository tooling and the bundled
+For marketplace development and CLI-based evals, use this shared setup:
+
+- One supported Copilot harness: **Copilot CLI, GitHub Copilot app, or VS Code
+  with agent plugins enabled**, and a **GitHub Copilot plan**.
+- **Node.js 24+ and npm** for repository tooling and the bundled
   [local-install validator](plugins/plugin-authoring/skills/try-plugin-locally/references/local-install.md#test-installation-without-publishing).
-  Repository checks and evals also need npm.
-- Optional GitHub Copilot Evals requires Node.js 24+ in Copilot CLI. See its
-  [upstream README](https://github.com/github/evals/blob/copilot-evals-v0.23.3/README.md#runner-setup)
-  for all host-specific requirements.
+- **GitHub Copilot CLI 1.0.85+**.
+- **Vally ([`@microsoft/vally-cli`](https://www.npmjs.com/package/@microsoft/vally-cli)) 0.19.0+**.
+- **Git 2.28.0+**.
+
+Using installed plugins does not require the full development setup. See the
+[upstream runner setup](https://github.com/github/evals/blob/copilot-evals-v0.23.3/README.md#runner-setup)
+for host-specific eval requirements.
+[Evals installation](#use-the-marketplace) remains opt-in.
 
 ## Make it yours
 
