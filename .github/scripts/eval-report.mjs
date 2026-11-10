@@ -315,9 +315,12 @@ export function compareSummaries(baseline, candidate) {
     };
   });
 
+  const workloadsMatch =
+    baseline.rows.length === candidate.rows.length &&
+    cases.every((item) => item.baseline && item.candidate && item.baseline.trials === item.candidate.trials);
   const baseTotalTokens = baseline.tokenUsage?.totalTokens;
   const candTotalTokens = candidate.tokenUsage?.totalTokens;
-  const totalTokenDelta = typeof baseTotalTokens === "number" && typeof candTotalTokens === "number"
+  const totalTokenDelta = workloadsMatch && typeof baseTotalTokens === "number" && typeof candTotalTokens === "number"
     ? candTotalTokens - baseTotalTokens
     : undefined;
   const totalTokenDeltaPct = totalTokenDelta !== undefined && baseTotalTokens > 0
@@ -336,7 +339,7 @@ export function compareSummaries(baseline, candidate) {
         : undefined,
       totalTokens: totalTokenDelta,
       totalTokensPct: totalTokenDeltaPct,
-      totalDurationMs: typeof baseline.totalDurationMs === "number" && typeof candidate.totalDurationMs === "number"
+      totalDurationMs: workloadsMatch && typeof baseline.totalDurationMs === "number" && typeof candidate.totalDurationMs === "number"
         ? candidate.totalDurationMs - baseline.totalDurationMs
         : undefined,
     },

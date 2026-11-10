@@ -21,8 +21,9 @@ export function evaluate(trajectory) {
     || (/(?:retry backoff|#42)/i.test(changesSection) && !/(?:not\b|out of scope|deferred|excluded|open|separate)/i.test(changesSection));
 
   const hasPassingNpmTest = /\bnpm test\b/i.test(verificationSection)
-    && /\b(?:14\s+(?:tests?\s+)?pass(?:ed|ing)?|pass(?:ed|ing)?(?:\s+with)?[:\s]*\(?14\b|all\s+14\s+tests?\s+pass(?:ed)?)\b/i.test(verificationSection)
-    && !/\bnpm test\b[^\n]{0,40}\bfail/i.test(verificationSection);
+    && /\b14\b/.test(verificationSection)
+    && /\bpass(?:ed|ing|es)?\b/i.test(verificationSection)
+    && !/\b(?:fail(?:ed|ure|s|ing)?|broken|error(?:ed|s)?)\b/i.test(verificationSection);
 
   return [
     check("Wrote ## Summary, ## Changes, ## Verification, and ## Risks / Rollback in order", inOrder),

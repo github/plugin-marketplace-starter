@@ -326,6 +326,25 @@ test("eval-report redacts raw grader evidence and error strings, requires comple
   assert.equal(mismatchedTrialsComp.cases[0].tokenDelta, undefined);
   assert.equal(mismatchedTrialsComp.cases[0].durationDeltaMs, undefined);
   assert.equal(mismatchedTrialsComp.cases[0].transition, "Unchanged");
+  assert.equal(mismatchedTrialsComp.deltas.totalTokens, undefined);
+  assert.equal(mismatchedTrialsComp.deltas.totalTokensPct, undefined);
+  assert.equal(mismatchedTrialsComp.deltas.totalDurationMs, undefined);
+  const mismatchedTrialsReport = renderReport(singleTrialCand, "cand/results.jsonl", {
+    baselineSummary: multiBase,
+    baselinePath: "base/results.jsonl",
+  });
+  assert.match(mismatchedTrialsReport, /\| Total Tokens \| 1,100 \(in: 900, out: 200\) \| 400 \(in: 300, out: 100\) \| — \|/);
+  assert.match(mismatchedTrialsReport, /\| Total Duration \| 2\.2s \| 900ms \| — \|/);
+
+  const extraCaseBase = summarizeRun([
+    makeTrial({ runId: "e-base", stimulus: "repeat-case", passed: true, gradeScore: 1, durationMs: 900, inputTokens: 300, outputTokens: 100, totalTokens: 400 }),
+    makeTrial({ runId: "e-base", stimulus: "extra-case", passed: true, gradeScore: 1, durationMs: 900, inputTokens: 300, outputTokens: 100, totalTokens: 400 }),
+    makeFooter("e-base"),
+  ]);
+  const mismatchedCasesComp = compareSummaries(extraCaseBase, singleTrialCand);
+  assert.equal(mismatchedCasesComp.deltas.totalTokens, undefined);
+  assert.equal(mismatchedCasesComp.deltas.totalTokensPct, undefined);
+  assert.equal(mismatchedCasesComp.deltas.totalDurationMs, undefined);
 
   // Unscored / errored transitions
   assert.equal(
@@ -425,6 +444,27 @@ prDescriptionTest("pr-description program grader enforces ordered headings, fact
   ].join("\n");
 
   assert.equal(score("pr-description-contract", evaluatePrDescription({ output: validOutput, events: [] })).passed, true);
+
+  for (const passingLine of [
+    "- `npm test` (14 tests): passed.",
+    "- `npm test` — 14 tests, all passing.",
+    "- Ran `npm test`; 14/14 tests passed.",
+  ]) {
+    const equivalentOutput = validOutput.replace("- `npm test` passed (14 tests).", passingLine);
+    assert.equal(
+      score("pr-description-contract", evaluatePrDescription({ output: equivalentOutput, events: [] })).passed,
+      true,
+      `expected passing verification format: ${passingLine}`,
+    );
+  }
+
+  const missingPassWord = validOutput.replace(
+    "- `npm test` passed (14 tests).",
+    "- `npm test` (14 tests).",
+  );
+  const missingPassWordResult = score("pr-description-contract", evaluatePrDescription({ output: missingPassWord, events: [] }));
+  assert.equal(missingPassWordResult.passed, false);
+  assert.match(missingPassWordResult.evidence, /Recorded the supplied npm test verification result/);
 
   const leaksBacklogIntoChanges = validOutput.replace(
     "- Added unit tests for `--timeout 0` and `--timeout -5` in `test/cli.test.mjs`.",
