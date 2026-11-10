@@ -172,7 +172,7 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
   assert.match(markdown, /Single-run score, token, and duration deltas are observed signals for review/);
 });
 
-prDescriptionTest("eval-report CLI compares the shared pr-description baseline and candidate fixtures and writes GITHUB_STEP_SUMMARY", (t) => {
+prDescriptionTest("eval-report CLI compares the shared pr-description baseline and candidate fixtures without writing GITHUB_STEP_SUMMARY", (t) => {
   const tempDir = resolve(root, ".github/scripts", `.report-test-${randomUUID()}`);
   mkdirSync(tempDir, { recursive: true });
   t.after(() => rmSync(tempDir, { recursive: true, force: true }));
@@ -207,7 +207,148 @@ prDescriptionTest("eval-report CLI compares the shared pr-description baseline a
   assert.match(result.stdout, /## Baseline vs\. Candidate Comparison/);
   assert.match(result.stdout, /Fixed/);
   assert.match(result.stdout, /Reduced tokens at parity/);
-  assert.match(readFileSync(summaryFile, "utf8"), /## Baseline vs\. Candidate Comparison/);
+  assert.equal(readFileSync(summaryFile, "utf8"), "");
+});
+
+test("eval-report redacts raw grader evidence and error strings, requires complete metric coverage, aggregates multi-trial cases, and guards unscored transitions", () => {
+  const secretEvidence = "SECRET_TOKEN_EVIDENCE_12345";
+  const secretError = "RAW_EXECUTION_ERROR_67890";
+  const secretSkip = "RAW_SKIP_REASON_ABCDE";
+  const secretRuntime = "RAW_RUNTIME_EVENT_FGHIJ";
+
+  const leakedRecords = [
+    makeTrial({
+      runId: "leak-run",
+      stimulus: "failed-case",
+      passed: false,
+      gradeScore: 0.5,
+      details: [{ name: "pr-description-contract", passed: false, score: 0, evidence: secretEvidence }],
+    }),
+    {
+      ...makeTrial({ runId: "leak-run", stimulus: "error-case", status: "error" }),
+      error: secretError,
+    },
+    {
+      ...makeTrial({ runId: "leak-run", stimulus: "skip-case", status: "skipped" }),
+      skipReason: secretSkip,
+    },
+    makeTrial({
+      runId: "leak-run",
+      stimulus: "runtime-error-case",
+      events: [{ type: "error", data: { message: secretRuntime } }],
+    }),
+    makeFooter("leak-run", true),
+  ];
+
+  const leakedSummary = summarizeRun(leakedRecords);
+  const leakedReport = renderReport(leakedSummary, "vally-results/leak-run/results.jsonl");
+  for (const secret of [secretEvidence, secretError, secretSkip, secretRuntime]) {
+    assert.ok(!JSON.stringify(leakedSummary).includes(secret), `summary leaked ${secret}`);
+    assert.ok(!leakedReport.includes(secret), `report leaked ${secret}`);
+  }
+  assert.deepEqual(leakedSummary.rows[0].failures, ["pr-description-contract"]);
+  assert.deepEqual(leakedSummary.errors, [
+    "error-case: execution-error",
+    "skip-case: skipped",
+    "runtime-error-case: runtime-error",
+    "execution-error",
+  ]);
+
+  // Partial duration or token coverage must yield undefined run totals
+  const missingSecondMetrics = makeTrial({ runId: "partial-run", stimulus: "case-2" });
+  delete missingSecondMetrics.durationMs;
+  delete missingSecondMetrics.trajectory.metrics;
+  const partialSummary = summarizeRun([
+    makeTrial({ runId: "partial-run", stimulus: "case-1", durationMs: 1200, inputTokens: 500, outputTokens: 100, totalTokens: 600 }),
+    missingSecondMetrics,
+    makeFooter("partial-run"),
+  ]);
+  assert.equal(partialSummary.totalDurationMs, undefined);
+  assert.equal(partialSummary.tokenUsage, undefined);
+
+  // Multi-trial aggregation per case and mismatched trial count comparison
+  const multiBase = summarizeRun([
+    makeTrial({ runId: "m-base", stimulus: "repeat-case", passed: true, gradeScore: 1, durationMs: 1000, inputTokens: 400, outputTokens: 100, totalTokens: 500 }),
+    makeTrial({ runId: "m-base", stimulus: "repeat-case", passed: true, gradeScore: 1, durationMs: 1200, inputTokens: 500, outputTokens: 100, totalTokens: 600 }),
+    makeFooter("m-base"),
+  ]);
+  const multiCand = summarizeRun([
+    makeTrial({
+      runId: "m-cand",
+      stimulus: "repeat-case",
+      passed: false,
+      gradeScore: 0,
+      durationMs: 900,
+      inputTokens: 300,
+      outputTokens: 100,
+      totalTokens: 400,
+      details: [{ name: "contract-check", passed: false, evidence: "ignored" }],
+    }),
+    makeTrial({
+      runId: "m-cand",
+      stimulus: "repeat-case",
+      passed: true,
+      gradeScore: 1,
+      durationMs: 900,
+      inputTokens: 300,
+      outputTokens: 100,
+      totalTokens: 400,
+      details: [{ name: "contract-check", passed: false, evidence: "ignored" }],
+    }),
+    makeFooter("m-cand"),
+  ]);
+  assert.equal(multiBase.rows.length, 1);
+  assert.equal(multiBase.rows[0].trials, 2);
+  assert.equal(multiBase.rows[0].passedCount, 2);
+  assert.equal(multiBase.rows[0].status, "PASS");
+  assert.equal(multiBase.rows[0].score, 1);
+  assert.equal(multiBase.rows[0].durationMs, 2200);
+  assert.equal(multiBase.rows[0].tokenUsage.totalTokens, 1100);
+
+  assert.equal(multiCand.rows.length, 1);
+  assert.equal(multiCand.rows[0].trials, 2);
+  assert.equal(multiCand.rows[0].passedCount, 1);
+  assert.equal(multiCand.rows[0].status, "BEHAVIORAL FAILURE");
+  assert.equal(multiCand.rows[0].passed, false);
+  assert.equal(multiCand.rows[0].score, 0.5);
+  assert.deepEqual(multiCand.rows[0].failures, ["contract-check"]);
+
+  const multiComp = compareSummaries(multiBase, multiCand);
+  assert.equal(multiComp.cases[0].transition, "Regressed");
+  assert.equal(multiComp.cases[0].scoreDelta, -0.5);
+  assert.equal(multiComp.cases[0].tokenDelta, -300);
+
+  const singleTrialCand = summarizeRun([
+    makeTrial({ runId: "s-cand", stimulus: "repeat-case", passed: true, gradeScore: 1, durationMs: 900, inputTokens: 300, outputTokens: 100, totalTokens: 400 }),
+    makeFooter("s-cand"),
+  ]);
+  const mismatchedTrialsComp = compareSummaries(multiBase, singleTrialCand);
+  assert.equal(mismatchedTrialsComp.cases[0].tokenDelta, undefined);
+  assert.equal(mismatchedTrialsComp.cases[0].durationDeltaMs, undefined);
+  assert.equal(mismatchedTrialsComp.cases[0].transition, "Unchanged");
+
+  // Unscored / errored transitions
+  assert.equal(
+    classifyTransition(
+      { status: "BEHAVIORAL FAILURE", score: 0.5, tokenUsage: { totalTokens: 2000 } },
+      { status: "ERROR / NOT EVALUATED", score: undefined, tokenUsage: { totalTokens: 500 } },
+    ),
+    "Regressed",
+  );
+  assert.equal(
+    classifyTransition(
+      { status: "ERROR / NOT EVALUATED", score: undefined, tokenUsage: { totalTokens: 2000 } },
+      { status: "ERROR / NOT EVALUATED", score: undefined, tokenUsage: { totalTokens: 500 } },
+    ),
+    "Unchanged",
+  );
+  assert.equal(
+    classifyTransition(
+      { status: "ERROR / NOT EVALUATED", score: undefined, tokenUsage: { totalTokens: 2000 } },
+      { status: "BEHAVIORAL FAILURE", score: 0.5, tokenUsage: { totalTokens: 500 } },
+    ),
+    "Unchanged",
+  );
 });
 
 prDescriptionTest("pr-description eval stages the multi-skill marketplace cohort and enforces non-collision", async () => {
@@ -295,4 +436,24 @@ prDescriptionTest("pr-description program grader enforces ordered headings, fact
 
   const missingRisks = validOutput.split("## Risks / Rollback")[0];
   assert.equal(score("pr-description-contract", evaluatePrDescription({ output: missingRisks, events: [] })).passed, false);
+
+  const failedTestsClaim = validOutput.replace(
+    "- `npm test` passed (14 tests).",
+    "- `npm test` failed (14 tests).",
+  );
+  const failedTestsResult = score("pr-description-contract", evaluatePrDescription({ output: failedTestsClaim, events: [] }));
+  assert.equal(failedTestsResult.passed, false);
+  assert.match(failedTestsResult.evidence, /Recorded the supplied npm test verification result/);
+
+  for (const prohibitedTool of ["bash", "functions.bash", "functions.powershell", "mcp:edit", "tools/write_file"]) {
+    const toolResult = score(
+      "pr-description-contract",
+      evaluatePrDescription({
+        output: validOutput,
+        events: [{ type: "tool_call", data: { toolCallId: "1", toolName: prohibitedTool, arguments: { command: "git status" } } }],
+      }),
+    );
+    assert.equal(toolResult.passed, false, `must reject prohibited tool ${prohibitedTool}`);
+    assert.match(toolResult.evidence, /Did not run shell commands or create a pull request/);
+  }
 });

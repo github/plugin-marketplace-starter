@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -6,6 +6,14 @@ import { parseArgs } from "node:util";
 const hasGraderError = (grade) => grade?.status === "error" || (grade?.details ?? []).some(hasGraderError);
 const escapeCell = (text) => String(text).replaceAll("|", "\\|").replaceAll("\n", " ").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const finiteNonNegative = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+const sanitizeIdentifier = (value, fallback = "check") => {
+  const cleaned = String(value ?? fallback).replace(/[^A-Za-z0-9._:-]+/g, "-").replace(/^-+|-+$/g, "");
+  return cleaned || fallback;
+};
+const sanitizeGraderId = (detail) => sanitizeIdentifier(
+  typeof detail === "string" ? detail : (detail?.configuredName ?? detail?.name ?? detail?.graderType ?? "check"),
+  "check",
+);
 
 export function extractTrialMetrics(record) {
   const durationMs = finiteNonNegative(record?.durationMs) ?? finiteNonNegative(record?.trajectory?.metrics?.wallTimeMs);
@@ -56,7 +64,7 @@ export function summarizeRun(records) {
     throw new Error("Missing or mixed run identities.");
   }
 
-  const rows = [];
+  const caseGroups = new Map();
   const errors = [];
   let passedCount = 0;
   let failedCount = 0;
@@ -64,17 +72,18 @@ export function summarizeRun(records) {
   let scoredCount = 0;
   let scoreSum = 0;
   let totalDurationMs = 0;
-  let hasDuration = false;
+  let allTrialsHaveDuration = true;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalTokens = 0;
-  let hasTokenUsage = false;
+  let allTrialsHaveTokens = true;
   let hasInOutTokens = true;
+  let trialCount = 0;
 
   for (const record of records) {
     if (record.type === "run-summary") {
       if (typeof record.hadExecutionErrors !== "boolean") throw new Error("Invalid run summary.");
-      if (record.hadExecutionErrors) errors.push("Vally reported execution errors.");
+      if (record.hadExecutionErrors) errors.push("execution-error");
       continue;
     }
     if (record.type !== "trial-result" || typeof record.stimulus !== "string" || !record.stimulus.trim()) {
@@ -83,17 +92,26 @@ export function summarizeRun(records) {
     if (!["success", "error", "skipped"].includes(record.status)) {
       throw new Error("Unknown trial status.");
     }
+    trialCount++;
 
     const grade = record.gradeResult;
     const runtimeErrors = (record.trajectory?.events ?? []).filter((event) => event.type === "error");
-    const fatal = record.status !== "success" || !grade || hasGraderError(grade) || runtimeErrors.length > 0;
+    const fatalCode = record.status === "skipped"
+      ? "skipped"
+      : record.status !== "success"
+        ? "execution-error"
+        : !grade || hasGraderError(grade)
+          ? "grader-error"
+          : runtimeErrors.length > 0
+            ? "runtime-error"
+            : undefined;
+    const fatal = fatalCode !== undefined;
     if (!fatal && (typeof grade.passed !== "boolean" || !Number.isFinite(grade.score) || grade.score < 0 || grade.score > 1)) {
       throw new Error(`Invalid grade: ${record.stimulus}`);
     }
     if (fatal) {
       errorCount++;
-      errors.push(`${record.stimulus}: ${record.error ?? record.skipReason
-        ?? (runtimeErrors.map((event) => event.data?.message).filter(Boolean).join("; ") || "No valid execution/grading result.")}`);
+      errors.push(`${sanitizeIdentifier(record.stimulus, "trial")}: ${fatalCode}`);
     } else if (grade.passed) {
       passedCount++;
       scoredCount++;
@@ -106,11 +124,11 @@ export function summarizeRun(records) {
 
     const { durationMs, tokenUsage } = extractTrialMetrics(record);
     if (durationMs !== undefined) {
-      hasDuration = true;
       totalDurationMs += durationMs;
+    } else {
+      allTrialsHaveDuration = false;
     }
     if (tokenUsage !== undefined) {
-      hasTokenUsage = true;
       totalTokens += tokenUsage.totalTokens;
       if (typeof tokenUsage.inputTokens === "number" && typeof tokenUsage.outputTokens === "number") {
         totalInputTokens += tokenUsage.inputTokens;
@@ -118,21 +136,100 @@ export function summarizeRun(records) {
       } else {
         hasInOutTokens = false;
       }
+    } else {
+      allTrialsHaveTokens = false;
     }
 
-    rows.push({
-      evalName: typeof record.evalName === "string" && record.evalName.trim() ? record.evalName.trim() : undefined,
-      name: record.stimulus,
-      status: fatal ? "ERROR / NOT EVALUATED" : grade.passed ? "PASS" : "BEHAVIORAL FAILURE",
-      passed: !fatal && grade.passed,
-      score: fatal ? undefined : grade.score,
-      durationMs,
-      tokenUsage,
-      failures: (grade?.details ?? []).filter((detail) => !detail.passed),
-    });
+    const evalName = typeof record.evalName === "string" && record.evalName.trim() ? record.evalName.trim() : undefined;
+    const groupKey = `${evalName ?? ""}\0${record.stimulus}`;
+    let group = caseGroups.get(groupKey);
+    if (!group) {
+      group = {
+        evalName,
+        name: record.stimulus,
+        trials: 0,
+        passedCount: 0,
+        hasFatal: false,
+        allPassed: true,
+        allScored: true,
+        scoreSum: 0,
+        allHaveDuration: true,
+        durationSum: 0,
+        allHaveTokens: true,
+        allHaveInOutTokens: true,
+        totalTokensSum: 0,
+        inputTokensSum: 0,
+        outputTokensSum: 0,
+        failures: new Set(),
+      };
+      caseGroups.set(groupKey, group);
+    }
+
+    group.trials++;
+    if (fatal) {
+      group.hasFatal = true;
+      group.allPassed = false;
+      group.allScored = false;
+    } else {
+      if (grade.passed) {
+        group.passedCount++;
+      } else {
+        group.allPassed = false;
+      }
+      group.scoreSum += grade.score;
+    }
+
+    if (durationMs !== undefined) {
+      group.durationSum += durationMs;
+    } else {
+      group.allHaveDuration = false;
+    }
+
+    if (tokenUsage !== undefined) {
+      group.totalTokensSum += tokenUsage.totalTokens;
+      if (typeof tokenUsage.inputTokens === "number" && typeof tokenUsage.outputTokens === "number") {
+        group.inputTokensSum += tokenUsage.inputTokens;
+        group.outputTokensSum += tokenUsage.outputTokens;
+      } else {
+        group.allHaveInOutTokens = false;
+      }
+    } else {
+      group.allHaveTokens = false;
+      group.allHaveInOutTokens = false;
+    }
+
+    for (const detail of (grade?.details ?? [])) {
+      if (!detail.passed) {
+        group.failures.add(sanitizeGraderId(detail));
+      }
+    }
   }
 
-  if (!rows.length) throw new Error("No cases were evaluated.");
+  if (!trialCount) throw new Error("No cases were evaluated.");
+
+  const rows = [...caseGroups.values()].map((group) => {
+    const passed = !group.hasFatal && group.allPassed;
+    const status = group.hasFatal ? "ERROR / NOT EVALUATED" : passed ? "PASS" : "BEHAVIORAL FAILURE";
+    return {
+      evalName: group.evalName,
+      name: group.name,
+      trials: group.trials,
+      passedCount: group.passedCount,
+      status,
+      passed,
+      score: !group.hasFatal && group.allScored ? group.scoreSum / group.trials : undefined,
+      durationMs: group.allHaveDuration ? group.durationSum : undefined,
+      tokenUsage: group.allHaveTokens
+        ? {
+            totalTokens: group.totalTokensSum,
+            ...(group.allHaveInOutTokens
+              ? { inputTokens: group.inputTokensSum, outputTokens: group.outputTokensSum }
+              : {}),
+          }
+        : undefined,
+      failures: [...group.failures],
+    };
+  });
 
   return {
     runId: records[0].runId,
@@ -142,8 +239,8 @@ export function summarizeRun(records) {
     failedCount,
     errorCount,
     averageScore: scoredCount > 0 ? scoreSum / scoredCount : undefined,
-    totalDurationMs: hasDuration ? totalDurationMs : undefined,
-    tokenUsage: hasTokenUsage
+    totalDurationMs: allTrialsHaveDuration ? totalDurationMs : undefined,
+    tokenUsage: allTrialsHaveTokens
       ? {
           totalTokens,
           ...(hasInOutTokens ? { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } : {}),
@@ -161,15 +258,21 @@ export function classifyTransition(baselineRow, candidateRow) {
   if (!candidateRow) return "Removed";
   if (baselineRow.status !== "PASS" && candidateRow.status === "PASS") return "Fixed";
   if (baselineRow.status === "PASS" && candidateRow.status !== "PASS") return "Regressed";
-  if (typeof baselineRow.score === "number" && typeof candidateRow.score === "number") {
-    if (candidateRow.score > baselineRow.score) return "Improved score";
-    if (candidateRow.score < baselineRow.score) return "Regressed";
+  if (baselineRow.status === "BEHAVIORAL FAILURE" && candidateRow.status === "ERROR / NOT EVALUATED") return "Regressed";
+  if (baselineRow.status === "ERROR / NOT EVALUATED" || candidateRow.status === "ERROR / NOT EVALUATED") return "Unchanged";
+  if (typeof baselineRow.score !== "number" || !Number.isFinite(baselineRow.score)
+    || typeof candidateRow.score !== "number" || !Number.isFinite(candidateRow.score)) {
+    return "Unchanged";
   }
-  const baseTokens = baselineRow.tokenUsage?.totalTokens;
-  const candTokens = candidateRow.tokenUsage?.totalTokens;
-  if (typeof baseTokens === "number" && typeof candTokens === "number") {
-    if (candTokens < baseTokens) return "Reduced tokens at parity";
-    if (candTokens > baseTokens) return "Increased tokens at parity";
+  if (candidateRow.score > baselineRow.score) return "Improved score";
+  if (candidateRow.score < baselineRow.score) return "Regressed";
+  if (baselineRow.status === candidateRow.status && (baselineRow.trials ?? 1) === (candidateRow.trials ?? 1)) {
+    const baseTokens = baselineRow.tokenUsage?.totalTokens;
+    const candTokens = candidateRow.tokenUsage?.totalTokens;
+    if (typeof baseTokens === "number" && typeof candTokens === "number") {
+      if (candTokens < baseTokens) return "Reduced tokens at parity";
+      if (candTokens > baseTokens) return "Increased tokens at parity";
+    }
   }
   return "Unchanged";
 }
@@ -184,18 +287,19 @@ export function compareSummaries(baseline, candidate) {
   const cases = keys.map((key) => {
     const baseRow = baselineMap.get(key);
     const candRow = candidateMap.get(key);
+    const sameTrialCount = (baseRow?.trials ?? 1) === (candRow?.trials ?? 1);
     const scoreDelta = typeof baseRow?.score === "number" && typeof candRow?.score === "number"
       ? candRow.score - baseRow.score
       : undefined;
     const baseTokens = baseRow?.tokenUsage?.totalTokens;
     const candTokens = candRow?.tokenUsage?.totalTokens;
-    const tokenDelta = typeof baseTokens === "number" && typeof candTokens === "number"
+    const tokenDelta = sameTrialCount && typeof baseTokens === "number" && typeof candTokens === "number"
       ? candTokens - baseTokens
       : undefined;
     const tokenDeltaPct = tokenDelta !== undefined && baseTokens > 0
       ? (tokenDelta / baseTokens) * 100
       : undefined;
-    const durationDeltaMs = typeof baseRow?.durationMs === "number" && typeof candRow?.durationMs === "number"
+    const durationDeltaMs = sameTrialCount && typeof baseRow?.durationMs === "number" && typeof candRow?.durationMs === "number"
       ? candRow.durationMs - baseRow.durationMs
       : undefined;
 
@@ -287,7 +391,7 @@ export function renderReport(summary, path, { baselineSummary, baselinePath } = 
   ];
 
   const failureLines = summary.rows.flatMap((row) =>
-    row.failures.map((detail) => `- ${escapeCell(row.name)} / ${escapeCell(detail.name)}: ${escapeCell(detail.evidence)}`));
+    row.failures.map((grader) => `- ${escapeCell(row.name)} / ${escapeCell(sanitizeGraderId(grader))}: check failed`));
   const errorLines = summary.errors.map((error) => `- ERROR: ${escapeCell(error)}`);
   if (failureLines.length || errorLines.length) {
     lines.push(...failureLines, ...errorLines, "");
@@ -416,9 +520,6 @@ function main(argv = process.argv.slice(2)) {
     baselinePath: baseline?.displayPath,
   });
   console.log(markdown);
-  if (process.env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${markdown}\n`);
-  }
   if (candidate.summary.errors.length || baseline?.summary.errors.length) {
     process.exitCode = 1;
   }

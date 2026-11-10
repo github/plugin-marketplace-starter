@@ -370,7 +370,7 @@ test("validation calls CI scripts, and paid eval activation is manual-only", () 
   assert.match(validate, /node --test \.github\/scripts\/\*\.test\.mjs/);
   const evals = readFileSync(resolve(root, ".github/workflows/evals.yml"), "utf8");
   assert.match(evals, /^on:\n  workflow_dispatch:\npermissions:/m);
-  assert.doesNotMatch(evals, /pull_request:|ENABLE_EVALS|environment:|^\s+if:/m);
+  assert.doesNotMatch(evals, /pull_request:|ENABLE_EVALS|environment:|^\s+if:|eval:report/m);
   assert.match(evals, /copilot-requests: write/);
   assert.match(evals, /npm run eval -- --suite smoke --require-pass/);
   const workflow = parse(evals);

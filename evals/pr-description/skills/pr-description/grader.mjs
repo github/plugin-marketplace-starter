@@ -20,17 +20,21 @@ export function evaluate(trajectory) {
   const claimsBacklogShipped = /(?:\badded\b|\bimplemented\b|\bshipped\b|\bcompleted\b)[^\n]*(?:retry backoff|#42)/i.test(changesSection)
     || (/(?:retry backoff|#42)/i.test(changesSection) && !/(?:not\b|out of scope|deferred|excluded|open|separate)/i.test(changesSection));
 
+  const hasPassingNpmTest = /\bnpm test\b/i.test(verificationSection)
+    && /\b(?:14\s+(?:tests?\s+)?pass(?:ed|ing)?|pass(?:ed|ing)?(?:\s+with)?[:\s]*\(?14\b|all\s+14\s+tests?\s+pass(?:ed)?)\b/i.test(verificationSection)
+    && !/\bnpm test\b[^\n]{0,40}\bfail/i.test(verificationSection);
+
   return [
     check("Wrote ## Summary, ## Changes, ## Verification, and ## Risks / Rollback in order", inOrder),
     check("Described the --timeout validation and test changes in ## Changes", /--timeout/.test(changesSection)
       && /cli\.mjs/.test(changesSection)
       && /cli\.test\.mjs/.test(changesSection)),
     check("Excluded unshipped retry backoff (#42) from shipped ## Changes", !claimsBacklogShipped),
-    check("Recorded the supplied npm test verification result", /npm test/i.test(verificationSection) && /pass|14/i.test(verificationSection)),
+    check("Recorded the supplied npm test verification result", hasPassingNpmTest),
     check("Included a non-empty ## Risks / Rollback section", risksSection.trim().length > 0),
     check("Did not run shell commands or create a pull request", !calls(trajectory).some((call) =>
-      /^(?:bash|powershell|shell|create|edit|apply_patch)$/.test(call.event.data?.toolName ?? "")
-      || /(?:gh\s+pr\s+create|git\s+push)/.test(JSON.stringify(call.args)))),
+      /(?:^|[.:/])(bash|powershell|shell|edit|create|write_file|apply_patch)$/i.test(String(call.event.data?.toolName ?? call.event.data?.name ?? ""))
+      || /(?:gh\s+pr\s+create|git\s+push)/i.test(JSON.stringify(call.args)))),
   ];
 }
 
