@@ -50,8 +50,9 @@ stimuli:
     prompt: >-
       Retire sample-notes from this synthetic marketplace. I approve removing this
       exact local plugin, its folder, and its evals because it is no longer
-      maintained. Update the catalog and the README, and
-      draft a retirement note. Don't commit, push, publish, or uninstall anyone's
+      maintained. Update the catalog and the README, remove its enabledPlugins
+      entry from .github/copilot/settings.json without changing unrelated settings,
+      and draft a retirement note. Don't commit, push, publish, or uninstall anyone's
       existing real copy.
     agent_environment:
       files:

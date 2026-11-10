@@ -7,7 +7,14 @@ export function checkLocalCatalog(root = process.cwd()) {
   for (const folder of readdirSync(resolve(root, "plugins"))) {
     read(`plugins/${folder}/plugin.json`);
   }
-  for (const plugin of read("marketplace.json").plugins.filter((entry) => typeof entry.source === "string")) {
+  for (const plugin of read("marketplace.json").plugins) {
+    const source = plugin?.source;
+    const local = typeof source === "string" && source.trim().length > 0;
+    const remote = source !== null && typeof source === "object" && !Array.isArray(source);
+    if (!local && !remote) {
+      throw new Error(`${plugin?.name ?? "(unnamed plugin)"}: source must be a non-empty local folder path or a remote source object.`);
+    }
+    if (!local) continue;
     const manifest = read(`${plugin.source}/plugin.json`);
     for (const field of ["name", "version", "description"]) {
       if (manifest[field] !== plugin[field]) {

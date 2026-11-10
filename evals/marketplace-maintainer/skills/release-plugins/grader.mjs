@@ -31,10 +31,16 @@ export function evaluate(trajectory, workspace, mode) {
     ];
   }
   if (mode === "retire") {
+    const settings = json(workspace, ".github/copilot/settings.json");
+    const enabled = settings?.enabledPlugins;
     return [
       check("Removed plugin files and catalog entry", !existsSync(resolve(workspace, "plugins/sample-notes"))
         && catalog.plugins.every((item) => item.name !== "sample-notes")),
       check("Removed the plugin's evals", !existsSync(resolve(workspace, "evals/sample-notes"))),
+      check("Removed its enabledPlugins entry from Copilot settings",
+        settings !== null && typeof settings === "object" && !Array.isArray(settings)
+        && (enabled === undefined || (enabled !== null && typeof enabled === "object"
+          && !Array.isArray(enabled) && !Object.hasOwn(enabled, "sample-notes@fixture-plugins")))),
       check("Removed its README row and install command", !/plugins\/sample-notes|install sample-notes@/.test(readFileSync(resolve(workspace, "README.md"), "utf8"))),
       check("Kept the rest of the marketplace", catalog.name === "fixture-plugins" && existsSync(resolve(workspace, "AGENTS.md"))),
       check("Drafted a retirement note", /sample-notes/.test(trajectory.output) && /retir/i.test(trajectory.output)),

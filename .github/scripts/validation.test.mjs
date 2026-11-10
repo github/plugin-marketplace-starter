@@ -63,6 +63,28 @@ test("local catalog checks name, version, and description, including a descripti
   assert.throws(() => checkLocalCatalog(directory), SyntaxError);
 });
 
+test("catalog entries with missing or invalid sources fail and name the plugin", (t) => {
+  const directory = fixture(t);
+  mkdirSync(resolve(directory, "plugins"));
+  const invalid = [
+    { name: "missing-source" },
+    { name: "misspelled-source", soruce: "./plugins/tool" },
+    ...[null, "", " \t ", false, 42, []].map((source, index) => ({ name: `invalid-source-${index}`, source })),
+  ];
+  for (const plugin of invalid) {
+    writeFileSync(resolve(directory, "marketplace.json"), JSON.stringify({ plugins: [plugin] }));
+    assert.throws(() => checkLocalCatalog(directory), new RegExp(`${plugin.name}: source must`));
+  }
+  const result = spawnSync(process.execPath, [resolve(root, ".github/scripts/check-local-catalog.mjs")], {
+    cwd: directory, encoding: "utf8", timeout: 10000,
+  });
+  assert.ifError(result.error);
+  assert.ok(result.status > 0, "the CI command must fail for an invalid source");
+  assert.match(result.stderr, new RegExp(`${invalid.at(-1).name}: source must`));
+  writeFileSync(resolve(directory, "marketplace.json"), JSON.stringify({ plugins: [entry()] }));
+  checkLocalCatalog(directory);
+});
+
 test("validator entrypoints reject invalid catalogs through linked checkouts and stay inert when imported", (t) => {
   const directory = fixture(t);
   const checkout = resolve(directory, "checkout");
@@ -150,6 +172,7 @@ test("remote name and supplied versions must match; optional versions retain the
 
 test("invalid remote sources and non-full pins fail before any API request", () => {
   const never = () => { assert.fail("API must not be called"); };
+  assert.throws(() => checkRemotePin(entry({ source: {} }), never), /tool: only github/);
   assert.throws(() => checkRemotePin(entry({ source: { source: "url" } }), never), /only github/);
   assert.throws(() => checkRemotePin(entry({ source: { source: "github", sha: "abc" } }), never), /full 40-character commit/);
 });

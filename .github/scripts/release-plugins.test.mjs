@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
@@ -98,4 +98,37 @@ test("known-release and confirmed-first-release cases retain their fixtures and 
       assert.match(readFileSync(resolve(workspace, "plugins/sample-notes/CHANGELOG.md"), "utf8"), /^## 1\.0\.1$/m);
     }
   }
+});
+
+test("retirement requires the settings entry to be absent, not merely disabled", async (t) => {
+  const { workspace, json, grade } = await fixture(t, "release-plugins-retires-approved-plugin");
+  const catalog = json("marketplace.json");
+  catalog.plugins = catalog.plugins.filter((plugin) => plugin.name !== "sample-notes");
+  writeFileSync(resolve(workspace, "marketplace.json"), JSON.stringify(catalog));
+  rmSync(resolve(workspace, "plugins/sample-notes"), { recursive: true });
+  rmSync(resolve(workspace, "evals/sample-notes"), { recursive: true });
+  writeFileSync(resolve(workspace, "README.md"), "# Fixture marketplace\n\nNo plugins remain.\n");
+  const settingsPath = resolve(workspace, ".github/copilot/settings.json");
+  const settings = json(".github/copilot/settings.json");
+  const output = "Retired sample-notes.";
+  for (const enabled of [true, false]) {
+    settings.enabledPlugins["sample-notes@fixture-plugins"] = enabled;
+    writeFileSync(settingsPath, JSON.stringify(settings));
+    const result = grade(output);
+    assert.equal(result.passed, false, `retired key must be removed even when set to ${enabled}`);
+    assert.match(result.evidence, /enabledPlugins.*settings/);
+  }
+  delete settings.enabledPlugins["sample-notes@fixture-plugins"];
+  settings.enabledPlugins["other@fixture-plugins"] = true;
+  writeFileSync(settingsPath, JSON.stringify(settings));
+  assert.equal(grade(output).passed, true, "unrelated plugin settings may remain");
+  delete settings.enabledPlugins;
+  writeFileSync(settingsPath, JSON.stringify(settings));
+  assert.equal(grade(output).passed, true, "an omitted enabledPlugins section has no retired entry");
+  for (const invalid of ["{", "null", "[]", '{"enabledPlugins":null}']) {
+    writeFileSync(settingsPath, invalid);
+    assert.equal(grade(output).passed, false, "invalid settings cannot establish that the entry was removed");
+  }
+  rmSync(settingsPath);
+  assert.equal(grade(output).passed, false, "deleting the settings file cannot substitute for removing the entry");
 });

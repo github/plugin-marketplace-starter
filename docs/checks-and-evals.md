@@ -19,6 +19,8 @@ pushes to `main`, and manual dispatch. It also:
   local-session guidance graders, and optional local-install recipes.
 - Validates each `plugins/*/plugin.json` against the
   [Agent Plugins schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json).
+- Rejects catalog entries without a non-empty local source path or a remote
+  source object.
 - Checks that each local entry in `marketplace.json` matches its `plugin.json`.
 - Checks that each remote entry pins an existing commit with a `plugin.json`
   whose name matches, and whose version matches when both specify one.
