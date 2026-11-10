@@ -176,6 +176,9 @@ The `release-plugins` skill can retire a plugin for you. By hand, delete
 one of the two plugins in `.github/copilot/settings.json`, remove its key there
 too.
 
+You can keep only remote entries by removing both bundled local plugins and
+their eval folders. No empty `plugins/` or `evals/` directory is needed.
+
 ## Checks
 
 ```sh
@@ -183,7 +186,7 @@ npm ci
 npm run lint
 ```
 
-`npm run lint` checks skill and eval files without calling a model.
+`npm run lint` checks local catalog consistency and skill and eval files without calling a model.
 [Validate](.github/workflows/validate.yml) also runs script tests, schema
 validation, catalog consistency checks, and remote-pin checks on every pull
 request.

@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Resolve annotated release tags through the GitHub commit API.
 - Require a named remote ref to resolve to its reviewed pinned commit.
 - Preserve release history and distinguish unreleased first versions from released plugins.
 - Document read-only review inputs and CLI agent selection.

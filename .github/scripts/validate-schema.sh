@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -eu
 
+shopt -s nullglob
+manifests=(plugins/*/plugin.json)
+if [ "${#manifests[@]}" -eq 0 ]; then
+    printf '%s\n' 'No local plugin manifests to validate.'
+    exit 0
+fi
+
 # Create before registering cleanup, so a collision never removes an existing directory.
 schema_dir=".github/scripts/.schema-check-$$"
 mkdir -- "$schema_dir"

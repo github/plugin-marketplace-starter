@@ -20,8 +20,8 @@ If the checkout isn't available, report that.
    inspect any existing entry. Use host authentication; never print tokens, run
    `gh auth token` to expose them, or embed credentials in URLs or files.
 2. Resolve the requested tag or branch to its full commit with
-   `gh api repos/OWNER/REPO/commits/REF --jq .sha` or
-   `git ls-remote https://github.com/OWNER/REPO REF`. For "latest", first read
+   `gh api repos/OWNER/REPO/commits/REF --jq .sha`, which also resolves annotated
+   tags to their commit rather than their tag object. For "latest", first read
    `gh api repos/OWNER/REPO/releases/latest` for stable releases. A 404 alone
    doesn't prove a prerelease-only or tag-only repo. Confirm repository access
    and list accessible non-draft releases with

@@ -40,12 +40,8 @@ private-repository access requirement.
 
 ```sh
 gh api repos/OWNER/REPO/commits/REF --jq .sha
-git ls-remote https://github.com/OWNER/REPO REF
 gh api "repos/OWNER/REPO/contents/PATH/plugin.json?ref=SHA" -H "Accept: application/vnd.github.raw"
 ```
-
-For an annotated tag, `git ls-remote` also lists a `REF^{}` line; that's the
-commit to pin.
 
 `commits/REF` returns the commit a tag points at, even for an annotated tag,
 whose own object ID differs. Some projects tag a release and then build it in
@@ -63,7 +59,7 @@ Preserve the user's channel and named ref. The starter's `eval` pin is in the
 If the channel isn't established, ask before selecting a prerelease.
 
 For a successfully confirmed tag-only repo, inspect
-`gh api --paginate 'repos/OWNER/REPO/tags?per_page=100'` (or `git ls-remote --tags`).
+`gh api --paginate 'repos/OWNER/REPO/tags?per_page=100'`.
 Tags aren't necessarily ordered by plugin version, and monorepos can mix
 products. Use the requested product/ref, or ask for an explicit candidate;
 don't guess the newest plugin from the first tag. Resolve and review that

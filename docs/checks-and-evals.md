@@ -10,9 +10,13 @@ npm ci
 npm run lint
 ```
 
-`npm run lint` checks every skill under `plugins/` and every eval under `evals/`
-with the pinned [Vally](https://microsoft.github.io/vally/) CLI. It never calls
-a model. [Validate](../.github/workflows/validate.yml) runs on pull requests,
+`npm run lint` checks local catalog consistency, then checks every skill under
+`plugins/` and every eval under `evals/` with the pinned
+[Vally](https://microsoft.github.io/vally/) CLI. A remote-only marketplace can
+omit both directories; schema validation also skips when no local manifests
+remain. Regression tests for the bundled maintenance plugins run only while
+those local plugins remain. Missing files for a retained plugin still fail.
+None of these checks calls a model. [Validate](../.github/workflows/validate.yml) runs on pull requests,
 pushes to `main`, and manual dispatch. It also:
 
 - Runs deterministic tests for the CI checks, native skill-invocation and

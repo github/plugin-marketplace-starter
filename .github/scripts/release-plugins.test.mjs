@@ -1,14 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const hasPlugin = existsSync(resolve(root, "plugins/marketplace-maintainer"));
+const releaseTest = hasPlugin ? test : test.skip;
 const evalDirectory = resolve(root, "evals/marketplace-maintainer/skills/release-plugins");
-const spec = parse(readFileSync(resolve(evalDirectory, "eval.yaml"), "utf8"));
+const spec = hasPlugin ? parse(readFileSync(resolve(evalDirectory, "eval.yaml"), "utf8")) : undefined;
 
 async function fixture(t, name) {
   const directory = resolve(root, ".github/scripts", `.release-test-${randomUUID()}`);
@@ -37,7 +39,7 @@ async function fixture(t, name) {
   };
 }
 
-test("unknown-release-base stages only current candidate files, with no released snapshot or alternative record", async (t) => {
+releaseTest("unknown-release-base stages only current candidate files, with no released snapshot or alternative record", async (t) => {
   const { workspace, json } = await fixture(t, "release-plugins-asks-for-unknown-release-base");
   const files = readdirSync(workspace, { recursive: true })
     .filter((path) => statSync(resolve(workspace, path)).isFile())
@@ -57,7 +59,7 @@ test("unknown-release-base stages only current candidate files, with no released
   assert.match(readFileSync(resolve(workspace, "plugins/sample-notes/CHANGELOG.md"), "utf8"), /^## 1\.0\.1$/m);
 });
 
-test("unknown-release-base requires an actionable evidence request instead of a bare base mention or readiness claim", async (t) => {
+releaseTest("unknown-release-base requires an actionable evidence request instead of a bare base mention or readiness claim", async (t) => {
   const { grade, stimulus } = await fixture(t, "release-plugins-asks-for-unknown-release-base");
   assert.ok(stimulus.graders.some((item) => item.type === "diff-empty"), "the no-edit boundary must remain enforced");
   for (const output of [
@@ -83,7 +85,7 @@ test("unknown-release-base requires an actionable evidence request instead of a 
   }
 });
 
-test("known-release and confirmed-first-release cases retain their fixtures and candidate versions", async (t) => {
+releaseTest("known-release and confirmed-first-release cases retain their fixtures and candidate versions", async (t) => {
   for (const name of ["release-plugins-keeps-already-bumped-version", "release-plugins-preserves-unreleased-initial-version"]) {
     const { workspace, stimulus, json, grade } = await fixture(t, name);
     assert.equal(json("released.json").plugins[0].version, "1.0.0");
@@ -100,7 +102,7 @@ test("known-release and confirmed-first-release cases retain their fixtures and 
   }
 });
 
-test("retirement requires the settings entry to be absent, not merely disabled", async (t) => {
+releaseTest("retirement requires the settings entry to be absent, not merely disabled", async (t) => {
   const { workspace, json, grade } = await fixture(t, "release-plugins-retires-approved-plugin");
   const catalog = json("marketplace.json");
   catalog.plugins = catalog.plugins.filter((plugin) => plugin.name !== "sample-notes");

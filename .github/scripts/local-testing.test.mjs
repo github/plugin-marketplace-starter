@@ -2,20 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createDefaultGraderRegistry } from "@microsoft/vally";
 import { parse } from "yaml";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const guidanceTest = existsSync(resolve(root, "plugins/plugin-authoring")) ? test : test.skip;
 const skillEvals = [
   ["plugin-authoring", ["add-plugin", "try-plugin-locally", "submit-plugin"]],
   ["marketplace-maintainer", ["update-remote-pins", "release-plugins"]],
-].flatMap(([plugin, skills]) => skills.map((skill) => ({
+].filter(([plugin]) => existsSync(resolve(root, "plugins", plugin))).flatMap(([plugin, skills]) => skills.map((skill) => ({
   skill, skills,
   spec: parse(readFileSync(resolve(root, "evals", plugin, "skills", skill, "eval.yaml"), "utf8")),
 })));
+const invocationTest = skillEvals.length ? test : test.skip;
 
 async function fixture(t) {
   const directory = resolve(root, ".github/scripts", `.local-test-${randomUUID()} space`);
@@ -32,16 +34,16 @@ async function fixture(t) {
     "```sh", `copilot --plugin-dir "${path}"`, "```",
     "Session: not started", "Discovery: unverified", "Behavior: unverified",
   ].join("\n");
-  const grade = (text = output(), commands = [], toolCalls = []) => score("local-guidance", evaluate({
+  const grade = (text = output(), commands = [], toolCalls = [], results = []) => score("local-guidance", evaluate({
     output: text,
-    events: [...commands.map((command) => ({ toolName: "powershell", arguments: { command } })), ...toolCalls].map((call, index) => ({
+    events: [...[...commands.map((command) => ({ toolName: "powershell", arguments: { command } })), ...toolCalls].map((call, index) => ({
       type: "tool_call", data: { toolCallId: String(index), ...call },
-    })),
+    })), ...results],
   }, directory));
   return { directory, selected, output, grade };
 }
 
-test("local guidance accepts the selected absolute checkout path with spaces without running Copilot", async (t) => {
+guidanceTest("local guidance accepts the selected absolute checkout path with spaces without running Copilot", async (t) => {
   const { output, grade, selected } = await fixture(t);
   for (const path of [selected, selected.replaceAll("\\", "/")]) {
     assert.equal(grade(output(path)).passed, true);
@@ -51,7 +53,7 @@ test("local guidance accepts the selected absolute checkout path with spaces wit
   if (process.platform === "win32") assert.equal(grade(output(selected.toLowerCase())).passed, true);
 });
 
-test("local guidance rejects relative, wrong, installed, and published plugin sources", async (t) => {
+guidanceTest("local guidance rejects relative, wrong, installed, and published plugin sources", async (t) => {
   const { directory, output, grade } = await fixture(t);
   for (const path of [
     "./plugins/sample-notes", directory, resolve(directory, "plugins/other"),
@@ -66,7 +68,7 @@ test("local guidance rejects relative, wrong, installed, and published plugin so
   assert.equal(grade(additional).passed, false, "an extra source must not hide behind a correct local path");
 });
 
-test("local guidance rejects attempted install, uninstall, profile, session, and branch mutations even without a successful tool result", async (t) => {
+guidanceTest("local guidance rejects attempted install, uninstall, profile, session, and branch mutations even without a successful tool result", async (t) => {
   const { output, grade, selected } = await fixture(t);
   for (const command of [
     "copilot plugin install sample-notes@fixture-plugins",
@@ -79,21 +81,30 @@ test("local guidance rejects attempted install, uninstall, profile, session, and
     'node "node_modules/@github/copilot/npm-loader.js" --plugin-dir .',
     "$env:COPILOT_HOME = 'new-profile'",
     "git switch candidate", "git -C . switch candidate", "git checkout candidate", "git stash", "git reset --hard",
+    'git -C "C:\\checkout\\project" checkout candidate', 'git -c advice.detachedHead=false checkout candidate',
   ]) {
     const result = grade(output(), [command]);
     assert.equal(result.passed, false, command);
     assert.match(result.evidence, /Did not launch Copilot/);
   }
+  for (const command of ["copilot plugin install $spec", "git checkout candidate"]) {
+    assert.equal(grade(output(), [command], [], [{
+      type: "tool_result", data: { toolCallId: "0", success: false, result: "Permission denied; command not run." },
+    }]).passed, false, "denied attempts still violate preparation-only instructions");
+  }
   assert.equal(grade(output().replace("Session: not started", "```sh\ncopilot plugin install $spec\n```\nSession: not started")).passed, false);
 });
 
-test("local guidance ignores read-only and descriptive arguments but still checks shell commands", async (t) => {
+guidanceTest("local guidance ignores read-only and descriptive arguments but still checks shell commands", async (t) => {
   const { output, grade, selected } = await fixture(t);
   for (const call of [
     { toolName: "grep", arguments: { pattern: "copilot --plugin-dir" } },
     { toolName: "report_intent", arguments: { intent: "Copilot command preparation" } },
     { toolName: "report_intent", arguments: { intent: "Checking git state without checkout" } },
     { toolName: "functions.powershell", arguments: { command: "git status --short", description: "Checking git state without checkout" } },
+    { toolName: "powershell", arguments: { command: "Write-Output 'Do not use git checkout; keep your changes.'" } },
+    { toolName: "bash", arguments: { command: "echo 'Do not use git checkout; keep your changes.'" } },
+    { toolName: "powershell", arguments: { command: 'git -C "C:\\checkout\\project" status --short' } },
   ]) {
     assert.equal(grade(output(), [], [call]).passed, true, JSON.stringify(call));
   }
@@ -104,7 +115,7 @@ test("local guidance ignores read-only and descriptive arguments but still check
   }
 });
 
-test("every skill eval case keeps a strict native required or disallowed invocation check", () => {
+invocationTest("every skill eval case keeps a strict native required or disallowed invocation check", () => {
   for (const { skill, skills, spec } of skillEvals) {
     assert.equal(spec.scoring.threshold, 1, skill);
     for (const stimulus of spec.stimuli) {
@@ -116,7 +127,7 @@ test("every skill eval case keeps a strict native required or disallowed invocat
   }
 });
 
-test("native skill grader requires exact activation in every positive and boundary case", async () => {
+invocationTest("native skill grader requires exact activation in every positive and boundary case", async () => {
   const grader = createDefaultGraderRegistry().get("skill-invocation");
   assert.ok(grader);
   for (const { skill, spec } of skillEvals) {
@@ -151,7 +162,7 @@ test("native skill grader requires exact activation in every positive and bounda
   }
 });
 
-test("native skill grader passes no activation and rejects every forbidden skill in negative cases", async () => {
+invocationTest("native skill grader passes no activation and rejects every forbidden skill in negative cases", async () => {
   const grader = createDefaultGraderRegistry().get("skill-invocation");
   assert.ok(grader);
   for (const { spec } of skillEvals) {
@@ -171,7 +182,7 @@ test("native skill grader passes no activation and rejects every forbidden skill
   }
 });
 
-test("local program grader reports outcome checks independently of invocation", async (t) => {
+guidanceTest("local program grader reports outcome checks independently of invocation", async (t) => {
   const { directory, output } = await fixture(t);
   const input = resolve(directory, "grader-input.json");
   writeFileSync(input, JSON.stringify({ trajectory: { output: output(), events: [] } }));
@@ -187,7 +198,7 @@ test("local program grader reports outcome checks independently of invocation", 
   });
 });
 
-test("local guidance doesn't count an echoed command as verified host discovery or behavior", async (t) => {
+guidanceTest("local guidance doesn't count an echoed command as verified host discovery or behavior", async (t) => {
   const { output, grade, selected } = await fixture(t);
   const fabricated = output().replaceAll("unverified", "verified");
   assert.equal(grade(fabricated, [`Write-Output 'copilot --plugin-dir "${selected}"'`]).passed, false);
@@ -199,7 +210,7 @@ test("local guidance doesn't count an echoed command as verified host discovery 
   assert.equal(grade(output().replace("trust and tool permissions", "prompts")).passed, false);
 });
 
-test("local guidance refuses a missing or changed selected local manifest/catalog", async (t) => {
+guidanceTest("local guidance refuses a missing or changed selected local manifest/catalog", async (t) => {
   const { directory, grade } = await fixture(t);
   writeFileSync(resolve(directory, "plugins/sample-notes/plugin.json"), '{"name":"different"}');
   assert.equal(grade().passed, false);

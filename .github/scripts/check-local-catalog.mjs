@@ -1,10 +1,11 @@
-import { readFileSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export function checkLocalCatalog(root = process.cwd()) {
   const read = (path) => JSON.parse(readFileSync(resolve(root, path), "utf8"));
-  for (const folder of readdirSync(resolve(root, "plugins"))) {
+  const folders = existsSync(resolve(root, "plugins")) ? readdirSync(resolve(root, "plugins")) : [];
+  for (const folder of folders) {
     read(`plugins/${folder}/plugin.json`);
   }
   for (const plugin of read("marketplace.json").plugins) {

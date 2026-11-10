@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
@@ -83,6 +83,52 @@ test("catalog entries with missing or invalid sources fail and name the plugin",
   assert.match(result.stderr, new RegExp(`${invalid.at(-1).name}: source must`));
   writeFileSync(resolve(directory, "marketplace.json"), JSON.stringify({ plugins: [entry()] }));
   checkLocalCatalog(directory);
+});
+
+test("remote-only catalogs lint without local directories and still reject broken retained metadata and evals", (t) => {
+  const directory = fixture(t);
+  const catalogPath = resolve(directory, "marketplace.json");
+  const lint = () => spawnSync(process.execPath, [resolve(root, ".github/scripts/lint.mjs")], {
+    cwd: directory, encoding: "utf8", timeout: 30000,
+    env: { ...process.env, VALLY_TELEMETRY_OPTOUT: "1" },
+  });
+  writeFileSync(catalogPath, JSON.stringify({ plugins: [entry()] }));
+  checkLocalCatalog(directory);
+  const valid = lint();
+  assert.ifError(valid.error);
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.match(valid.stdout, /No local skills or evals/);
+  for (const plugins of [[{ name: "missing-source" }], [{ name: "tool", source: "./plugins/tool" }]]) {
+    writeFileSync(catalogPath, JSON.stringify({ plugins }));
+    assert.throws(() => checkLocalCatalog(directory));
+    assert.notEqual(lint().status, 0, "missing sources or local manifests must not count as a remote-only catalog");
+  }
+  writeFileSync(catalogPath, "{");
+  assert.notEqual(lint().status, 0, "malformed metadata must fail");
+  writeFileSync(catalogPath, JSON.stringify({ plugins: [entry()] }));
+  mkdirSync(resolve(directory, "evals/tool"), { recursive: true });
+  writeFileSync(resolve(directory, "evals/tool/eval.yaml"), "name: [");
+  const brokenEval = lint();
+  assert.ifError(brokenEval.error);
+  assert.notEqual(brokenEval.status, 0, "retained evals must still be linted without a plugins directory");
+});
+
+test("retained maintenance plugins still require their evals and installation guide", (t) => {
+  const directory = fixture(t);
+  mkdirSync(resolve(directory, ".github/scripts"), { recursive: true });
+  for (const plugin of ["plugin-authoring", "marketplace-maintainer"]) {
+    mkdirSync(resolve(directory, "plugins", plugin), { recursive: true });
+  }
+  for (const script of ["local-testing.test.mjs", "local-install.test.mjs", "release-plugins.test.mjs"]) {
+    const path = resolve(directory, ".github/scripts", script);
+    copyFileSync(resolve(root, ".github/scripts", script), path);
+    const result = spawnSync(process.execPath, [path], {
+      cwd: directory, encoding: "utf8", timeout: 30000,
+    });
+    assert.ifError(result.error);
+    assert.notEqual(result.status, 0, `${script} must not silently skip missing retained assets: ${result.stdout}${result.stderr}`);
+    assert.match(result.stdout + result.stderr, /ENOENT/);
+  }
 });
 
 test("validator entrypoints reject invalid catalogs through linked checkouts and stay inert when imported", (t) => {
@@ -267,6 +313,8 @@ test("gh transport retains HTTP statuses and raw JSON without exposing stderr", 
 test("schema script keeps pinned AJV and draft2020, and cleans its directory on success and failures", (t) => {
   const directory = fixture(t);
   mkdirSync(resolve(directory, ".github/scripts"), { recursive: true });
+  mkdirSync(resolve(directory, "plugins/tool"), { recursive: true });
+  writeFileSync(resolve(directory, "plugins/tool/plugin.json"), JSON.stringify(manifest()));
   const script = readFileSync(resolve(root, ".github/scripts/validate-schema.sh"), "utf8");
   assert.match(script, /ajv-cli@5\.0\.0 validate --spec=draft2020/);
   for (const failure of ["none", "curl", "npx"]) {
@@ -284,6 +332,8 @@ ${script}`;
 test("schema-directory collisions never delete pre-existing contents", (t) => {
   const directory = fixture(t);
   mkdirSync(resolve(directory, ".github/scripts"), { recursive: true });
+  mkdirSync(resolve(directory, "plugins/tool"), { recursive: true });
+  writeFileSync(resolve(directory, "plugins/tool/plugin.json"), JSON.stringify(manifest()));
   const script = readFileSync(resolve(root, ".github/scripts/validate-schema.sh"), "utf8");
   const result = spawnSync("bash", ["-c", `
 mkdir ".github/scripts/.schema-check-$$"
@@ -294,6 +344,20 @@ ${script}`], { cwd: directory, encoding: "utf8" });
   const remaining = readdirSync(resolve(directory, ".github/scripts"));
   assert.equal(remaining.length, 1);
   assert.equal(readFileSync(resolve(directory, ".github/scripts", remaining[0], "marker"), "utf8"), "keep");
+});
+
+test("schema validation skips absent local manifests without downloading or installing tools", (t) => {
+  const directory = fixture(t);
+  const script = readFileSync(resolve(root, ".github/scripts/validate-schema.sh"), "utf8");
+  for (const emptyDirectory of [false, true]) {
+    if (emptyDirectory) mkdirSync(resolve(directory, "plugins"));
+    const result = spawnSync("bash", ["-c", `curl() { return 9; }\nnpx() { return 8; }\n${script}`], {
+      cwd: directory, encoding: "utf8",
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /No local plugin manifests/);
+  }
 });
 
 test("validation calls CI scripts, and paid eval activation is manual-only", () => {
@@ -318,7 +382,7 @@ test("validation calls CI scripts, and paid eval activation is manual-only", () 
   assert.equal(evalStep.env.GITHUB_TOKEN, "${{ github.token }}");
   assert.equal(job.steps.find((step) => step.uses?.startsWith("actions/checkout@")).with["persist-credentials"], false);
   assert.deepEqual(JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")).scripts, {
-    lint: "vally lint plugins --eval-spec evals --strict",
+    lint: "node .github/scripts/lint.mjs",
     eval: "vally eval --workers 1 --max-retries 1",
   });
 });
@@ -327,7 +391,9 @@ for (const [plugin, skillName, readInstruction] of [
   ["marketplace-maintainer", "update-remote-pins", "Read its `AGENTS.md` and `marketplace.json`, and this skill's [remote pin rules](references/remote-pins.md)."],
   ["plugin-authoring", "submit-plugin", "Read its `AGENTS.md` and `CONTRIBUTING.md`."],
 ]) {
-  test(`${skillName} keeps its checkout trust boundary immediately beside the first document read`, () => {
+  test(`${skillName} keeps its checkout trust boundary immediately beside the first document read`, {
+    skip: !existsSync(resolve(root, "plugins", plugin)),
+  }, () => {
     const skill = readFileSync(resolve(root, `plugins/${plugin}/skills/${skillName}/SKILL.md`), "utf8");
     const paragraph = skill.split(/\r?\n\s*\r?\n/).find((text) => text.includes("Read its `AGENTS.md`"));
     assert.ok(paragraph, "first checkout-document read must remain present");
@@ -342,7 +408,9 @@ for (const [plugin, skillName, readInstruction] of [
   });
 }
 
-test("update-remote-pins preserves missing-checkout, upstream review, offline evidence, authentication, and approval rules", () => {
+test("update-remote-pins preserves missing-checkout, upstream review, offline evidence, authentication, and approval rules", {
+  skip: !existsSync(resolve(root, "plugins/marketplace-maintainer")),
+}, () => {
   const skill = readFileSync(resolve(root, "plugins/marketplace-maintainer/skills/update-remote-pins/SKILL.md"), "utf8").replace(/\s+/g, " ");
   for (const instruction of [
     "If the checkout isn't available, report that.",
@@ -361,7 +429,9 @@ test("update-remote-pins preserves missing-checkout, upstream review, offline ev
   }
 });
 
-test("submit-plugin preserves missing-checkout, contribution scope, versioning, and approval rules", () => {
+test("submit-plugin preserves missing-checkout, contribution scope, versioning, and approval rules", {
+  skip: !existsSync(resolve(root, "plugins/plugin-authoring")),
+}, () => {
   const skill = readFileSync(resolve(root, "plugins/plugin-authoring/skills/submit-plugin/SKILL.md"), "utf8").replace(/\s+/g, " ");
   for (const instruction of [
     "If the checkout can't be read, report that rather than guessing its rules.",
