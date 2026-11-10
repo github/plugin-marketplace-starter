@@ -1,10 +1,14 @@
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
+import { parseArgs, stripVTControlCharacters } from "node:util";
 
 const hasGraderError = (grade) => grade?.status === "error" || (grade?.details ?? []).some(hasGraderError);
-const escapeCell = (text) => String(text).replaceAll("|", "\\|").replaceAll("\n", " ").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+const stripTerminalControls = (text) => stripVTControlCharacters(String(text ?? ""))
+  // eslint-disable-next-line no-control-regex
+  .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]+/gu, " ")
+  .trim();
+const escapeCell = (text) => stripTerminalControls(text).replaceAll("|", "\\|").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const finiteNonNegative = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 const sanitizeIdentifier = (value, fallback = "check") => {
   const cleaned = String(value ?? fallback).replace(/[^A-Za-z0-9._:-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -107,7 +111,7 @@ export function summarizeRun(records) {
             : undefined;
     const fatal = fatalCode !== undefined;
     if (!fatal && (typeof grade.passed !== "boolean" || !Number.isFinite(grade.score) || grade.score < 0 || grade.score > 1)) {
-      throw new Error(`Invalid grade: ${record.stimulus}`);
+      throw new Error(`Invalid grade: ${sanitizeIdentifier(record.stimulus, "trial")}`);
     }
     if (fatal) {
       errorCount++;

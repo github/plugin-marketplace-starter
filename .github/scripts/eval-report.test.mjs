@@ -368,6 +368,25 @@ test("eval-report redacts raw grader evidence and error strings, requires comple
     ),
     "Unchanged",
   );
+
+  // Strip terminal escape sequences (including OSC 52) from report fields and invalid-grade errors
+  const osc52Stimulus = "case-\u001b]52;c;ZWNobyBpw6g=\u0007\u001b[31mred\u001b[0m";
+  const escapedSummary = summarizeRun([
+    makeTrial({ runId: "osc-run", stimulus: osc52Stimulus, passed: true, gradeScore: 1 }),
+    makeFooter("osc-run"),
+  ]);
+  const escapedReport = renderReport(escapedSummary, "vally-results/\u001b]52;c;bad\u0007/results.jsonl");
+  assert.doesNotMatch(escapedReport, /\u001b|\u0007/);
+  assert.throws(
+    () => summarizeRun([
+      {
+        ...makeTrial({ runId: "bad-grade-osc", stimulus: osc52Stimulus }),
+        gradeResult: { status: "success", passed: true, score: 2 },
+      },
+      makeFooter("bad-grade-osc"),
+    ]),
+    (err) => err instanceof Error && /^Invalid grade: /.test(err.message) && !/[\u001b\u0007]/.test(err.message),
+  );
 });
 
 prDescriptionTest("pr-description eval stages the multi-skill marketplace cohort and enforces non-collision", async () => {
@@ -449,6 +468,7 @@ prDescriptionTest("pr-description program grader enforces ordered headings, fact
     "- `npm test` (14 tests): passed.",
     "- `npm test` — 14 tests, all passing.",
     "- Ran `npm test`; 14/14 tests passed.",
+    "- `npm test`: 14 tests passed, 0 failed, 0 errors.",
   ]) {
     const equivalentOutput = validOutput.replace("- `npm test` passed (14 tests).", passingLine);
     assert.equal(
@@ -458,13 +478,16 @@ prDescriptionTest("pr-description program grader enforces ordered headings, fact
     );
   }
 
-  const missingPassWord = validOutput.replace(
-    "- `npm test` passed (14 tests).",
+  for (const negatedLine of [
     "- `npm test` (14 tests).",
-  );
-  const missingPassWordResult = score("pr-description-contract", evaluatePrDescription({ output: missingPassWord, events: [] }));
-  assert.equal(missingPassWordResult.passed, false);
-  assert.match(missingPassWordResult.evidence, /Recorded the supplied npm test verification result/);
+    "- `npm test` did not pass (14 tests).",
+    "- `npm test` (14 tests): not passing.",
+  ]) {
+    const negatedOutput = validOutput.replace("- `npm test` passed (14 tests).", negatedLine);
+    const negatedResult = score("pr-description-contract", evaluatePrDescription({ output: negatedOutput, events: [] }));
+    assert.equal(negatedResult.passed, false, `expected negated verification to fail: ${negatedLine}`);
+    assert.match(negatedResult.evidence, /Recorded the supplied npm test verification result/);
+  }
 
   const leaksBacklogIntoChanges = validOutput.replace(
     "- Added unit tests for `--timeout 0` and `--timeout -5` in `test/cli.test.mjs`.",

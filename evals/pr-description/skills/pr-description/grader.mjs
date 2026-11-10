@@ -20,10 +20,12 @@ export function evaluate(trajectory) {
   const claimsBacklogShipped = /(?:\badded\b|\bimplemented\b|\bshipped\b|\bcompleted\b)[^\n]*(?:retry backoff|#42)/i.test(changesSection)
     || (/(?:retry backoff|#42)/i.test(changesSection) && !/(?:not\b|out of scope|deferred|excluded|open|separate)/i.test(changesSection));
 
-  const hasPassingNpmTest = /\bnpm test\b/i.test(verificationSection)
-    && /\b14\b/.test(verificationSection)
-    && /\bpass(?:ed|ing|es)?\b/i.test(verificationSection)
-    && !/\b(?:fail(?:ed|ure|s|ing)?|broken|error(?:ed|s)?)\b/i.test(verificationSection);
+  const sanitizedVerification = verificationSection.replace(/\b0\s+(?:tests?\s+)?(?:fail(?:ed|ure|s|ing)?|broken|error(?:ed|s)?)\b/gi, "0 none");
+  const hasPassingNpmTest = /\bnpm test\b/i.test(sanitizedVerification)
+    && /\b14\b/.test(sanitizedVerification)
+    && /\bpass(?:ed|ing|es)?\b/i.test(sanitizedVerification)
+    && !/\b(?:did\s+not|didn't|not|no|never|without)\s+(?:all\s+)?pass(?:ed|ing|es)?\b/i.test(sanitizedVerification)
+    && !/\b(?:fail(?:ed|ure|s|ing)?|broken|error(?:ed|s)?)\b/i.test(sanitizedVerification);
 
   return [
     check("Wrote ## Summary, ## Changes, ## Verification, and ## Risks / Rollback in order", inOrder),
