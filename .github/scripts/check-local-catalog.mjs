@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 
 export function checkLocalCatalog(root = process.cwd()) {
   const read = (path) => JSON.parse(readFileSync(resolve(root, path), "utf8"));
-  const folders = existsSync(resolve(root, "plugins")) ? readdirSync(resolve(root, "plugins")) : [];
+  const folders = existsSync(resolve(root, "plugins"))
+    ? readdirSync(resolve(root, "plugins"), { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+    : [];
   for (const folder of folders) {
     read(`plugins/${folder}/plugin.json`);
   }

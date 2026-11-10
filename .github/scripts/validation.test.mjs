@@ -52,6 +52,7 @@ test("local catalog checks name, version, and description, including a descripti
   const local = { ...manifest(), description: "The manifest description." };
   const catalog = { plugins: [{ ...local, source: "./plugins/tool" }] };
   writeFileSync(resolve(directory, "plugins/tool/plugin.json"), JSON.stringify(local));
+  writeFileSync(resolve(directory, "plugins/.DS_Store"), "");
   writeFileSync(resolve(directory, "marketplace.json"), JSON.stringify(catalog));
   checkLocalCatalog(directory);
   for (const field of ["name", "version", "description"]) {
