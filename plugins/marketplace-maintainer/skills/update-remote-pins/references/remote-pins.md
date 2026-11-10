@@ -28,7 +28,7 @@ in the marketplace, people install them only if they choose to.
 | `source.repo` | Required. `OWNER/REPO`, not a URL. |
 | `source.path` | The directory that holds `plugin.json`, relative to the repository root, such as `packages/plugin`. No leading `./` or `/`, no `..`, and no backslashes. Omit it when `plugin.json` is at the root. |
 | `source.sha` | Required. The full 40-character commit SHA you reviewed. A tag or branch can move; a commit can't. |
-| `source.ref` | Recommended. The release tag or branch the SHA came from, so reviewers can tell what's pinned. |
+| `source.ref` | Recommended. A release tag or branch that resolves to the pinned SHA. Validation fails if it resolves elsewhere, including after a ref moves. |
 | `version` | Optional. The upstream `plugin.json` version at that SHA. |
 | `description`, `homepage` | Optional, but they help people choose. |
 
@@ -49,7 +49,8 @@ commit to pin.
 
 `commits/REF` returns the commit a tag points at, even for an annotated tag,
 whose own object ID differs. Some projects tag a release and then build it in
-a later commit; pin the commit their own catalog uses.
+a later commit. If their own catalog pins that build commit, use a matching
+build ref or omit the optional `ref`; don't label it with a different tag's SHA.
 
 For "latest stable", `gh api repos/OWNER/REPO/releases/latest` excludes
 prereleases and drafts. If it returns 404, first confirm repository access with
@@ -72,8 +73,10 @@ candidate as above before editing the pin.
 
 Before and after an update, confirm with `gh api` that the SHA exists, that
 `plugin.json` is at `path` at that SHA, and that its `name` and `version`
-match the catalog entry. Note when `ref` has moved away from the pin, and
-when upstream has a newer release.
+match the catalog entry. When `ref` is supplied, resolve it in the named
+upstream repository and require that its commit matches `sha`. A moved or
+mismatched ref fails validation. Review upstream changes before updating the
+pin; don't change the SHA just to make the check pass.
 
 ## Keep pins current
 

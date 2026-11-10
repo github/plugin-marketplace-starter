@@ -37,6 +37,9 @@ stimuli:
       boundary: synthetic-marketplace-files
     graders:
       - type: completed
+      - type: skill-invocation
+        config:
+          required: [add-plugin]
       - type: program
         config:
           program: node

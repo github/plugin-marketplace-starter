@@ -1,12 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { usedSkill } from "../../evals/_shared/graders/common.mjs";
+import { createDefaultGraderRegistry } from "@microsoft/vally";
+import { parse } from "yaml";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const skillEvals = [
+  ["plugin-authoring", ["add-plugin", "try-plugin-locally", "submit-plugin"]],
+  ["marketplace-maintainer", ["update-remote-pins", "release-plugins"]],
+].flatMap(([plugin, skills]) => skills.map((skill) => ({
+  skill, skills,
+  spec: parse(readFileSync(resolve(root, "evals", plugin, "skills", skill, "eval.yaml"), "utf8")),
+})));
 
 async function fixture(t) {
   const directory = resolve(root, ".github/scripts", `.local-test-${randomUUID()} space`);
@@ -95,20 +104,87 @@ test("local guidance ignores read-only and descriptive arguments but still check
   }
 });
 
-test("skill usage requires a successful file read or an explicit activation", () => {
-  const name = "try-plugin-locally";
-  const call = {
-    type: "tool_call",
-    data: { toolCallId: "read-skill", toolName: "view", arguments: { path: `/skills/${name}/SKILL.md` } },
-  };
-  const result = (success) => ({
-    type: "tool_result", data: { toolCallId: "read-skill", success, result: success ? "Skill contents" : "File not found" },
+test("every skill eval case keeps a strict native required or disallowed invocation check", () => {
+  for (const { skill, skills, spec } of skillEvals) {
+    assert.equal(spec.scoring.threshold, 1, skill);
+    for (const stimulus of spec.stimuli) {
+      const invocation = stimulus.graders.filter((grader) => grader.type === "skill-invocation");
+      assert.equal(invocation.length, 1, stimulus.name);
+      assert.deepEqual(invocation[0].config, stimulus.tags?.control === "negative"
+        ? { disallowed: skills } : { required: [skill] }, stimulus.name);
+    }
+  }
+});
+
+test("native skill grader requires exact activation in every positive and boundary case", async () => {
+  const grader = createDefaultGraderRegistry().get("skill-invocation");
+  assert.ok(grader);
+  for (const { skill, spec } of skillEvals) {
+    const reads = [
+      `C:\\skills\\${skill}\\SKILL.md`,
+      `/skills/${skill}/references/guide.md`,
+    ].flatMap((path, index) => [
+      { type: "tool_call", data: { toolCallId: `read-${index}`, toolName: "view", arguments: { path } } },
+      { type: "tool_result", data: { toolCallId: `read-${index}`, success: true, result: "Skill contents" } },
+    ]);
+    const search = [
+      { type: "tool_call", data: { toolCallId: "search", toolName: "grep", arguments: { pattern: `/skills/${skill}/SKILL.md` } } },
+      { type: "tool_result", data: { toolCallId: "search", success: true, result: "Found skill path" } },
+    ];
+    for (const stimulus of spec.stimuli.filter((item) => item.tags?.control !== "negative")) {
+      const config = stimulus.graders.find((item) => item.type === "skill-invocation").config;
+      for (const [label, events, passed] of [
+        ["matching activation", [{ type: "skill_activation", data: { name: skill } }], true],
+        ["no activation", [], false],
+        ["wrong activation", [{ type: "skill_activation", data: { name: `${skill}-other` } }], false],
+        ["successful file reads", reads, false],
+        ["successful search", search, false],
+      ]) {
+        const result = await grader.grade({
+          stimulus, config,
+          trajectory: { output: `Completed using ${skill}; see /skills/${skill}/SKILL.md.`, endReason: "completed", events },
+        });
+        assert.equal(result.passed, passed, `${stimulus.name}: ${label}`);
+        assert.equal(result.score, passed ? 1 : 0, `${stimulus.name}: ${label}`);
+      }
+    }
+  }
+});
+
+test("native skill grader passes no activation and rejects every forbidden skill in negative cases", async () => {
+  const grader = createDefaultGraderRegistry().get("skill-invocation");
+  assert.ok(grader);
+  for (const { spec } of skillEvals) {
+    for (const stimulus of spec.stimuli.filter((item) => item.tags?.control === "negative")) {
+      const config = stimulus.graders.find((item) => item.type === "skill-invocation").config;
+      const absent = await grader.grade({ stimulus, config, trajectory: { output: "Done.", events: [] } });
+      assert.equal(absent.passed, true, stimulus.name);
+      for (const name of config.disallowed) {
+        const result = await grader.grade({
+          stimulus, config,
+          trajectory: { output: "Done.", events: [{ type: "skill_activation", data: { name } }] },
+        });
+        assert.equal(result.passed, false, `${stimulus.name}: ${name}`);
+        assert.equal(result.score, 0, `${stimulus.name}: ${name}`);
+      }
+    }
+  }
+});
+
+test("local program grader reports outcome checks independently of invocation", async (t) => {
+  const { directory, output } = await fixture(t);
+  const input = resolve(directory, "grader-input.json");
+  writeFileSync(input, JSON.stringify({ trajectory: { output: output(), events: [] } }));
+  const result = spawnSync(process.execPath, [resolve(directory, "grader.mjs")], {
+    cwd: directory, encoding: "utf8", timeout: 10000,
+    env: { ...process.env, EVALUATE_GRADER_INPUT: input, EVALUATE_WORKSPACE: directory },
   });
-  assert.equal(usedSkill({ events: [call, result(false)] }, name), false);
-  assert.equal(usedSkill({ events: [call] }, name), false);
-  assert.equal(usedSkill({ events: [call, result(true)] }, name), true);
-  assert.equal(usedSkill({ events: [call, result(true)] }, "another-skill"), false);
-  assert.equal(usedSkill({ events: [{ type: "skill_activation", data: { name } }] }, name), true);
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    name: "plugin-authoring-try", kind: "code", passed: true, score: 1,
+    evidence: "All contract assertions passed.",
+  });
 });
 
 test("local guidance doesn't count an echoed command as verified host discovery or behavior", async (t) => {

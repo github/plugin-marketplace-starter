@@ -41,5 +41,5 @@ export function evaluate(trajectory, workspace) {
 }
 
 if (isMain(import.meta.url)) {
-  await runGrade("plugin-authoring-try", evaluate, "try-plugin-locally");
+  await runGrade("plugin-authoring-try", evaluate);
 }

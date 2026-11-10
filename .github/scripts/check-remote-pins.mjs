@@ -41,14 +41,24 @@ function requireSuccess(response, label) {
 
 export function checkRemotePin(entry, api = githubApi) {
   const fail = (message) => { throw new Error(`${entry.name}: ${message}`); };
-  const { source, repo, path, sha } = entry.source ?? {};
+  const { source, repo, path, sha, ref } = entry.source ?? {};
   if (source !== "github") fail("only github remote sources are supported.");
   if (!/^[0-9a-f]{40}$/.test(sha ?? "")) fail("source.sha must be a full 40-character commit.");
+  if (ref !== undefined && (typeof ref !== "string" || !ref.trim())) {
+    fail("source.ref must be a non-empty string when supplied.");
+  }
 
   const commit = api(`repos/${repo}/commits/${sha}`);
   requireSuccess(commit, `${entry.name}: commit ${sha} in ${repo}`);
   if (parseJson(commit.body, `${entry.name}: commit response`).sha !== sha) {
     fail(`GitHub didn't return the pinned commit ${sha}.`);
+  }
+  if (ref !== undefined) {
+    const refCommit = api(`repos/${repo}/commits/${encodeURIComponent(ref)}`);
+    requireSuccess(refCommit, `${entry.name}: ref ${ref} in ${repo}`);
+    if (parseJson(refCommit.body, `${entry.name}: ref response`).sha !== sha) {
+      fail(`source.ref ${ref} doesn't resolve to the pinned commit ${sha}.`);
+    }
   }
 
   const fetched = new Map();

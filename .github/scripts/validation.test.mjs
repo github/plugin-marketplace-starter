@@ -27,10 +27,15 @@ function fixture(t) {
   return directory;
 }
 
-function fakeApi(files, { commit = { status: 200, body: JSON.stringify({ sha }) }, calls = [] } = {}) {
+function fakeApi(files, {
+  commit = { status: 200, body: JSON.stringify({ sha }) },
+  refCommit = { status: 200, body: JSON.stringify({ sha }) },
+  calls = [],
+} = {}) {
   return (endpoint) => {
     calls.push(endpoint);
     if (endpoint === `repos/owner/repo/commits/${sha}`) return commit;
+    if (endpoint.startsWith("repos/owner/repo/commits/")) return refCommit;
     const prefix = "repos/owner/repo/contents/";
     assert.ok(endpoint.startsWith(prefix), endpoint);
     const file = decodeURIComponent(endpoint.slice(prefix.length).split("?")[0]);
@@ -167,6 +172,48 @@ test("commit authentication, server, missing-pin, JSON, and SHA errors are disti
   }
   assert.throws(() => checkRemotePin(entry(), fakeApi({}, { commit: { status: 200, body: "{" } })), /commit response isn't valid JSON/);
   assert.throws(() => checkRemotePin(entry(), fakeApi({}, { commit: { status: 200, body: '{"sha":"different"}' } })), /didn't return the pinned commit/);
+});
+
+test("a declared upstream ref must resolve to the pinned commit", () => {
+  for (const ref of ["v1.0.0", "release/1.0", "refs/tags/v1.0.0"]) {
+    const remote = entry();
+    remote.source.ref = ref;
+    const calls = [];
+    assert.equal(checkRemotePin(remote, fakeApi({
+      "plugin/plugin.json": manifest({ $schema: schema }),
+    }, { calls })), "plugin/plugin.json");
+    assert.deepEqual(calls, [
+      `repos/owner/repo/commits/${sha}`,
+      `repos/owner/repo/commits/${encodeURIComponent(ref)}`,
+      `repos/owner/repo/contents/plugin/plugin.json?ref=${sha}`,
+    ]);
+  }
+  const remote = entry();
+  remote.source.ref = "v1.0.0";
+  const calls = [];
+  assert.throws(() => checkRemotePin(remote, fakeApi({
+    "plugin/plugin.json": manifest({ $schema: schema }),
+  }, { refCommit: { status: 200, body: JSON.stringify({ sha: "b".repeat(40) }) }, calls })), /source\.ref v1\.0\.0 doesn't resolve to the pinned commit/);
+  assert.equal(calls.length, 2, "a ref mismatch must stop before loading the manifest");
+});
+
+test("invalid declared refs and ref-resolution failures cannot pass as valid pins", () => {
+  const never = () => { assert.fail("API must not be called"); };
+  for (const ref of [null, "", " ", 1, {}]) {
+    const remote = entry();
+    remote.source.ref = ref;
+    assert.throws(() => checkRemotePin(remote, never), /source\.ref must be a non-empty string/);
+  }
+  const remote = entry();
+  remote.source.ref = "v1.0.0";
+  for (const status of [401, 403, 404, 500]) {
+    assert.throws(() => checkRemotePin(remote, fakeApi({}, {
+      refCommit: { status, body: "{}" },
+    })), new RegExp(`ref v1\\.0\\.0.*HTTP ${status}`));
+  }
+  assert.throws(() => checkRemotePin(remote, fakeApi({}, {
+    refCommit: { status: 200, body: "{" },
+  })), /ref response isn't valid JSON/);
 });
 
 test("manifest authentication and server errors stop rather than falling through to another file", () => {

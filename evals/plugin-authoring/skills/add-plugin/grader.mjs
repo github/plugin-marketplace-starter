@@ -22,5 +22,5 @@ export function evaluate(trajectory, workspace) {
 }
 
 if (isMain(import.meta.url)) {
-  await runGrade("plugin-authoring-add", evaluate, "add-plugin");
+  await runGrade("plugin-authoring-add", evaluate);
 }

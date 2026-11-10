@@ -2,6 +2,7 @@
 
 ## 0.1.0
 
+- Require a named remote ref to resolve to its reviewed pinned commit.
 - Preserve release history and distinguish unreleased first versions from released plugins.
 - Document read-only review inputs and CLI agent selection.
 - Preserve remote release channels and stop retirement registration edits when deletion fails.

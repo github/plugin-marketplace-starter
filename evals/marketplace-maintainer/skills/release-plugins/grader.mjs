@@ -44,5 +44,5 @@ export function evaluate(trajectory, workspace, mode) {
 }
 
 if (isMain(import.meta.url)) {
-  await runGrade(`marketplace-maintainer-${process.argv[2]}`, (trajectory, workspace) => evaluate(trajectory, workspace, process.argv[2]), "release-plugins");
+  await runGrade(`marketplace-maintainer-${process.argv[2]}`, (trajectory, workspace) => evaluate(trajectory, workspace, process.argv[2]));
 }

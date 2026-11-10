@@ -39,6 +39,9 @@ stimuli:
       boundary: synthetic-marketplace-files
     graders:
       - type: completed
+      - type: skill-invocation
+        config:
+          required: [release-plugins]
       - type: program
         config:
           program: node
@@ -62,6 +65,9 @@ stimuli:
       boundary: synthetic-marketplace-files
     graders:
       - type: completed
+      - type: skill-invocation
+        config:
+          required: [release-plugins]
       - type: program
         config:
           program: node
@@ -104,6 +110,9 @@ stimuli:
       boundary: unknown-release-base
     graders:
       - type: completed
+      - type: skill-invocation
+        config:
+          required: [release-plugins]
       - type: diff-empty
       - type: program
         config:
@@ -127,6 +136,9 @@ stimuli:
       boundary: unreleased-first-version
     graders:
       - type: completed
+      - type: skill-invocation
+        config:
+          required: [release-plugins]
       - type: diff-empty
       - type: output-matches
         config:

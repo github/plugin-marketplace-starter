@@ -39,6 +39,9 @@ stimuli:
       boundary: recorded-upstream-not-live-github
     graders:
       - type: completed
+      - type: skill-invocation
+        config:
+          required: [update-remote-pins]
       - type: program
         config:
           program: node
@@ -78,6 +81,9 @@ stimuli:
       boundary: stable-channel-not-prerelease
     graders:
       - type: completed
+      - type: skill-invocation
+        config:
+          required: [update-remote-pins]
       - type: diff-empty
       - type: output-matches
         config:

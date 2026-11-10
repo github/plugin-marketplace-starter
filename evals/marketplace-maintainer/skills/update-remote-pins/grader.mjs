@@ -15,5 +15,5 @@ export function evaluate(trajectory, workspace) {
 }
 
 if (isMain(import.meta.url)) {
-  await runGrade("marketplace-maintainer-remote", evaluate, "update-remote-pins");
+  await runGrade("marketplace-maintainer-remote", evaluate);
 }

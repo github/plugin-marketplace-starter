@@ -15,13 +15,15 @@ with the pinned [Vally](https://microsoft.github.io/vally/) CLI. It never calls
 a model. [Validate](../.github/workflows/validate.yml) runs on pull requests,
 pushes to `main`, and manual dispatch. It also:
 
-- Runs deterministic tests for the CI checks, local-session guidance grader,
-  and optional local-install recipes.
+- Runs deterministic tests for the CI checks, native skill-invocation and
+  local-session guidance graders, and optional local-install recipes.
 - Validates each `plugins/*/plugin.json` against the
   [Agent Plugins schema](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json).
 - Checks that each local entry in `marketplace.json` matches its `plugin.json`.
 - Checks that each remote entry pins an existing commit with a `plugin.json`
   whose name matches, and whose version matches when both specify one.
+  When `source.ref` is supplied, it must resolve to that exact pinned commit;
+  a missing, moved, or mismatched ref fails validation.
   Private remote repositories need a token that can read them.
 
 Vally lint doesn't validate `marketplace.json` or `plugin.json`. Run the same
@@ -60,6 +62,13 @@ call a model or prove how a plugin behaves in a model session.
 ## Paid evals
 
 **These runs start real Copilot sessions and spend AI credits.**
+
+Skill evals use Vally's built-in `skill-invocation` grader: `required` for every
+positive and boundary case, and `disallowed` for negative cases. Invocation
+credit requires a matching `skill_activation` event. Successful file reads,
+searches, path mentions, and completed answers do not count as invocation.
+Custom program graders independently check the resulting files, output, and
+side effects.
 
 The `plugin-reviewer` eval needs the full Copilot CLI installed by `npm ci`.
 Point `COPILOT_CLI_PATH` at that pinned CLI before running the smoke suite.

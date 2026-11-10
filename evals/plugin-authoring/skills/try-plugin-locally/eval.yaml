@@ -47,6 +47,9 @@ stimuli:
       boundary: local-session-guidance-not-host-behavior
     graders:
       - type: completed
+      - type: skill-invocation
+        config:
+          required: [try-plugin-locally]
       - type: program
         config:
           program: node
