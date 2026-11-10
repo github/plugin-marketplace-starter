@@ -6,9 +6,7 @@ This project uses GitHub issues to track bugs and feature requests. Please searc
 
 For help or questions about using this project, please open an issue.
 
-<!-- template-only -->
 The plugin marketplace starter is under active development and maintained by GitHub staff and the community. We will do our best to respond to support, feature requests, and community questions in a timely manner.
-<!-- /template-only -->
 
 ## GitHub Support Policy
 

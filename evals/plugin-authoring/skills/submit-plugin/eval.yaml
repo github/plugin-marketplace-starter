@@ -1,0 +1,67 @@
+name: submit-plugin
+description: Contribution preparation for an existing plugin in a synthetic marketplace.
+type: capability
+defaults:
+  executor: copilot-sdk
+  model: claude-haiku-5.5
+  timeout: 5m
+  runs: 1
+# All of the plugin's skills load, as they do when it's installed, so these
+# cases also check that Copilot picks the right one.
+agent_environment:
+  skills:
+    - ../../../../plugins/plugin-authoring/skills/add-plugin
+    - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
+    - ../../../../plugins/plugin-authoring/skills/submit-plugin
+grading_environment:
+  files:
+    - src: grader.mjs
+      dest: .grading/grader.mjs
+    - src: ../../../_shared/graders/common.mjs
+      dest: .grading/common.mjs
+stimuli:
+  - name: submit-plugin-prepares-patch-and-pr-body
+    prompt: >-
+      Get sample-notes ready for a pull request. The only change since released.json
+      is a wording fix clarifying that an empty input needs notes. It is an
+      existing 1.0.0 plugin and needs a patch release. Use released.json as the
+      comparison base instead of Git history. Synchronize its version and changelog,
+      and draft the pull request description in chat. No code runs automatically,
+      and no dependencies or network access were added. Don't create an issue,
+      commit, push, or open a PR.
+    agent_environment:
+      files:
+        - src: ../../../_shared/fixtures/sample-marketplace
+          dest: .
+        - src: fixtures
+          dest: .
+    tags:
+      assets: skill:plugin-authoring/submit-plugin
+      control: positive
+      suite: smoke
+      boundary: synthetic-marketplace-files
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required: [submit-plugin]
+      - type: program
+        config:
+          program: node
+          args: [.grading/grader.mjs]
+  - name: submit-plugin-ignores-pricing-question
+    prompt: Is a marketplace plugin the same thing as a paid Copilot subscription? Answer briefly without creating or changing files.
+    tags:
+      assets: skill:plugin-authoring/submit-plugin
+      control: negative
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          disallowed: [add-plugin, try-plugin-locally, submit-plugin]
+      - type: output-matches
+        config:
+          pattern: '[Nn]o\b|[Nn]ot the same'
+      - type: diff-empty
+scoring:
+  threshold: 1
