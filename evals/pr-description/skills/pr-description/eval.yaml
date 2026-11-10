@@ -1,0 +1,68 @@
+name: pr-description
+description: Multi-skill cohort routing and structured pull request description drafting without claiming unshipped work.
+type: capability
+defaults:
+  executor: copilot-sdk
+  model: claude-haiku-5.5
+  timeout: 5m
+  runs: 1
+# Stage pr-description alongside the other marketplace skills so cases verify
+# realistic multi-skill routing and non-collision.
+agent_environment:
+  skills:
+    - ../../../../plugins/pr-description/skills/pr-description
+    - ../../../../plugins/plugin-authoring/skills/add-plugin
+    - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
+    - ../../../../plugins/plugin-authoring/skills/submit-plugin
+    - ../../../../plugins/marketplace-maintainer/skills/update-remote-pins
+    - ../../../../plugins/marketplace-maintainer/skills/release-plugins
+grading_environment:
+  files:
+    - src: grader.mjs
+      dest: .grading/grader.mjs
+    - src: ../../../_shared/graders/common.mjs
+      dest: .grading/common.mjs
+stimuli:
+  - name: pr-description-drafts-structured-pr-body
+    prompt: >-
+      Draft a pull request description in chat for this change summary:
+      - Added positive integer validation for `--timeout` in `src/cli.mjs` so invalid values exit with code 2.
+      - Added unit tests covering `--timeout 0` and `--timeout -5` in `test/cli.test.mjs`.
+      - Verification run: `npm test` passed (14 tests).
+      - Backlog note: exponential retry backoff (#42) is still open and was not part of this branch.
+      Don't inspect or edit files, run commands, or open a PR.
+    tags:
+      assets: skill:pr-description/pr-description
+      control: positive
+      suite: smoke
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          required: [pr-description]
+          disallowed: [add-plugin, try-plugin-locally, submit-plugin, update-remote-pins, release-plugins]
+      - type: program
+        config:
+          program: node
+          args: [.grading/grader.mjs]
+      - type: diff-empty
+  - name: pr-description-ignores-bug-and-review-question
+    prompt: >-
+      Why does `slice(0, size - 1)` drop the final item on a page, and how should I
+      report that off-by-one defect? Answer briefly in chat only; don't draft a pull
+      request description or edit files.
+    tags:
+      assets: skill:pr-description/pr-description
+      control: negative
+      suite: smoke
+    graders:
+      - type: completed
+      - type: skill-invocation
+        config:
+          disallowed: [pr-description, add-plugin, try-plugin-locally, submit-plugin, update-remote-pins, release-plugins]
+      - type: output-matches
+        config:
+          pattern: '(?i:exclusive|end index|size\s*-\s*1|one fewer|off-by-one)'
+      - type: diff-empty
+scoring:
+  threshold: 1

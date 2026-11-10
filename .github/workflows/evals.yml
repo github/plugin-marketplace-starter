@@ -29,3 +29,5 @@ jobs:
       - run: npm run eval -- --suite smoke --require-pass
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      - if: always()
+        run: npm run eval:report

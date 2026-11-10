@@ -385,6 +385,8 @@ test("validation calls CI scripts, and paid eval activation is manual-only", () 
   assert.deepEqual(JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")).scripts, {
     lint: "node .github/scripts/lint.mjs",
     eval: "vally eval --workers 1 --max-retries 1",
+    "eval:report": "node .github/scripts/eval-report.mjs",
+    "eval:compare": "node .github/scripts/eval-report.mjs",
   });
 });
 
