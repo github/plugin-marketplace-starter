@@ -20,7 +20,8 @@ export function evaluate(trajectory, workspace) {
     .map((call) => typeof call.args === "string" ? call.args : call.args?.command)
     .filter((command) => typeof command === "string").join("\n");
   const invokedCopilot = /(?:^|[;&|\r\n])\s*(?:&\s*)?(?:(?:["'](?:[^"'\r\n]*[/\\])?)?copilot(?:\.(?:exe|cmd))?["']?(?=\s|$)|node(?:\.exe)?\s+["']?[^;\r\n]*[/\\]copilot[/\\]npm-loader\.js\b)/i.test(attempted);
-  const mutatedBranch = /(?:^|[;&|\r\n])\s*(?:&\s*)?(?:["'](?:[^"'\r\n]*[/\\])?)?git(?:\.exe)?["']?\s+(?:(?:-C|-c|--git-dir|--work-tree)\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s;|&]+)\s+|--[\w-]+(?:=[^\s;|&]+)?\s+)*(?:switch|checkout|stash|reset|clean)\b/i.test(attempted);
+  // Keep repeated option forms and quoted/unquoted operands disjoint.
+  const mutatedBranch = /(?:^|[;&|\r\n])\s*(?:&\s*)?(?:["'](?:[^"'\r\n]*[/\\])?)?git(?:\.exe)?["']?\s+(?:(?:-c|--git-dir|--work-tree)\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s"';|&]+)\s+|--(?!(?:git-dir|work-tree)\s)[\w-]+(?:=[^\s;|&]+)?\s+)*(?:switch|checkout|stash|reset|clean)\b/i.test(attempted);
   return [
     check("Preserved the selected local plugin", Array.isArray(catalog?.plugins) && catalog.plugins.some((entry) =>
       entry?.name === "sample-notes" && ["./plugins/sample-notes", "plugins/sample-notes"].includes(entry.source))

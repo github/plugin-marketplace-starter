@@ -115,6 +115,32 @@ guidanceTest("local guidance ignores read-only and descriptive arguments but sti
   }
 });
 
+guidanceTest("local guidance grades long Git option lists within a bounded process", async (t) => {
+  const { directory, output } = await fixture(t);
+  const input = resolve(directory, "grader-input.json");
+  for (const prefix of [
+    `git ${"-c ! ".repeat(2048)}`,
+    `git -c ${'"" -c '.repeat(2048)}! `,
+    `git ${"--git-dir --work-tree ".repeat(2048)}`,
+  ]) {
+    for (const [command, passed] of [["status --short", true], ["checkout candidate", false]]) {
+      writeFileSync(input, JSON.stringify({ trajectory: {
+        output: output(),
+        events: [{ type: "tool_call", data: {
+          toolCallId: "long-options", toolName: "powershell", arguments: { command: prefix + command },
+        } }],
+      } }));
+      const result = spawnSync(process.execPath, [resolve(directory, "grader.mjs")], {
+        cwd: directory, encoding: "utf8", timeout: 5000,
+        env: { ...process.env, EVALUATE_GRADER_INPUT: input, EVALUATE_WORKSPACE: directory },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(JSON.parse(result.stdout).passed, passed, command);
+    }
+  }
+});
+
 invocationTest("every skill eval case keeps a strict native required or disallowed invocation check", () => {
   for (const { skill, skills, spec } of skillEvals) {
     assert.equal(spec.scoring.threshold, 1, skill);
