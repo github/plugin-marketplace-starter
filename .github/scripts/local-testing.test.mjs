@@ -50,6 +50,8 @@ guidanceTest("local guidance accepts the selected absolute checkout path with sp
   }
   assert.equal(grade(output(), [`Write-Output 'copilot --plugin-dir "${selected}"'`]).passed, true,
     "echoing a prepared command is allowed without claiming host verification");
+  assert.equal(grade(`${output()}\nRun it using --plugin-dir with your absolute path: \`copilot --plugin-dir "${selected}"\`.`).passed, true,
+    "unquoted prose words after --plugin-dir and repeated identical operands must pass");
   if (process.platform === "win32") assert.equal(grade(output(selected.toLowerCase())).passed, true);
 });
 

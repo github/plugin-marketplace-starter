@@ -18,9 +18,11 @@
    Markdown that specifically describes the retired plugin. If the table is left empty, add a row that says
    `_None yet._`.
 5. Search the repository for the plugin's name and fix any links or mentions
-   that are left. A substring match doesn't establish ownership: preserve
-   generic illustrative examples, other plugins' files, shared tooling, and
-   `evals/_shared/`. Report partial state if a later registration edit fails.
+   that are left, including removing its skills from `agent_environment.skills`
+   or `disallowed` lists in surviving cohort evals under `evals/`. A substring
+   match doesn't establish ownership: preserve generic illustrative examples,
+   other plugins' files, shared tooling, and `evals/_shared/`. Report partial
+   state if a later registration edit fails.
    Check that `marketplace.json` is still valid JSON.
 6. Draft a retirement note with the reason, last supported version, and any
    migration option. Removing a catalog entry doesn't uninstall existing copies

@@ -176,7 +176,8 @@ The `release-plugins` skill can retire a plugin for you. By hand, delete
 `plugins/<name>/` and `evals/<name>/`, then remove the plugin's entry from
 `marketplace.json` and its row and install command from this README. If it's
 one of the two plugins in `.github/copilot/settings.json`, remove its key there
-too.
+too. If surviving cohort evals under `evals/` list the retired plugin's skills
+in `agent_environment.skills` or `disallowed`, remove those entries as well.
 
 You can keep only remote entries by removing both bundled local plugins and
 their eval folders. No empty `plugins/` or `evals/` directory is needed.

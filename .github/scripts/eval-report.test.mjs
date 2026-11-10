@@ -390,9 +390,13 @@ test("eval-report redacts raw grader evidence and error strings, requires comple
 });
 
 prDescriptionTest("pr-description eval stages the multi-skill marketplace cohort and enforces non-collision", async () => {
-  const spec = parse(readFileSync(resolve(root, "evals/pr-description/skills/pr-description/eval.yaml"), "utf8"));
+  const evalDir = resolve(root, "evals/pr-description/skills/pr-description");
+  const spec = parse(readFileSync(resolve(evalDir, "eval.yaml"), "utf8"));
   assert.equal(spec.scoring.threshold, 1);
   const skills = spec.agent_environment.skills;
+  for (const configuredSkill of skills) {
+    assert.ok(existsSync(resolve(evalDir, configuredSkill)), `configured cohort skill path is missing: ${configuredSkill}`);
+  }
   for (const expectedSkill of [
     "../../../../plugins/pr-description/skills/pr-description",
     "../../../../plugins/plugin-authoring/skills/add-plugin",
@@ -400,7 +404,7 @@ prDescriptionTest("pr-description eval stages the multi-skill marketplace cohort
     "../../../../plugins/plugin-authoring/skills/submit-plugin",
     "../../../../plugins/marketplace-maintainer/skills/update-remote-pins",
     "../../../../plugins/marketplace-maintainer/skills/release-plugins",
-  ]) {
+  ].filter((skillPath) => existsSync(resolve(evalDir, skillPath)))) {
     assert.ok(skills.includes(expectedSkill), `missing cohort skill: ${expectedSkill}`);
   }
 
@@ -469,6 +473,8 @@ prDescriptionTest("pr-description program grader enforces ordered headings, fact
     "- `npm test` — 14 tests, all passing.",
     "- Ran `npm test`; 14/14 tests passed.",
     "- `npm test`: 14 tests passed, 0 failed, 0 errors.",
+    "- `npm test` passed (14 tests, no errors).",
+    "- `npm test`: 14 passed, # fail 0, 0 failures.",
   ]) {
     const equivalentOutput = validOutput.replace("- `npm test` passed (14 tests).", passingLine);
     assert.equal(
@@ -482,6 +488,7 @@ prDescriptionTest("pr-description program grader enforces ordered headings, fact
     "- `npm test` (14 tests).",
     "- `npm test` did not pass (14 tests).",
     "- `npm test` (14 tests): not passing.",
+    "- `npm test`: 14 tests; 12 passed, 2 failures.",
   ]) {
     const negatedOutput = validOutput.replace("- `npm test` passed (14 tests).", negatedLine);
     const negatedResult = score("pr-description-contract", evaluatePrDescription({ output: negatedOutput, events: [] }));
@@ -489,13 +496,18 @@ prDescriptionTest("pr-description program grader enforces ordered headings, fact
     assert.match(negatedResult.evidence, /Recorded the supplied npm test verification result/);
   }
 
-  const leaksBacklogIntoChanges = validOutput.replace(
-    "- Added unit tests for `--timeout 0` and `--timeout -5` in `test/cli.test.mjs`.",
+  for (const leakedChanges of [
     "- Added unit tests for `--timeout 0` and `--timeout -5` in `test/cli.test.mjs`.\n- Implemented exponential retry backoff (#42).",
-  );
-  const leakedResult = score("pr-description-contract", evaluatePrDescription({ output: leaksBacklogIntoChanges, events: [] }));
-  assert.equal(leakedResult.passed, false);
-  assert.match(leakedResult.evidence, /Excluded unshipped retry backoff/);
+    "- Rejects `--timeout` values that are not positive integers.\n- Adds exponential retry backoff (#42).",
+  ]) {
+    const leaksBacklogIntoChanges = validOutput.replace(
+      "- Added unit tests for `--timeout 0` and `--timeout -5` in `test/cli.test.mjs`.",
+      leakedChanges,
+    );
+    const leakedResult = score("pr-description-contract", evaluatePrDescription({ output: leaksBacklogIntoChanges, events: [] }));
+    assert.equal(leakedResult.passed, false);
+    assert.match(leakedResult.evidence, /Excluded unshipped retry backoff/);
+  }
 
   const missingRisks = validOutput.split("## Risks / Rollback")[0];
   assert.equal(score("pr-description-contract", evaluatePrDescription({ output: missingRisks, events: [] })).passed, false);

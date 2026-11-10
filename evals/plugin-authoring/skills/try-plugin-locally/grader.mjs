@@ -10,9 +10,13 @@ export function evaluate(trajectory, workspace) {
   const commandLines = blocks.flatMap((block) => block.trim().split(/\r?\n/));
   const localCommands = commandLines.map((line) => /^\s*copilot\s+--plugin-dir\s+(?:"([^"]+)"|'([^']+)'|([^\s"'`]+))\s*$/.exec(line))
     .filter(Boolean);
-  const path = localCommands[0]?.slice(1).find((value) => value !== undefined);
-  const operands = [...output.matchAll(/--plugin-dir(?:\s+|=)(?:"([^"]+)"|'([^']+)'|([^\s"'`]+))/g)]
+  const normalizeOperand = (value) => typeof value === "string" && isAbsolute(value) ? resolve(value) : value;
+  const localPaths = [...new Set(localCommands.map((match) => match.slice(1).find((value) => value !== undefined)).filter(Boolean).map(normalizeOperand))];
+  const blockOperands = [...commandLines.join("\n").matchAll(/--plugin-dir(?:\s+|=)(?:"([^"]+)"|'([^']+)'|([^\s"'`]+))/g)]
     .map((match) => match.slice(1).find((value) => value !== undefined));
+  const proseOperands = [...output.matchAll(/--plugin-dir(?:\s+|=)(?:"([^"]+)"|'([^']+)'|((?:https?:\/\/|[A-Za-z]:[/\\]|[~./\\]|[^\s"'`]*[/\\]|[^\s"'`]*@)[^\s"'`]*))/g)]
+    .map((match) => match.slice(1).find((value) => value !== undefined));
+  const operands = [...new Set([...blockOperands, ...proseOperands].filter(Boolean).map(normalizeOperand))];
   const selectedPath = (value) => typeof value === "string" && isAbsolute(value) && relative(selected, resolve(value)) === "";
   // Grade guidance, not an echoed command or a CLI install as evidence of discovery.
   const attempted = calls(trajectory).filter((call) => ["bash", "powershell", "shell"].some((tool) =>
@@ -26,7 +30,7 @@ export function evaluate(trajectory, workspace) {
     check("Preserved the selected local plugin", Array.isArray(catalog?.plugins) && catalog.plugins.some((entry) =>
       entry?.name === "sample-notes" && ["./plugins/sample-notes", "plugins/sample-notes"].includes(entry.source))
       && plugin?.name === "sample-notes"),
-    check("Prepared the selected absolute local session command", localCommands.length === 1 && selectedPath(path)
+    check("Prepared the selected absolute local session command", localPaths.length === 1 && selectedPath(localPaths[0])
       && operands.length === 1 && selectedPath(operands[0])),
     check("Explained a fresh session and source trust", /\b(?:fresh|new)\s+(?:Copilot CLI\s+)?session\b/i.test(output)
       && /\b(?:review|inspect)\b[^.\n]*\b(?:source|code|plugin)\b/i.test(output)

@@ -35,7 +35,7 @@ async function fixture(t, name) {
   return {
     workspace, stimulus,
     json: (path) => JSON.parse(readFileSync(resolve(workspace, path), "utf8")),
-    grade: (output) => score("release-contract", evaluate({ output, events: [] }, workspace, mode)),
+    grade: (output, events = []) => score("release-contract", evaluate({ output, events }, workspace, mode)),
   };
 }
 
@@ -68,6 +68,8 @@ releaseTest("unknown-release-base requires an actionable evidence request instea
     "Could you confirm first-release status before I edit?",
     "I need a release record or confirmation of the initial release before editing.",
     "This catalog is not ready to release. Please share the released base.",
+    "To get this catalog ready to release, I need one thing first. Please provide the released base.",
+    "I can't tell whether sample-notes is ready for release yet. Which released tag should I compare against?",
   ]) {
     assert.equal(grade(output).passed, true, output);
   }
@@ -94,6 +96,13 @@ releaseTest("known-release and confirmed-first-release cases retain their fixtur
     const output = "sample-notes 1.0.1: clarify empty-input wording.";
     if (name === "release-plugins-keeps-already-bumped-version") {
       assert.equal(grade(output).passed, true);
+      assert.equal(grade(output, [
+        { type: "tool_call", data: { toolCallId: "1", toolName: "powershell", arguments: { command: "git tag --list" } } },
+        { type: "tool_call", data: { toolCallId: "2", toolName: "report_intent", arguments: { intent: "Prepare release without git push" } } },
+      ]).passed, true, "read-only git tag --list and non-shell tool args must pass");
+      assert.equal(grade(output, [
+        { type: "tool_call", data: { toolCallId: "1", toolName: "powershell", arguments: { command: "git tag v1.0.1" } } },
+      ]).passed, false, "creating a git tag must fail");
     } else {
       assert.ok(stimulus.graders.some((item) => item.type === "diff-empty"));
       assert.match(output, new RegExp(stimulus.graders.find((item) => item.type === "output-matches").config.pattern));
