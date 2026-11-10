@@ -35,7 +35,7 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## Requirements
 
-For marketplace development and CLI-based evals, use this shared setup:
+For marketplace development and evals, use this shared setup.
 
 - One supported Copilot harness: **Copilot CLI, GitHub Copilot app, or VS Code
   with agent plugins enabled**, and a **GitHub Copilot plan**.
@@ -44,11 +44,6 @@ For marketplace development and CLI-based evals, use this shared setup:
 - **GitHub Copilot CLI 1.0.85+**.
 - **Vally ([`@microsoft/vally-cli`](https://www.npmjs.com/package/@microsoft/vally-cli)) 0.19.0+**.
 - **Git 2.28.0+**.
-
-Using installed plugins does not require the full development setup. See the
-[upstream runner setup](https://github.com/github/evals/blob/copilot-evals-v0.23.3/README.md#runner-setup)
-for host-specific eval requirements.
-[Evals installation](#use-the-marketplace) remains opt-in.
 
 ## Make it yours
 
