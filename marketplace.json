@@ -13,7 +13,7 @@
     {
       "name": "marketplace-maintainer",
       "source": "./plugins/marketplace-maintainer",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Review contributed plugins, maintain remote pins, and prepare marketplace releases."
     },
     {

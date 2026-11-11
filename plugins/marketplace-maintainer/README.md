@@ -7,7 +7,7 @@ checkout of this marketplace.
 |---|---|
 | [plugin-reviewer](com.github.copilot/agents/plugin-reviewer.agent.md) | Review a contribution and report risks and inconsistencies, without editing anything |
 | [update-remote-pins](skills/update-remote-pins/SKILL.md) | Review upstream changes and add or update a remote pin |
-| [release-plugins](skills/release-plugins/SKILL.md) | Check versions and changelogs, draft release notes, or retire a plugin |
+| [release-plugins](skills/release-plugins/SKILL.md) | Check versions and changelogs, draft release notes including first releases, or retire a plugin |
 
 ## Install
 
