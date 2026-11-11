@@ -177,9 +177,8 @@ The `release-plugins` skill can retire a plugin for you. By hand, delete
 `plugins/<name>/` and `evals/<name>/`, then remove the plugin's entry from
 `marketplace.json` and its row and install command from this README. If it's
 one of the two plugins in `.github/copilot/settings.json`, remove its key there
-too. Remove its skills from the shared `marketplace` environment in
-[.vally.yaml](.vally.yaml), and from surviving evals' `disallowed` lists and
-loaded-skill checks.
+too. If surviving cohort evals under `evals/` list the retired plugin's skills
+in `agent_environment.skills` or `disallowed`, remove those entries as well.
 
 You can keep only remote entries by removing both bundled local plugins and
 their eval folders. No empty `plugins/` or `evals/` directory is needed.
@@ -197,15 +196,11 @@ validation, catalog consistency checks, and remote-pin checks on every pull
 request.
 
 **Paid evals:** `npm run eval` runs real Copilot sessions and costs AI credits.
-The six skill evals share the `marketplace` environment in
-[.vally.yaml](.vally.yaml), with all local and pinned remote marketplace skills
-available. Before Vally starts, npm fetches the remote skill sources into ignored
-storage; it does not install plugins or enable their MCP servers or extensions.
 [Evals](.github/workflows/evals.yml) runs only when manually started; pull
 requests never trigger paid evals.
 
-See [Checks and evals](docs/checks-and-evals.md) for the shared environment,
-remote-source preparation, CI details, and Bash and PowerShell eval setup.
+See [Checks and evals](docs/checks-and-evals.md) for CI details, local test
+commands, and Bash and PowerShell eval setup.
 
 ## License
 

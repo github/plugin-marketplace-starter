@@ -11,7 +11,7 @@ paths:
 environments:
   marketplace:
     # Vally resolves these paths relative to each eval, not this file.
-    # npm run eval:prepare fetches the remote skills without installing plugins.
+    # Remote skill directories must already exist at the catalog-pinned commit.
     skills:
       - ../../../../plugins/plugin-authoring/skills/add-plugin
       - ../../../../plugins/plugin-authoring/skills/try-plugin-locally

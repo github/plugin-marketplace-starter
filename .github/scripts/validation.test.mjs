@@ -385,8 +385,6 @@ test("validation calls CI scripts, and paid eval activation is manual-only", () 
   assert.equal(job.steps.find((step) => step.uses?.startsWith("actions/checkout@")).with["persist-credentials"], false);
   assert.deepEqual(JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")).scripts, {
     lint: "node .github/scripts/lint.mjs",
-    "eval:prepare": "node .github/scripts/prepare-eval-context.mjs",
-    preeval: "npm run eval:prepare",
     eval: "vally eval --workers 1 --max-retries 1",
     "eval:report": "node .github/scripts/eval-report.mjs",
     "eval:compare": "node .github/scripts/eval-report.mjs",

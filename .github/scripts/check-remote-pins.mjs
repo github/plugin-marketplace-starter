@@ -8,8 +8,8 @@ const supportedSchemas = new Set(["1.0.0", "1.1.0"].map((version) => `https://ag
 // Copilot CLI's plugin reference (github/docs@8e7396e); legacy order also tested in d838c30^.
 const legacyManifestPaths = [".plugin/plugin.json", "plugin.json", ".github/plugin/plugin.json", ".claude-plugin/plugin.json"];
 
-export function githubApi(endpoint, run = spawnSync, accept = "application/vnd.github.raw+json") {
-  const result = run("gh", ["api", endpoint, "--include", "-H", `Accept: ${accept}`], {
+export function githubApi(endpoint, run = spawnSync) {
+  const result = run("gh", ["api", endpoint, "--include", "-H", "Accept: application/vnd.github.raw+json"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });

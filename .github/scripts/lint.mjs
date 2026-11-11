@@ -2,10 +2,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { checkLocalCatalog } from "./check-local-catalog.mjs";
-import { checkMarketplaceEnvironment } from "./prepare-eval-context.mjs";
 
 checkLocalCatalog();
-if (existsSync(".vally.yaml")) checkMarketplaceEnvironment(process.cwd());
 const args = [];
 if (existsSync("plugins")) args.push("plugins");
 if (existsSync("evals")) args.push("--eval-spec", "evals");
