@@ -65,6 +65,33 @@ const makeFooter = (runId = "run-1", hadExecutionErrors = false) => ({
   evals: [],
 });
 
+test("eval-report follows native project results configuration and retains explicit paths and defaults", async (t) => {
+  const directory = resolve(root, ".github/scripts", `.report-path-test-${randomUUID()}`);
+  mkdirSync(directory);
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const configured = resolve(directory, "evals/results/2026-01-01/results.jsonl");
+  const legacy = resolve(directory, "vally-results/2026-02-01/results.jsonl");
+  for (const [file, stimulus] of [[configured, "configured-results"], [legacy, "native-default"]]) {
+    mkdirSync(resolve(file, ".."), { recursive: true });
+    writeFileSync(file, `${JSON.stringify(makeTrial({ stimulus }))}\n${JSON.stringify(makeFooter())}\n`);
+  }
+  const configuration = resolve(directory, ".vally.yaml");
+  writeFileSync(configuration, "paths:\n  results: evals/results\n");
+  assert.equal((await loadResults(undefined, directory)).file, configured);
+  assert.equal((await loadResults("vally-results/2026-02-01", directory)).file, legacy);
+  const cli = spawnSync(process.execPath, [resolve(root, ".github/scripts/eval-report.mjs")], {
+    cwd: directory, encoding: "utf8", timeout: 10000,
+  });
+  assert.ifError(cli.error);
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stdout, /configured-results/);
+  assert.doesNotMatch(cli.stdout, /native-default/);
+  writeFileSync(configuration, "{}\n");
+  assert.equal((await loadResults(undefined, directory)).file, legacy);
+  writeFileSync(configuration, "paths: [\n");
+  await assert.rejects(loadResults(undefined, directory), /parse|YAML|flow sequence/i);
+});
+
 test("extractTrialMetrics and summarizeRun extract per-trial and aggregate tokens and duration", () => {
   const trial1 = makeTrial({ stimulus: "case-a", durationMs: 1500, inputTokens: 800, outputTokens: 200, totalTokens: 1000 });
   const trial2 = makeTrial({ stimulus: "case-b", durationMs: 2500, inputTokens: 1200, outputTokens: 300, totalTokens: 1500, passed: false, gradeScore: 0.5 });
@@ -172,7 +199,7 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
   assert.match(markdown, /Single-run score, token, and duration deltas are observed signals for review/);
 });
 
-prDescriptionTest("eval-report CLI compares the shared pr-description baseline and candidate fixtures without writing GITHUB_STEP_SUMMARY", (t) => {
+prDescriptionTest("eval-report CLI compares the shared pr-description baseline and candidate fixtures without writing GITHUB_STEP_SUMMARY", async (t) => {
   const tempDir = resolve(root, ".github/scripts", `.report-test-${randomUUID()}`);
   mkdirSync(tempDir, { recursive: true });
   t.after(() => rmSync(tempDir, { recursive: true, force: true }));
@@ -181,8 +208,8 @@ prDescriptionTest("eval-report CLI compares the shared pr-description baseline a
 
   const baselinePath = "evals/_shared/fixtures/pr-description/baseline-results.jsonl";
   const candidatePath = "evals/_shared/fixtures/pr-description/candidate-results.jsonl";
-  const loadedBase = loadResults(baselinePath, root);
-  const loadedCand = loadResults(candidatePath, root);
+  const loadedBase = await loadResults(baselinePath, root);
+  const loadedCand = await loadResults(candidatePath, root);
   assert.equal(loadedBase.summary.passedCount, 1);
   assert.equal(loadedCand.summary.passedCount, 2);
 

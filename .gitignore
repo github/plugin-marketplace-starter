@@ -1,5 +1,6 @@
 node_modules/
 vally-results/
+evals/results/
 .vally/
 # Isolated Copilot homes from local install checks.
 .copilot-home/
