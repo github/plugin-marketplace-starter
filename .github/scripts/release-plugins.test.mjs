@@ -70,6 +70,8 @@ releaseTest("unknown-release-base requires an actionable evidence request instea
     "This catalog is not ready to release. Please share the released base.",
     "To get this catalog ready to release, I need one thing first. Please provide the released base.",
     "I can't tell whether sample-notes is ready for release yet. Which released tag should I compare against?",
+    "Before I edit, I need:\n\n1. **The released base**: a tag or release commit SHA.\n2. **Or confirmation** that this is an unreleased first version.\n",
+    "Please provide:\n- A released tag.\n- Or confirmation of the initial release.\n",
   ]) {
     assert.equal(grade(output).passed, true, output);
   }
@@ -80,6 +82,8 @@ releaseTest("unknown-release-base requires an actionable evidence request instea
     "sample-notes 1.0.1 is ready to release against the base; no edits needed.",
     "Please provide the released base. This catalog is ready to release.",
     "Please provide the released base. I did not find evidence, but it is release-ready.",
+    "I need:\n- A plugin name.\n\nThe released base is missing.",
+    "The release record is unknown.\n\nPlease provide:\n- A plugin name.\n",
   ]) {
     const result = grade(output);
     assert.equal(result.passed, false, output);

@@ -83,10 +83,12 @@ export function evaluate(trajectory, workspace, mode) {
     const clauses = trajectory.output.match(/[^.!?\n;,]+/g) ?? [];
     const evidence = /\b(?:released?\s+(?:base|tag|commit|record|version)|release\s+(?:record|base|tag)|first[- ]release|(?:first|initial)\s+release)\b/i;
     const request = /\b(?:please\s+(?:provide|share|supply|confirm|specify)|(?:can|could|would)\s+you\s+(?:provide|share|supply|confirm|specify)|I\s+(?:need|require))\b|\b(?:what|which)\b[^?]*\?/i;
+    const requestLists = [...trajectory.output.matchAll(/([^\n]+:)\s*\n((?:\s*(?:\d+[.)]|[-*])\s+[^\n]+(?:\n|$))+)/g)]
+      .map((match) => match[0]);
     const ready = /\b(?:ready\s+(?:to|for)\s+(?:the\s+)?release|release[- ]ready)\b/i;
     const unready = /\b(?:(?:not|isn't|aren't|can't|cannot|unable\s+to)\b|(?:whether|if|before|until|to\s+(?:get|make)\b))[\s\S]*\b(?:ready\s+(?:to|for)\s+(?:the\s+)?release|release[- ]ready)\b/i;
     return [
-      check("Asked for a released base or first-release confirmation", statements.some((statement) =>
+      check("Asked for a released base or first-release confirmation", [...statements, ...requestLists].some((statement) =>
         request.test(statement) && evidence.test(statement))),
       check("Did not claim release readiness without evidence", !clauses.some((clause) => ready.test(clause) && !unready.test(clause))),
     ];

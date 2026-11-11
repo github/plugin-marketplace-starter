@@ -1,10 +1,16 @@
-import { isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { calls, check, isMain, json, matchesTool, runGrade } from "./common.mjs";
 
 export function evaluate(trajectory, workspace) {
   const catalog = json(workspace, "marketplace.json");
   const plugin = json(workspace, "plugins/sample-notes/plugin.json");
-  const selected = resolve(workspace, "plugins/sample-notes");
+  const activation = trajectory.events?.find((event) => event.type === "skill_activation"
+    && event.data?.name === "try-plugin-locally")?.data;
+  // Vally grades in a copy; the runtime activation retains the agent's original skill path.
+  const source = typeof activation?.path === "string" && isAbsolute(activation.path)
+    && basename(activation.path) === "SKILL.md" && basename(dirname(activation.path)) === "try-plugin-locally"
+    ? dirname(dirname(activation.path)) : workspace;
+  const selected = resolve(source, "plugins/sample-notes");
   const output = trajectory.output;
   const blocks = [...output.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].map((match) => match[1]);
   const commandLines = blocks.flatMap((block) => block.trim().split(/\r?\n/));
@@ -34,7 +40,8 @@ export function evaluate(trajectory, workspace) {
       && operands.length === 1 && selectedPath(operands[0])),
     check("Explained a fresh session and source trust", /\b(?:fresh|new)\s+(?:Copilot CLI\s+)?session\b/i.test(output)
       && /\b(?:review|inspect)\b[^.\n]*\b(?:source|code|plugin)\b/i.test(output)
-      && /\btrust\b/i.test(output) && /\bpermissions?\b/i.test(output)),
+      && /\btrust\b/i.test(output)
+      && /\b(?:permissions?|approve\s+tool\s+use|approval\s+(?:for|of)\s+tool\s+use)\b/i.test(output)),
     check("Left the session and host checks honestly unverified", /\bSession:\s*not started\b/i.test(output)
       && /\bDiscovery:\s*unverified\b/i.test(output) && /\bBehaviou?r:\s*unverified\b/i.test(output)
       && !/\b(?:Discovery|Behaviou?r):\s*(?:verified|passed|successful)\b/i.test(output)),
