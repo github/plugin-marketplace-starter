@@ -84,6 +84,8 @@ releaseTest("unknown-release-base requires an actionable evidence request instea
     "Please provide the released base. I did not find evidence, but it is release-ready.",
     "I need:\n- A plugin name.\n\nThe released base is missing.",
     "The release record is unknown.\n\nPlease provide:\n- A plugin name.\n",
+    "The released base is missing. Please provide:\n- A plugin name.",
+    "The released base is missing; Please provide:\n- A plugin name.\n",
   ]) {
     const result = grade(output);
     assert.equal(result.passed, false, output);
