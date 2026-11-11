@@ -1,6 +1,7 @@
 name: Evals
 # Runs the smoke evals with real Copilot sessions, which cost AI credits.
-# Start by explicit manual dispatch only; pull requests never start paid runs.
+# This smoke workflow starts only by explicit manual dispatch.
+# Skill comparisons use the separate approval-gated skill-evals workflow.
 on:
   workflow_dispatch:
 permissions:

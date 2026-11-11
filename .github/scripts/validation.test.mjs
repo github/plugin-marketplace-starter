@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
@@ -361,7 +362,7 @@ test("schema validation skips absent local manifests without downloading or inst
   }
 });
 
-test("validation calls CI scripts, and paid eval activation is manual-only", () => {
+test("validation stays model-free and the smoke workflow remains manual-only", () => {
   const validate = readFileSync(resolve(root, ".github/workflows/validate.yml"), "utf8");
   assert.doesNotMatch(validate, /node -e|run: \|/);
   for (const script of ["validate-schema.sh", "check-local-catalog.mjs", "check-remote-pins.mjs"]) {
@@ -390,6 +391,147 @@ test("validation calls CI scripts, and paid eval activation is manual-only", () 
     "eval:compare": "node .github/scripts/eval-report.mjs",
   });
 });
+
+  test("PR skill evals require approval and use two sequential native Action runs with fixed measurement inputs", () => {
+    const workflow = parse(readFileSync(resolve(root, ".github/workflows/skill-evals.yml"), "utf8"));
+    assert.deepEqual(Object.keys(workflow.on), ["pull_request"]);
+    assert.deepEqual(workflow.on.pull_request.paths, ["plugins/*/skills/**"]);
+    assert.equal(workflow.jobs.select.if, "github.event.pull_request.head.repo.full_name == github.repository");
+    assert.deepEqual(workflow.permissions, { contents: "read" });
+    assert.equal(workflow.jobs.select.permissions, undefined);
+    const job = workflow.jobs.evals;
+    assert.equal(job.environment, "evals");
+    assert.equal(job.strategy["fail-fast"], false);
+    assert.deepEqual(job.permissions, { contents: "read", "copilot-requests": "write" });
+    const actions = job.steps.filter((step) => step.uses?.startsWith("github/evals-action@"));
+    assert.equal(actions.length, 2);
+    assert.equal(actions[0].uses, actions[1].uses);
+    const { "report-id": beforeId, ...before } = actions[0].with;
+    const { "report-id": afterId, ...after } = actions[1].with;
+    assert.deepEqual(before, after);
+    assert.equal(before.command, "run");
+    assert.equal(before["eval-paths"], "${{ matrix.evalPath }}");
+    assert.equal(before["vally-version"], "0.19.0");
+    assert.equal(before.runs, 1);
+    assert.equal(before.workers, 1);
+    assert.equal(before["max-retries"], 0);
+    assert.equal(before["upload-transcripts"], false);
+    assert.notEqual(beforeId, afterId);
+    assert.equal(actions[1].if, "${{ !cancelled() && steps.after_source.outcome == 'success' }}");
+    assert.equal(job.steps.find((step) => step.id === "after_source").if,
+      "${{ !cancelled() && steps.before_source.outcome == 'success' }}");
+    for (const step of job.steps.filter((step) => step.uses?.startsWith("actions/checkout@"))) {
+      assert.equal(step.with["persist-credentials"], false);
+      assert.equal(step.with["fetch-depth"], 2);
+      assert.equal(step.with.ref, undefined, "HEAD must remain the merge SHA accepted by the Action");
+    }
+  });
+
+  test("PR selection and sequential source restores compare only eligible target skills and fail closed without approval", (t) => {
+    const directory = mkdtempSync(resolve(tmpdir(), "skill-eval-workflow-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    const repository = resolve(directory, "repository");
+    const runner = resolve(directory, "runner");
+    const hooks = resolve(directory, "hooks");
+    for (const path of [repository, runner, hooks]) mkdirSync(path);
+    const config = resolve(directory, "gitconfig");
+    writeFileSync(config, "");
+    const env = {
+      ...process.env, GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: "1",
+      RUNNER_TEMP: runner, GITHUB_OUTPUT: resolve(directory, "outputs"),
+      GITHUB_STEP_SUMMARY: resolve(directory, "summary.md").replaceAll("\\", "/"),
+    };
+    const git = (...args) => {
+      const result = spawnSync("git", [
+        "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test",
+        "-c", "commit.gpgsign=false", "-c", `core.hooksPath=${hooks}`, ...args,
+      ], { cwd: repository, env, encoding: "utf8", timeout: 10000 });
+      assert.ifError(result.error);
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout.trim();
+    };
+    const file = (path, content) => {
+      const destination = resolve(repository, path);
+      mkdirSync(resolve(destination, ".."), { recursive: true });
+      writeFileSync(destination, content);
+    };
+    const target = "plugins/example/skills/changed";
+    git("init", "--initial-branch=main");
+    file(`${target}/SKILL.md`, "base skill\n");
+    file(`${target}/old.md`, "base-only file\n");
+    file("plugins/example/skills/neighbor/SKILL.md", "base neighbor\n");
+    file("plugins/example/skills/deleted/SKILL.md", "deleted skill\n");
+    file("evals/example/skills/changed/eval.yaml", "fixed measurement\n");
+    git("add", "."); git("commit", "-m", "Base fixture");
+    git("checkout", "-b", "candidate");
+    file(`${target}/SKILL.md`, "head skill\n");
+    file(`${target}/new.md`, "head-only file\n");
+    rmSync(resolve(repository, `${target}/old.md`));
+    rmSync(resolve(repository, "plugins/example/skills/deleted/SKILL.md"));
+    file("plugins/example/skills/neighbor/SKILL.md", "head neighbor without an eval\n");
+    file("plugins/example/skills/added/SKILL.md", "new skill without a baseline\n");
+    git("add", "."); git("commit", "-m", "Candidate fixture");
+    env.HEAD_SHA = git("rev-parse", "HEAD");
+    git("checkout", "main");
+    file(`${target}/main.md`, "current-main-only file\n");
+    git("add", "."); git("commit", "-m", "Advance main fixture");
+    const base = git("rev-parse", "HEAD");
+    git("merge", "--no-ff", "candidate", "-m", "Merge fixture");
+    env.GITHUB_SHA = git("rev-parse", "HEAD");
+    const workflow = parse(readFileSync(resolve(root, ".github/workflows/skill-evals.yml"), "utf8"));
+    const selection = workflow.jobs.select.steps.find((step) => step.id === "select").run;
+    const code = selection.match(/<<'JS'\n([\s\S]*)\nJS/)[1];
+    const environment = resolve(runner, "evals-environment.json");
+    writeFileSync(environment, JSON.stringify({ protection_rules: [] }));
+    const denied = spawnSync(process.execPath, ["--input-type=module", "-e", code], {
+      cwd: repository, env, encoding: "utf8", timeout: 10000,
+    });
+    assert.ifError(denied.error);
+    assert.notEqual(denied.status, 0);
+    assert.match(denied.stderr, /required maintainer reviewers/);
+    assert.equal(existsSync(env.GITHUB_OUTPUT), false);
+    writeFileSync(environment, JSON.stringify({ protection_rules: [{ type: "required_reviewers", reviewers: [{ type: "Team" }] }] }));
+    const selected = spawnSync(process.execPath, ["--input-type=module", "-e", code], {
+      cwd: repository, env, encoding: "utf8", timeout: 10000,
+    });
+    assert.ifError(selected.error);
+    assert.equal(selected.status, 0, selected.stderr);
+    assert.match(selected.stdout, /No before\/after pair for example\/added/);
+    assert.match(selected.stdout, /No before\/after pair for example\/deleted/);
+    assert.match(selected.stdout, /No before\/after pair for example\/neighbor/);
+    const matrix = JSON.parse(readFileSync(env.GITHUB_OUTPUT, "utf8").split("\n")[0].slice("matrix=".length));
+    assert.equal(matrix.include.length, 1);
+    const item = matrix.include[0];
+    assert.equal(item.directory, target);
+    assert.equal(item.base, base);
+    assert.equal(item.head, env.HEAD_SHA);
+    assert.match(item.id, /^skill-[a-f0-9]{12}$/);
+    for (const [id, source, expected] of [
+      ["before_source", base, "base skill\n"], ["after_source", env.HEAD_SHA, "head skill\n"],
+    ]) {
+      const step = workflow.jobs.evals.steps.find((entry) => entry.id === id);
+      const restored = spawnSync("bash", ["-c", step.run], {
+        cwd: repository, env: { ...env, SOURCE_SHA: source, SKILL_DIR: target }, encoding: "utf8", timeout: 10000,
+      });
+      assert.ifError(restored.error);
+      assert.equal(restored.status, 0, restored.stderr);
+      assert.equal(git("rev-parse", "HEAD"), env.GITHUB_SHA);
+      assert.equal(readFileSync(resolve(repository, `${target}/SKILL.md`), "utf8"), expected);
+      assert.equal(existsSync(resolve(repository, `${target}/old.md`)), id === "before_source");
+      assert.equal(existsSync(resolve(repository, `${target}/new.md`)), id === "after_source");
+      assert.equal(existsSync(resolve(repository, `${target}/main.md`)), id === "before_source");
+      assert.equal(readFileSync(resolve(repository, "plugins/example/skills/neighbor/SKILL.md"), "utf8"), "head neighbor without an eval\n");
+      assert.equal(readFileSync(resolve(repository, "evals/example/skills/changed/eval.yaml"), "utf8"), "fixed measurement\n");
+      assert.ok(git("diff", "--name-only", "HEAD").split("\n").every((path) => path.startsWith(`${target}/`)));
+    }
+    file("evals/example/skills/changed/eval.yaml", "unexpected measurement change\n");
+    const drift = spawnSync("bash", ["-c", workflow.jobs.evals.steps.find((entry) => entry.id === "after_source").run], {
+      cwd: repository, env: { ...env, SOURCE_SHA: env.HEAD_SHA, SKILL_DIR: target }, encoding: "utf8", timeout: 10000,
+    });
+    assert.ifError(drift.error);
+    assert.notEqual(drift.status, 0);
+    assert.match(drift.stdout, /Measurement files changed outside the selected skill/);
+  });
 
 for (const [plugin, skillName, readInstruction] of [
   ["marketplace-maintainer", "update-remote-pins", "Read its `AGENTS.md` and `marketplace.json`, and this skill's [remote pin rules](references/remote-pins.md)."],

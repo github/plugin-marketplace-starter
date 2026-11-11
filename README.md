@@ -197,7 +197,9 @@ request.
 
 **Paid evals:** `npm run eval` runs real Copilot sessions and costs AI credits.
 [Evals](.github/workflows/evals.yml) runs only when manually started; pull
-requests never trigger paid evals.
+requests that change a plugin skill use the separate
+[before/after workflow](.github/workflows/skill-evals.yml), with maintainer approval
+required in the protected `evals` environment. Fork PRs do not run paid evals.
 
 See [Checks and evals](docs/checks-and-evals.md) for CI details, local test
 commands, and Bash and PowerShell eval setup.

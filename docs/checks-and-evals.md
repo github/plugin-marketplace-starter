@@ -124,5 +124,31 @@ npm run eval:compare -- --baseline evals/_shared/fixtures/pr-description/baselin
 
 [Evals](../.github/workflows/evals.yml) runs the smoke suite only when you
 explicitly start it with **Run workflow** in GitHub Actions
-(`workflow_dispatch`). Pull requests never start paid evals. Review the
-selected branch and its eval code before dispatching a run.
+(`workflow_dispatch`). Review the selected branch and its eval code before
+dispatching a run.
+
+[Skill evals](../.github/workflows/skill-evals.yml) compares each changed existing
+plugin skill with its version on current `main`. It uses the same PR merge
+revision's evals, graders, fixtures and shared marketplace context for both runs;
+only the selected skill comes from the exact base-parent or PR-head commit.
+Both Action invocations run sequentially in one job, reusing the Action's verified
+Vally installation. They use one trial per case and no trial retries. A failed
+before verdict does not prevent the after run; failures remain visible, without
+a new regression-only gate or statistical claim.
+
+A maintainer must first configure the `evals` environment with required
+reviewers and review the PR's workflow, eval code and billing effects before
+approval. The read-only selection job refuses missing or unprotected
+environments, rather than automatically creating an unprotected environment.
+Same-repository PRs are trusted code with model-billing permission, not an
+OS/network sandbox; fork PRs are excluded and `pull_request_target` is not used.
+The organization's Copilot billing policy must also permit workflow-token usage.
+The workflow changes none of these repository or organization settings.
+
+New or deleted skills and skills without their corresponding
+`evals/<plugin>/skills/<skill>/eval.yaml` cannot form a before/after pair. They are
+reported as not run, not counted as passing, and do not make evals mandatory for
+every catalog skill. Each Action invocation retains its structured report;
+raw transcript uploads and PR-comment permissions are disabled. The Action
+manages its own runtime dependencies, so parity with the locally pinned Copilot
+CLI is not assumed.
