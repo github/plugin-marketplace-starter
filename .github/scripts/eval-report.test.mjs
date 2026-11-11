@@ -396,7 +396,7 @@ prDescriptionTest("pr-description eval stages the multi-skill marketplace cohort
   const project = parse(readFileSync(resolve(root, ".vally.yaml"), "utf8"));
   assert.equal(spec.agent_environment, "marketplace");
   const skills = project.environments.marketplace.skills;
-  for (const configuredSkill of skills.filter((path) => path.includes("/plugins/"))) {
+  for (const configuredSkill of skills) {
     assert.ok(existsSync(resolve(evalDir, configuredSkill)), `configured cohort skill path is missing: ${configuredSkill}`);
   }
   for (const expectedSkill of [
