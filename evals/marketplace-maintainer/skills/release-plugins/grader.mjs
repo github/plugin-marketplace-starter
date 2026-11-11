@@ -83,7 +83,7 @@ export function evaluate(trajectory, workspace, mode) {
     const clauses = trajectory.output.match(/[^.!?\n;,]+/g) ?? [];
     const evidence = /\b(?:released?\s+(?:base|tag|commit|record|version)|release\s+(?:record|base|tag)|first[- ]release|(?:first|initial)\s+release)\b/i;
     const request = /\b(?:please\s+(?:provide|share|supply|confirm|specify)|(?:can|could|would)\s+you\s+(?:provide|share|supply|confirm|specify)|I\s+(?:need|require))\b|\b(?:what|which)\b[^?]*\?/i;
-    const asksInList = [...trajectory.output.matchAll(/([^.!?\n;]+:)\s*\n((?:\s*(?:\d+[.)]|[-*])\s+[^\n]+(?:\n|$))+)/g)]
+    const asksInList = [...trajectory.output.matchAll(/([^.!?\n;]+:)[*_]*\s*\n((?:\s*(?:\d+[.)]|[-*])\s+[^\n]+(?:\n|$))+)/g)]
       .some(([, header, items]) => request.test(header) && items.trim().split(/\r?\n/).some((item) =>
         evidence.test(item.replace(/^\s*(?:\d+[.)]|[-*])\s+/, "").split(/[.!?;,]/, 1)[0])));
     const ready = /\b(?:ready\s+(?:to|for)\s+(?:the\s+)?release|release[- ]ready)\b/i;

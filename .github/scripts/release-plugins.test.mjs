@@ -72,6 +72,7 @@ releaseTest("unknown-release-base requires an actionable evidence request instea
     "I can't tell whether sample-notes is ready for release yet. Which released tag should I compare against?",
     "Before I edit, I need:\n\n1. **The released base**: a tag or release commit SHA.\n2. **Or confirmation** that this is an unreleased first version.\n",
     "Please provide:\n- A released tag.\n- Or confirmation of the initial release.\n",
+    "**Please provide:**\n- A released base.\n",
     "Please provide:\n- A plugin name.\n- A released base.\n",
     "Current blockers:\n- The plugin name is missing.\n- Please provide a released base.\n",
   ]) {
@@ -90,6 +91,7 @@ releaseTest("unknown-release-base requires an actionable evidence request instea
     "The released base is missing; Please provide:\n- A plugin name.\n",
     "Current blockers:\n- The released base is missing.\n- Please provide a plugin name.",
     "Please provide:\n- A plugin name. The released base is missing.",
+    "**Please provide:**\n- A plugin name. The released base is missing.",
     "Please provide:\n- A plugin name; the released base is missing.",
   ]) {
     const result = grade(output);
