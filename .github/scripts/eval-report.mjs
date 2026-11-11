@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "n
 import { relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, stripVTControlCharacters } from "node:util";
+import { loadProjectConfig } from "@microsoft/vally/config";
 
 const hasGraderError = (grade) => grade?.status === "error" || (grade?.details ?? []).some(hasGraderError);
 const stripTerminalControls = (text) => stripVTControlCharacters(String(text ?? ""))
@@ -434,18 +435,20 @@ export function renderReport(summary, path, { baselineSummary, baselinePath } = 
   return lines.join("\n");
 }
 
-export function resolveResultsPath(input, root = process.cwd()) {
+export async function resolveResultsPath(input, root = process.cwd()) {
   if (!input) {
-    const base = resolve(root, "vally-results");
+    const config = await loadProjectConfig(root);
+    const base = resolve(config.dir || root, config.paths.results);
+    const display = relative(root, base).split(sep).join("/") || ".";
     if (!existsSync(base)) {
-      throw new Error("No saved eval runs under vally-results/. Run evals first, or pass --results <path>.");
+      throw new Error(`No saved eval runs under ${display}/. Run evals first, or pass --results <path>.`);
     }
     const runs = readdirSync(base, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && existsSync(resolve(base, entry.name, "results.jsonl")))
       .map((entry) => entry.name)
       .sort();
     if (!runs.length) {
-      throw new Error("No saved eval runs under vally-results/. Run evals first, or pass --results <path>.");
+      throw new Error(`No saved eval runs under ${display}/. Run evals first, or pass --results <path>.`);
     }
     return resolve(base, runs.at(-1), "results.jsonl");
   }
@@ -463,8 +466,8 @@ export function resolveResultsPath(input, root = process.cwd()) {
   return resolved;
 }
 
-export function loadResults(path, root = process.cwd()) {
-  const file = resolveResultsPath(path, root);
+export async function loadResults(path, root = process.cwd()) {
+  const file = await resolveResultsPath(path, root);
   const lines = readFileSync(file, "utf8").split(/\r?\n/).filter((line) => line.trim());
   const records = lines.map((line) => JSON.parse(line));
   const displayPath = relative(root, file).split(sep).join("/") || file;
@@ -481,7 +484,8 @@ table highlighting fixed failures, regressions, and token deltas.
 Options:
   --results, --candidate, --run-dir <path>
                     Candidate results.jsonl file or run directory. Defaults to
-                    the newest run under vally-results/.
+                    the newest run under .vally.yaml's paths.results (Vally's
+                    default is vally-results/ when not configured).
   --baseline <path> Baseline results.jsonl file or run directory to compare
                     against the candidate run.
   -h, --help        Show this help message.
@@ -490,7 +494,7 @@ Examples:
   npm run eval:report
   npm run eval:compare -- --baseline evals/_shared/fixtures/pr-description/baseline-results.jsonl --candidate evals/_shared/fixtures/pr-description/candidate-results.jsonl`;
 
-function main(argv = process.argv.slice(2)) {
+async function main(argv = process.argv.slice(2)) {
   let parsed;
   try {
     parsed = parseArgs({
@@ -520,8 +524,8 @@ function main(argv = process.argv.slice(2)) {
   const baselineInput = values.baseline ?? (positionals.length === 2 ? positionals[0] : undefined);
   const candidateInput = values.candidate ?? values.results ?? values["run-dir"]
     ?? (positionals.length === 2 ? positionals[1] : positionals[0]);
-  const candidate = loadResults(candidateInput);
-  const baseline = baselineInput ? loadResults(baselineInput) : undefined;
+  const candidate = await loadResults(candidateInput);
+  const baseline = baselineInput ? await loadResults(baselineInput) : undefined;
   const markdown = renderReport(candidate.summary, candidate.displayPath, {
     baselineSummary: baseline?.summary,
     baselinePath: baseline?.displayPath,
@@ -534,7 +538,7 @@ function main(argv = process.argv.slice(2)) {
 
 if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]))) {
   try {
-    main();
+    await main();
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
