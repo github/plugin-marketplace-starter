@@ -199,6 +199,14 @@ request.
 [Evals](.github/workflows/evals.yml) runs only when manually started; pull
 requests never trigger paid evals.
 
+**Standard models:** `npm run eval:models` uses the native
+[model experiment](evals/standard-models.experiment.yaml) to test every retained
+skill and agent eval with Claude Sonnet 5.5 and GPT-6.1 Terra. These are starter
+defaults: during setup, customize `matrix.model.values` and its `baseline.model`
+to the models you want to test and can access. Preview without model calls with
+`npm run eval:models -- --dry-run`. Individual evals and Actions keep their
+existing single-model defaults; the experiment does not override them globally.
+
 See [Checks and evals](docs/checks-and-evals.md) for CI details, local test
 commands, and Bash and PowerShell eval setup.
 
