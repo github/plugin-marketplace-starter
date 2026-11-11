@@ -8,6 +8,23 @@ paths:
     - eval.yaml
     - "*.eval.yaml"
   results: vally-results
+environments:
+  marketplace:
+    # Vally resolves these paths relative to each eval, not this file.
+    # npm run eval:prepare fetches the remote skills without installing plugins.
+    skills:
+      - ../../../../plugins/plugin-authoring/skills/add-plugin
+      - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
+      - ../../../../plugins/plugin-authoring/skills/submit-plugin
+      - ../../../../plugins/marketplace-maintainer/skills/update-remote-pins
+      - ../../../../plugins/marketplace-maintainer/skills/release-plugins
+      - ../../../../plugins/pr-description/skills/pr-description
+      - ../../../../.vally/marketplace/eval/34ddb5803aeaee8330ab70c19ad1a3f37fb77ded/skills/compare
+      - ../../../../.vally/marketplace/eval/34ddb5803aeaee8330ab70c19ad1a3f37fb77ded/skills/create
+      - ../../../../.vally/marketplace/eval/34ddb5803aeaee8330ab70c19ad1a3f37fb77ded/skills/improve
+      - ../../../../.vally/marketplace/eval/34ddb5803aeaee8330ab70c19ad1a3f37fb77ded/skills/review
+      - ../../../../.vally/marketplace/eval/34ddb5803aeaee8330ab70c19ad1a3f37fb77ded/skills/run
+      - ../../../../.vally/marketplace/eval/34ddb5803aeaee8330ab70c19ad1a3f37fb77ded/skills/setup
 suites:
   smoke:
     description: One representative case for each skill and agent

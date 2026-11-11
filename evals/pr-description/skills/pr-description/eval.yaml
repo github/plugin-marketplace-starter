@@ -6,22 +6,15 @@ defaults:
   model: claude-haiku-5.5
   timeout: 5m
   runs: 1
-# Stage pr-description alongside the other marketplace skills so cases verify
-# realistic multi-skill routing and non-collision.
-agent_environment:
-  skills:
-    - ../../../../plugins/pr-description/skills/pr-description
-    - ../../../../plugins/plugin-authoring/skills/add-plugin
-    - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
-    - ../../../../plugins/plugin-authoring/skills/submit-plugin
-    - ../../../../plugins/marketplace-maintainer/skills/update-remote-pins
-    - ../../../../plugins/marketplace-maintainer/skills/release-plugins
+agent_environment: marketplace
 grading_environment:
   files:
     - src: grader.mjs
       dest: .grading/grader.mjs
     - src: ../../../_shared/graders/common.mjs
       dest: .grading/common.mjs
+    - src: ../../../_shared/graders/marketplace-context.mjs
+      dest: .grading/marketplace-context.mjs
 stimuli:
   - name: pr-description-drafts-structured-pr-body
     prompt: >-
@@ -45,6 +38,24 @@ stimuli:
         config:
           program: node
           args: [.grading/grader.mjs]
+      - type: program
+        name: marketplace-skills-loaded
+        config:
+          program: node
+          args:
+            - .grading/marketplace-context.mjs
+            - add-plugin
+            - try-plugin-locally
+            - submit-plugin
+            - update-remote-pins
+            - release-plugins
+            - pr-description
+            - compare
+            - create
+            - improve
+            - review
+            - run
+            - setup
       - type: diff-empty
   - name: pr-description-ignores-bug-and-review-question
     prompt: >-

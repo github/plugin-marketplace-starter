@@ -6,12 +6,7 @@ defaults:
   model: claude-haiku-5.5
   timeout: 5m
   runs: 1
-# Both of the plugin's skills load, as they do when it's installed, so these
-# cases also check that Copilot picks the right one.
-agent_environment:
-  skills:
-    - ../../../../plugins/marketplace-maintainer/skills/update-remote-pins
-    - ../../../../plugins/marketplace-maintainer/skills/release-plugins
+agent_environment: marketplace
 grading_environment:
   files:
     - src: grader.mjs

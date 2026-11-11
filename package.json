@@ -6,6 +6,8 @@
   "engines": { "node": ">=22.14.0" },
   "scripts": {
     "lint": "node .github/scripts/lint.mjs",
+    "eval:prepare": "node .github/scripts/prepare-eval-context.mjs",
+    "preeval": "npm run eval:prepare",
     "eval": "vally eval --workers 1 --max-retries 1",
     "eval:report": "node .github/scripts/eval-report.mjs",
     "eval:compare": "node .github/scripts/eval-report.mjs"

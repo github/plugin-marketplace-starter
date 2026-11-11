@@ -12,7 +12,10 @@ npm run lint
 
 `npm run lint` checks local catalog consistency, then checks every skill under
 `plugins/` and every eval under `evals/` with the pinned
-[Vally](https://microsoft.github.io/vally/) CLI. A remote-only marketplace can
+[Vally](https://microsoft.github.io/vally/) CLI. It also checks the shared
+environment's local skill coverage and remote pin paths without accessing the
+network. Remote skill completeness is checked during preparation below.
+A remote-only marketplace can
 omit both directories; schema validation also skips when no local manifests
 remain. Regression tests for the bundled maintenance plugins run only while
 those local plugins remain. Missing files for a retained plugin still fail.
@@ -68,6 +71,54 @@ call a model or prove how a plugin behaves in a model session.
 ## Paid evals
 
 **These runs start real Copilot sessions and spend AI credits.**
+
+### Shared marketplace environment
+
+The six skill evals reference `agent_environment: marketplace`. Its definition in
+[.vally.yaml](../.vally.yaml) lists all six local skills and the six skills from
+the catalog-pinned remote Evals plugin. Vally merges that skill set with each
+case's existing fixtures; grading files stay separate. The independent
+`plugin-reviewer` delegation eval is unchanged.
+
+`npm run eval` first runs `npm run eval:prepare`. Preparation makes read-only
+GitHub API requests through `gh`, checks remote pins and fetches only skill
+sources and their supporting files into ignored `.vally/marketplace/` storage.
+It calls no model and does not install plugins, change profiles, run fetched
+code, or start plugin MCP servers, hooks or extensions. Use a signed-in `gh`
+account that can read the remote repositories. Review the pinned skill sources
+before approving an eval; an eval agent can follow their instructions and use
+tools.
+
+Preparation fails rather than omitting a missing skill, using a moving ref,
+accepting a truncated tree, or reusing modified cached sources. Verified files
+are reused at their exact commit. If the cache was changed, remove only the
+reported `.vally/marketplace/<plugin>/<sha>/` cache and prepare it again.
+Preparation alone is model-free:
+
+```sh
+npm run eval:prepare
+```
+
+Run this before invoking Vally directly instead of through `npm run eval`.
+When adding or removing a skill, update the shared environment. When changing a
+remote pin, update its paths to the new SHA and list all skills at that commit.
+Update the `marketplace-skills-loaded` grader's expected names in the
+`pr-description` eval too. Source paths are relative to the eval directory,
+not `.vally.yaml`; the six skill evals currently share the same directory depth.
+
+That positive case checks the native Copilot SDK trajectory's
+`metadata.skillsLoaded` inventory for every marketplace skill, alongside its
+existing exact target-invocation check. Listed paths and model answers cannot
+satisfy the loaded-skill check. Model-free tests exercise native Vally staging
+with a test executor and synthetic grader inputs, not a live Copilot session.
+An approved paid run is still needed to demonstrate actual runtime loading.
+The check's result is stored with the existing grader results.
+
+This is a shared **skills** environment, not full plugin-runtime activation.
+It does not establish availability of plugin agents, MCP tools, hooks, extensions
+or interactive canvases.
+
+### Running an eval
 
 Skill evals use Vally's built-in `skill-invocation` grader: `required` for every
 positive and boundary case, and `disallowed` for negative cases. Invocation

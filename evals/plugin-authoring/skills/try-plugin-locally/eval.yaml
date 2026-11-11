@@ -6,13 +6,7 @@ defaults:
   model: claude-haiku-5.5
   timeout: 5m
   runs: 1
-# All of the plugin's skills load, as they do when it's installed, so these
-# cases also check that Copilot picks the right one.
-agent_environment:
-  skills:
-    - ../../../../plugins/plugin-authoring/skills/add-plugin
-    - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
-    - ../../../../plugins/plugin-authoring/skills/submit-plugin
+agent_environment: marketplace
 grading_environment:
   files:
     - src: grader.mjs
