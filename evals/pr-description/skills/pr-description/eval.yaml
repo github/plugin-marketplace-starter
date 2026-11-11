@@ -6,16 +6,7 @@ defaults:
   model: claude-haiku-5.5
   timeout: 5m
   runs: 1
-# Stage pr-description alongside the other marketplace skills so cases verify
-# realistic multi-skill routing and non-collision.
-agent_environment:
-  skills:
-    - ../../../../plugins/pr-description/skills/pr-description
-    - ../../../../plugins/plugin-authoring/skills/add-plugin
-    - ../../../../plugins/plugin-authoring/skills/try-plugin-locally
-    - ../../../../plugins/plugin-authoring/skills/submit-plugin
-    - ../../../../plugins/marketplace-maintainer/skills/update-remote-pins
-    - ../../../../plugins/marketplace-maintainer/skills/release-plugins
+agent_environment: marketplace
 grading_environment:
   files:
     - src: grader.mjs
