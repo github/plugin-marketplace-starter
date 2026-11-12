@@ -81,6 +81,14 @@ call a model or prove how a plugin behaves in a model session.
 
 **These runs start real Copilot sessions and spend AI credits.**
 
+Docker execution readiness means every selected case finishes task execution
+and grading without execution or grading errors. A completed behavioral
+**FAIL** is still a valid graded result, not an infrastructure error; preserve
+it for follow-up rather than changing skills, graders, or thresholds to force
+a pass. Commands using `--require-pass`, including the manual workflow,
+also require passing behavioral verdicts and can therefore exit unsuccessfully
+even when Docker execution and grading completed correctly.
+
 Skill evals use Vally's built-in `skill-invocation` grader: `required` for every
 positive and boundary case, and `disallowed` for negative cases. Invocation
 credit requires a matching `skill_activation` event. Successful file reads,
@@ -88,8 +96,12 @@ searches, path mentions, and completed answers do not count as invocation.
 Custom program graders independently check the resulting files, output, and
 side effects.
 
-The `plugin-reviewer` eval needs the full Copilot CLI installed by `npm ci`.
-Point `COPILOT_CLI_PATH` at that pinned CLI before running the smoke suite.
+Repository evals use the Docker backend selected in
+[.vally.yaml](../.vally.yaml). The appliance supplies its own executor runtime;
+do not forward a host `COPILOT_CLI_PATH` into a Linux container. The independent
+`plugin-reviewer` eval stages its actual read-only custom agent and requires
+delegation through the runtime's task tool. It is included in both normal
+discovery and the full suite, not replaced by a companion skill.
 
 The `try-plugin-locally` smoke case prepares a fresh-session `--plugin-dir`
 command for the selected plugin in a developer's existing checkout. Vally
@@ -108,29 +120,23 @@ install-check recipes remain covered by model-free tests. Running a real
 installation check still requires the user's exact cleanup confirmation and
 host permissions; a headless denial is a blocker, not permission to bypass them.
 
-Bash:
-
-```sh
-export COPILOT_CLI_PATH="$PWD/node_modules/@github/copilot/npm-loader.js"
-npm run eval -- --suite smoke
-```
-
-PowerShell:
-
-```powershell
-$env:COPILOT_CLI_PATH = "$PWD\node_modules\@github\copilot\npm-loader.js"
-npm run eval -- --suite smoke
-```
-
 ### Native Docker evals
 
 **These are real Copilot runs and still spend AI credits.** Use Vally 0.21.0's
 native [`docker` backend](https://microsoft.github.io/vally/guides/running-evals-in-docker/)
-with an explicit CLI flag. This capability does not change the existing local
-execution defaults, CI triggers, or the Evals plugin's Run behavior. Choosing
-whether Docker should be mandatory is a separate policy decision. The pinned
-Evals plugin's project parser does not accept `defaults.backend`; don't add it
-to [.vally.yaml](../.vally.yaml) to configure plugin Run.
+through the repository's `defaults.backend` configuration. It applies to all
+seven saved evals, including explicit `--eval-spec` runs, `--suite full`, and
+the manual Actions workflow. The current graders are deterministic, so the
+project also defaults grading to `grade-network: none`. Missing Docker, an
+inaccessible daemon, or failed appliance preparation is an error, not permission
+to use the local backend.
+
+The pinned Evals plugin's full-engine project reader rejects the
+`defaults.backend` field before Run can execute. Thus plugin Run is currently
+unsupported for this repository configuration, **not** an alternate Docker
+launcher or a local fallback. Its Setup writer only covers paths and suites;
+this advanced native setting is maintained in `.vally.yaml`. Upstream plugin
+support is needed before its Run entrypoint can honor this Docker default.
 
 After `npm ci`, make sure `docker` is on `PATH`, your account can access a
 running **Linux** Docker daemon, and `docker compose version` succeeds. The
@@ -146,7 +152,8 @@ running; do not disable TLS verification.
 On restricted-registry networks, Vally 0.21.0's default builder does not inherit
 host `.npmrc` files or expose an npm-registry build override. A separately
 reviewed, version-matched custom image can be selected explicitly with
-`--backend-args task-image=<immutable-image-id>`. A successful run with that
+`--backend docker --backend-args task-image=<immutable-image-id>` and the
+intended role-network arguments described below. A successful run with that
 image verifies native task/grade execution, **not** the unmodified default-image
 bootstrap. Never tag a modified recipe with Vally's canonical default cache tag.
 
@@ -162,7 +169,7 @@ Bash:
 
 ```sh
 export GH_TOKEN="$(gh auth token)"
-npm run eval -- --backend docker --backend-args grade-network=none --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
+npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
 unset GH_TOKEN
 ```
 
@@ -170,13 +177,25 @@ PowerShell:
 
 ```powershell
 $env:GH_TOKEN = gh auth token
-npm run eval -- --backend docker --backend-args grade-network=none --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
+npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
 Remove-Item Env:GH_TOKEN
 ```
 
 This uses the eval's declared model and one trial per case. The native image
-supplies its own executor runtime; the host `COPILOT_CLI_PATH` setting above
-is for local runs, not a path to forward into Linux containers.
+supplies its own executor runtime, distinct from the host's pinned Copilot CLI.
+
+With the same explicitly selected authentication, `npm run eval -- --suite
+smoke` selects the smoke cases and `npm run eval -- --suite full --max-retries
+0` selects every case. The full suite includes the independent reviewer's
+positive delegations and negative no-delegation case. Review its complete
+case/model plan and approve its additional AI-credit exposure before starting.
+
+Native precedence is CLI backend, then eval backend, then project backend.
+An explicit `--backend` replaces the project backend argument layer. When
+using an independently reviewed custom image, repeat the intended role policy,
+for example `--backend docker --backend-args task-image=<immutable-image-id>
+--backend-args grade-network=none`; do not assume project arguments survive the
+explicit override. No existing eval overrides the Docker project default.
 
 Know the boundary before approving a run:
 
@@ -189,11 +208,11 @@ Know the boundary before approving a run:
   `no-new-privileges`. Vally also uses root-running initialization/evidence
   helpers with limited capabilities; Docker is not protection against every
   kernel escape or a substitute for reviewing trusted code.
-- Both role networks default to Docker's normal network, **not offline**.
+- Vally's built-in role-network defaults are Docker's normal network, **not offline**.
   The task needs network for Copilot and the shared marketplace environment's
   pinned remote-skill fetch. `task-network=none` is only suitable for a
-  self-contained model-free probe. The command above sets `grade-network=none`
-  because this eval's graders are deterministic; LLM or network-dependent
+  self-contained model-free probe. The project sets `grade-network=none`
+  because the current repository graders are deterministic; LLM or network-dependent
   graders need their own reviewed networking and credentials.
 - The task can read and use its forwarded model credential and reach allowed
   network services. Custom `task-env` and `grade-env` forwards are role-specific;
