@@ -156,7 +156,8 @@ reviewers and review the PR's workflow, eval code and billing effects before
 approval. The read-only selection job refuses missing or unprotected
 environments, rather than automatically creating an unprotected environment.
 The paid job intentionally executes candidate eval/setup/grader code with its
-model credential after approval. Its Vally process has a fresh home and a narrow
+model credential after approval. Each arm's Vally process has a separate fresh
+home and temporary directory, plus a narrow
 environment rather than inherited reporting/Actions credentials. That is process
 hygiene, not isolation from other same-user processes or a network/kernel sandbox.
 Fork PRs are excluded; `pull_request_target` is not used.

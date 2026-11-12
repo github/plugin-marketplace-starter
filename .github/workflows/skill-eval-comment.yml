@@ -15,6 +15,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: read
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
       count: ${{ steps.select.outputs.count }}
@@ -115,7 +116,6 @@ jobs:
       matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
     env:
       SKILL_DIR: ${{ matrix.directory }}
-      VALLY_ENTRY: ${{ runner.temp }}/skill-eval-tools/node_modules/@microsoft/vally-cli/dist/index.js
     steps:
       - name: Reject partial paid retries
         env:
@@ -142,7 +142,9 @@ jobs:
       - name: Install the pinned native CLI outside the candidate checkout
         run: |
           npm install --prefix "$RUNNER_TEMP/skill-eval-tools" --no-audit --no-fund @microsoft/vally-cli@0.21.0
-          mkdir -p "$RUNNER_TEMP/skill-native" "$RUNNER_TEMP/skill-eval-home"
+          VALLY_ENTRY="$RUNNER_TEMP/skill-eval-tools/node_modules/@microsoft/vally-cli/dist/index.js"
+          echo "VALLY_ENTRY=$VALLY_ENTRY" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/skill-native"
           node "$VALLY_ENTRY" --version
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
@@ -171,8 +173,11 @@ jobs:
           EVAL_PATH: ${{ matrix.evalPath }}
           NATIVE_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.id }}-before
         run: &native_run |
+          set -e
+          arm_home="$(mktemp -d "$RUNNER_TEMP/skill-home-$ARM-XXXXXX")"
+          arm_tmp="$(mktemp -d "$RUNNER_TEMP/skill-tmp-$ARM-XXXXXX")"
           set +e
-          env -i PATH="$PATH" HOME="$RUNNER_TEMP/skill-eval-home" TMPDIR="$RUNNER_TEMP" VALLY_TELEMETRY_OPTOUT=1 COPILOT_GITHUB_TOKEN="$COPILOT_GITHUB_TOKEN" \
+          env -i PATH="$PATH" HOME="$arm_home" TMPDIR="$arm_tmp" VALLY_TELEMETRY_OPTOUT=1 COPILOT_GITHUB_TOKEN="$COPILOT_GITHUB_TOKEN" \
             node "$VALLY_ENTRY" eval --eval-spec "$EVAL_PATH" --work-dir "$PWD" --output=jsonl --output-dir "$RUNNER_TEMP/skill-native/$ARM-artifacts" \
             --run-id "$NATIVE_RUN_ID" --runs 1 --workers 1 --max-retries 0 --require-pass > "$RUNNER_TEMP/skill-native/$ARM.jsonl" 2> "$RUNNER_TEMP/skill-native/$ARM.stderr"
           code=$?

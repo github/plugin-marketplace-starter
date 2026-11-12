@@ -407,7 +407,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     const publisher = parse(readFileSync(resolve(root, ".github/workflows/skill-eval-comment.yml"), "utf8"));
     assert.deepEqual(publisher.on, { workflow_run: { workflows: ["Skill evals (before and after)"], types: ["completed"] } });
     assert.deepEqual(publisher.permissions, {});
-    assert.deepEqual(publisher.jobs.select.permissions, { contents: "read", actions: "read" });
+    assert.deepEqual(publisher.jobs.select.permissions, { contents: "read", actions: "read", "pull-requests": "read" });
     assert.match(publisher.jobs.select.if, /conclusion != 'cancelled'/);
     assert.match(publisher.jobs.select.if, /head_repository\.full_name == github\.repository/);
     const job = publisher.jobs.evals;
@@ -427,7 +427,10 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     assert.notEqual(before.env.NATIVE_RUN_ID, after.env.NATIVE_RUN_ID);
     const install = job.steps.find((step) => step.run?.includes("npm install")).run;
     assert.match(install, /--prefix "\$RUNNER_TEMP\/skill-eval-tools".*@microsoft\/vally-cli@0\.21\.0/);
-    assert.match(job.env.VALLY_ENTRY, /runner\.temp.*skill-eval-tools/);
+    assert.equal(job.env.VALLY_ENTRY, undefined);
+    assert.doesNotMatch(JSON.stringify(job.env), /runner\./, "runner context is unavailable in job-level env");
+    assert.match(install, /VALLY_ENTRY="\$RUNNER_TEMP\/skill-eval-tools\/node_modules\/@microsoft\/vally-cli\/dist\/index\.js"/);
+    assert.match(install, /echo "VALLY_ENTRY=\$VALLY_ENTRY" >> "\$GITHUB_ENV"/);
     assert.equal(after.if, "${{ !cancelled() && steps.after_source.outcome == 'success' }}");
     assert.equal(job.steps.find((step) => step.id === "after_source").if,
       "${{ !cancelled() && steps.before_source.outcome == 'success' }}");
@@ -478,7 +481,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     mkdirSync(resolve(runner, "skill-native"), { recursive: true });
     const entry = resolve(directory, "synthetic-vally.mjs");
     writeFileSync(entry, `
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const value = (flag) => process.argv[process.argv.indexOf(flag) + 1];
 const before = value('--run-id').endsWith('-before');
@@ -487,12 +490,16 @@ mkdirSync(output, { recursive: true });
 writeFileSync(join(output, 'observed.json'), JSON.stringify({
   args: process.argv.slice(2), credential: process.env.COPILOT_GITHUB_TOKEN,
   leaked: ['GH_TOKEN', 'GITHUB_TOKEN', 'ACTIONS_RUNTIME_TOKEN', 'NODE_OPTIONS'].some((key) => key in process.env),
+  home: process.env.HOME, temporary: process.env.TMPDIR,
+  inherited: [process.env.HOME, process.env.TMPDIR].some((path) => existsSync(join(path, 'before-state'))),
 }));
+if (before) for (const path of [process.env.HOME, process.env.TMPDIR]) writeFileSync(join(path, 'before-state'), 'synthetic');
 console.log(JSON.stringify({ type: 'trial-result', runId: value('--run-id'), raw: 'SYNTHETIC_PRIVATE_OUTPUT' }));
 console.log(JSON.stringify({ type: 'run-summary', runId: value('--run-id'), passed: !before, hadExecutionErrors: false }));
 process.exitCode = before ? 1 : 0;
 `);
     const workflow = parse(readFileSync(resolve(root, ".github/workflows/skill-eval-comment.yml"), "utf8"));
+    const observedArms = [];
     for (const arm of ["before", "after"]) {
       const step = workflow.jobs.evals.steps.find((item) => item.id === arm);
       const result = spawnSync("bash", ["-c", step.run], {
@@ -513,6 +520,8 @@ process.exitCode = before ? 1 : 0;
       const observed = JSON.parse(readFileSync(resolve(runner, `skill-native/${arm}-artifacts/observed.json`), "utf8"));
       assert.equal(observed.credential, "synthetic-selected");
       assert.equal(observed.leaked, false);
+      assert.equal(observed.inherited, false, "each arm must start without Before's user or temporary state");
+      observedArms.push(observed);
       assert.equal(observed.args[0], "eval");
       assert.ok(observed.args.includes("--require-pass"));
       assert.ok(observed.args.includes("--output=jsonl"));
@@ -520,6 +529,8 @@ process.exitCode = before ? 1 : 0;
       assert.equal(records.at(-1).runId, `fixture-${arm}`);
       assert.equal(records.at(-1).passed, arm === "after");
     }
+    assert.notEqual(observedArms[0].home, observedArms[1].home);
+    assert.notEqual(observedArms[0].temporary, observedArms[1].temporary);
     assert.equal(readFileSync(resolve(directory, "outputs"), "utf8"), "exit=1\nexit=0\n");
   });
 
