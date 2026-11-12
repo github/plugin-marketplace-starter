@@ -50,6 +50,7 @@ test("native full-suite and explicit-spec launches inherit Docker for every reta
   }
   const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
   assertBackendInheritance(pkg.scripts.eval);
+  assertBackendInheritance(pkg.scripts["eval:models"]);
   const workflow = parse(readFileSync(resolve(root, ".github/workflows/evals.yml"), "utf8"));
   const launches = workflow.jobs.evals.steps.filter((step) => /npm run eval/.test(step.run ?? ""));
   assert.equal(launches.length, 1);
@@ -223,7 +224,7 @@ test("a missing Docker daemon rejects native preparation rather than selecting h
   await backend.shutdown();
 });
 
-test("the native CLI fails closed without Docker even when a model-free local executor is available", (t) => {
+test("native eval and experiment commands fail closed without Docker even with a model-free local executor", (t) => {
   const directory = resolve(root, ".vally", `docker-unavailable-${randomUUID()}`);
   mkdirSync(directory, { recursive: true });
   t.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -240,30 +241,51 @@ test("the native CLI fails closed without Docker even when a model-free local ex
     "      - type: completed",
     "",
   ].join("\n"));
-  const child = spawnSync(process.execPath, [
-    resolve(root, "node_modules/@microsoft/vally-cli/dist/index.js"),
-    "eval", "--eval-spec", spec, "--work-dir", root,
-    "--workspace", resolve(directory, "workspace"),
-    "--output-dir", resolve(directory, "outputs"),
-    "--workers", "1", "--runs", "1", "--max-retries", "0",
-    "--shutdown-timeout", "1s", "--require-pass",
-  ], {
-    cwd: root,
-    encoding: "utf8",
-    timeout: 20_000,
-    env: {
-      PATH: directory,
-      ...(process.env.SystemRoot && { SystemRoot: process.env.SystemRoot }),
-      HOME: directory,
-      USERPROFILE: directory,
-      TMP: directory,
-      TEMP: directory,
-      DOCKER_CONFIG: directory,
-      DOCKER_CONTEXT: "model-free-nonexistent-context",
-      VALLY_TELEMETRY_OPTOUT: "1",
-    },
-  });
-  assert.ifError(child.error);
-  assert.notEqual(child.status, 0, child.stdout + child.stderr);
-  assert.match(child.stdout + child.stderr, /docker.*ENOENT|ENOENT.*docker|Docker backend preparation/i);
+  const experiment = resolve(directory, "synthetic.experiment.yaml");
+  writeFileSync(experiment, [
+    "name: model-free-docker-unavailable",
+    "evals: [eval.yaml]",
+    "matrix:",
+    "  timeout:",
+    "    path: /defaults/timeout",
+    "    values: [1s, 2s]",
+    "baseline:",
+    "  timeout: 1s",
+    "execution:",
+    "  workers: 1",
+    "",
+  ].join("\n"));
+  for (const [command, args] of [
+    ["eval", [
+      "eval", "--eval-spec", spec, "--work-dir", root,
+      "--workers", "1", "--runs", "1", "--max-retries", "0", "--shutdown-timeout", "1s",
+    ]],
+    ["experiment", ["experiment", "run", experiment, "--workers", "1"]],
+  ]) {
+    const child = spawnSync(process.execPath, [
+      resolve(root, "node_modules/@microsoft/vally-cli/dist/index.js"),
+      ...args,
+      "--workspace", resolve(directory, `${command}-workspace`),
+      "--output-dir", resolve(directory, `${command}-outputs`),
+      "--require-pass",
+    ], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 20_000,
+      env: {
+        PATH: directory,
+        ...(process.env.SystemRoot && { SystemRoot: process.env.SystemRoot }),
+        HOME: directory,
+        USERPROFILE: directory,
+        TMP: directory,
+        TEMP: directory,
+        DOCKER_CONFIG: directory,
+        DOCKER_CONTEXT: "model-free-nonexistent-context",
+        VALLY_TELEMETRY_OPTOUT: "1",
+      },
+    });
+    assert.ifError(child.error);
+    assert.notEqual(child.status, 0, child.stdout + child.stderr);
+    assert.match(child.stdout + child.stderr, /docker.*ENOENT|ENOENT.*docker|Docker backend preparation/i);
+  }
 });
