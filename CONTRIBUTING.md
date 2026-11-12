@@ -17,7 +17,7 @@ project you agree to abide by its terms.
 ## Submitting a pull request
 
 1. [Fork][fork] and clone the repository.
-1. Install the dependencies with Node.js 22.14 or newer: `npm ci`
+1. Install the dependencies with Node.js 22.15.0 or newer (24+ recommended): `npm ci`
 1. Make sure the lint passes on your machine: `npm run lint`
 1. Create a new branch: `git checkout -b my-branch-name`
 1. Make your change. For a new plugin, follow [Add a plugin](README.md#add-a-plugin).

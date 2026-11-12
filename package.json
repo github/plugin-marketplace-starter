@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "license": "MIT",
-  "engines": { "node": ">=22.14.0" },
+  "engines": { "node": ">=22.15.0" },
   "scripts": {
     "lint": "node .github/scripts/lint.mjs",
     "eval": "vally eval --workers 1 --max-retries 1",

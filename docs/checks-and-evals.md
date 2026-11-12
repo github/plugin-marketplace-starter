@@ -11,7 +11,11 @@ npm run lint
 ```
 
 The lockfile keeps exact versions and integrity hashes without registry-specific
-tarball URLs. After changing dependencies, preserve that format with npm's
+tarball URLs. Preserve existing SHA-512 integrity values for unchanged package
+versions: a registry mirror that omits `dist.integrity` can cause npm to replace
+them with weaker SHA-1 values from `dist.shasum` during an upgrade. Removing
+`resolved` URLs does not require changing integrity values. After changing
+dependencies, preserve that format with npm's
 [`omit-lockfile-registry-resolved`](https://docs.npmjs.com/cli/v11/using-npm/config/#omit-lockfile-registry-resolved)
 option:
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -12,12 +12,23 @@ import { parse } from "yaml";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
+function assertReviewerCoverage(projectRoot, evals) {
+  if (existsSync(resolve(projectRoot, "plugins/marketplace-maintainer"))) {
+    assert.ok(evals.some(({ spec }) => spec.name === "plugin-reviewer-independent"),
+      "retained marketplace-maintainer requires its independent reviewer eval");
+  }
+}
+
+function assertBackendInheritance(command) {
+  assert.doesNotMatch(command, /--(?:backend(?:-args)?|in-place)\b/);
+}
+
 test("native full-suite and explicit-spec launches inherit Docker for every retained eval", async () => {
   const project = await ProjectContext.load(root);
   const suite = project.resolveSuite("full");
   const discovery = await discoverAndFilterEvals(project, { suiteEvals: suite.evals });
   assert.deepEqual(discovery.errors, []);
-  assert.ok(discovery.matched.some(({ spec }) => spec.name === "plugin-reviewer-independent"));
+  assertReviewerCoverage(root, discovery.matched);
   for (const { filePath, spec } of discovery.matched) {
     const settings = resolveBackendSettings({
       evalBackend: spec.defaults?.backend,
@@ -30,11 +41,34 @@ test("native full-suite and explicit-spec launches inherit Docker for every reta
     assert.equal(settings.args["grade-network"], "none", filePath);
   }
   const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
-  assert.doesNotMatch(pkg.scripts.eval, /--backend\s+local|--in-place/);
+  assertBackendInheritance(pkg.scripts.eval);
   const workflow = parse(readFileSync(resolve(root, ".github/workflows/evals.yml"), "utf8"));
   const launches = workflow.jobs.evals.steps.filter((step) => /npm run eval/.test(step.run ?? ""));
   assert.equal(launches.length, 1);
-  assert.doesNotMatch(launches[0].run, /--backend\s+local|--in-place/);
+  assertBackendInheritance(launches[0].run);
+});
+
+test("reviewer coverage permits plugin removal but rejects a missing retained reviewer eval", (t) => {
+  const directory = resolve(root, ".vally", `reviewer-coverage-${randomUUID()}`);
+  mkdirSync(directory, { recursive: true });
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  assertReviewerCoverage(directory, []);
+  mkdirSync(resolve(directory, "plugins/marketplace-maintainer"), { recursive: true });
+  assert.throws(() => assertReviewerCoverage(directory, []), /requires its independent reviewer eval/);
+  assertReviewerCoverage(directory, [{ spec: { name: "plugin-reviewer-independent" } }]);
+});
+
+test("shared launchers reject backend and in-place overrides in either argument form", () => {
+  for (const command of ["vally eval --workers 1", "npm run eval -- --suite smoke --require-pass"]) {
+    assertBackendInheritance(command);
+    for (const option of [
+      "--backend local", "--backend=local", "--backend docker", "--backend=docker",
+      "--backend-args grade-network=default", "--backend-args=grade-network=default",
+      "--in-place", "--in-place=true",
+    ]) {
+      assert.throws(() => assertBackendInheritance(`${command} ${option}`), assert.AssertionError);
+    }
+  }
 });
 
 test("a missing Docker daemon rejects native preparation rather than selecting host execution", async () => {
