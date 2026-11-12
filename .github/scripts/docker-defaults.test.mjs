@@ -76,12 +76,43 @@ test("documented credential recipes expose only the selected token and restore a
   const section = guide.slice(guide.indexOf("complete two-case eval"));
   const bash = section.match(/```sh\n([\s\S]*?)\n```/)[1];
   const powershell = section.match(/```powershell\n([\s\S]*?)\n```/)[1];
+  const expectedBash = String.raw`(
+  unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
+  GH_TOKEN="$(gh auth token)" || exit
+  test -n "$GH_TOKEN" || exit 1
+  export GH_TOKEN
+  npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
+)`;
+  const expectedPowerShell = String.raw`$names = 'COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'
+$original = @{}
+foreach ($name in $names) {
+  $original[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+}
+try {
+  foreach ($name in $names) {
+    [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+  }
+  $token = gh auth token
+  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
+    throw 'Could not obtain the selected gh credential.'
+  }
+  $env:GH_TOKEN = $token
+  npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
+  if ($LASTEXITCODE -ne 0) { throw "Eval exited with code $LASTEXITCODE; inspect its saved results." }
+} finally {
+  foreach ($name in $names) {
+    [Environment]::SetEnvironmentVariable($name, $original[$name], 'Process')
+  }
+  $token = $null
+}`;
+  assert.equal(bash, expectedBash);
+  assert.equal(powershell, expectedPowerShell);
   const env = { ...process.env, COPILOT_GITHUB_TOKEN: "synthetic-copilot", GH_TOKEN: "synthetic-gh", GITHUB_TOKEN: "synthetic-github" };
   for (const exit of [0, 37]) {
     const sh = spawnSync("bash", ["-c", `
 gh() { [[ -z "\${COPILOT_GITHUB_TOKEN+x}\${GH_TOKEN+x}\${GITHUB_TOKEN+x}" ]] || return 91; printf 'synthetic-selected'; }
 npm() { [[ "$GH_TOKEN" == synthetic-selected && -z "\${COPILOT_GITHUB_TOKEN+x}\${GITHUB_TOKEN+x}" ]] || return 92; return ${exit}; }
-${bash}
+${expectedBash}
 result=$?
 [[ $result == ${exit} && "$COPILOT_GITHUB_TOKEN" == synthetic-copilot && "$GH_TOKEN" == synthetic-gh && "$GITHUB_TOKEN" == synthetic-github ]]
 `], { env, encoding: "utf8", timeout: 10000 });
@@ -100,7 +131,7 @@ function npm {
 }
 $caught = $false
 try {
-${powershell}
+${expectedPowerShell}
 } catch { $caught = $true }
 if ($caught -ne $${exit !== 0} -or $env:COPILOT_GITHUB_TOKEN -ne 'synthetic-copilot' -or $env:GH_TOKEN -ne 'synthetic-gh' -or $env:GITHUB_TOKEN -ne 'synthetic-github') { throw 'Recipe did not restore original credentials' }
 exit 0
