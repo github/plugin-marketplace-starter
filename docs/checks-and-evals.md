@@ -79,6 +79,34 @@ side effects.
 The `plugin-reviewer` eval needs the full Copilot CLI installed by `npm ci`.
 Point `COPILOT_CLI_PATH` at that pinned CLI before running the smoke suite.
 
+### Standard model roster
+
+[The native experiment](../evals/standard-models.experiment.yaml) is the single
+source for the standard model roster: `claude-sonnet-5.5` and `gpt-6.1-terra`.
+When adopting the template, replace `matrix.model.values` with your own model
+IDs and set `baseline.model` to one of them. Vally requires at least two variants;
+for a single model, use `npm run eval -- --model <model-id>` instead.
+
+After setting `COPILOT_CLI_PATH` as shown below, preview the selected evals,
+variants and configuration hashes without running setup, Docker or a model:
+
+```sh
+npm run eval:models -- --dry-run
+```
+
+`npm run eval:models` executes the planned variants and spends AI credits for
+each case under each model. The two-model roster is not a guarantee of account
+access or a quality claim. The baseline identifies the experiment's control,
+not a preferred winner; the command does not invoke an extra comparison judge.
+Only the model varies, preserving the evals, graders, fixtures and shared
+marketplace environment. The existing single-model commands and Actions do
+not consume this experiment.
+
+Vally 0.19 experiments have a separate output flag rather than reading
+`paths.results`. The npm command explicitly writes timestamped per-variant
+results under `evals/results/standard-models/`. If you customize the output
+location, update the command's `--output-dir` too.
+
 The `try-plugin-locally` smoke case prepares a fresh-session `--plugin-dir`
 command for the selected plugin in a developer's existing checkout. Vally
 already stages the candidate skills. The case checks the selected absolute
