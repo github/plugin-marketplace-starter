@@ -111,13 +111,22 @@ try {
   for (const exit of [0, 37]) {
     const sh = spawnSync("bash", ["-c", `
 gh() { [[ -z "\${COPILOT_GITHUB_TOKEN+x}\${GH_TOKEN+x}\${GITHUB_TOKEN+x}" ]] || return 91; printf 'synthetic-selected'; }
-npm() { [[ "$GH_TOKEN" == synthetic-selected && -z "\${COPILOT_GITHUB_TOKEN+x}\${GITHUB_TOKEN+x}" ]] || return 92; return ${exit}; }
+npm() { [[ "$(printenv GH_TOKEN)" == synthetic-selected && -z "\${COPILOT_GITHUB_TOKEN+x}\${GITHUB_TOKEN+x}" ]] || return 92; return ${exit}; }
 ${expectedBash}
 result=$?
 [[ $result == ${exit} && "$COPILOT_GITHUB_TOKEN" == synthetic-copilot && "$GH_TOKEN" == synthetic-gh && "$GITHUB_TOKEN" == synthetic-github ]]
 `], { env, encoding: "utf8", timeout: 10000 });
     assert.ifError(sh.error);
     assert.equal(sh.status, 0, sh.stderr);
+    if (exit === 0) {
+      const noExport = spawnSync("bash", ["-c", `
+gh() { printf 'synthetic-selected'; }
+npm() { [[ "$(printenv GH_TOKEN)" == synthetic-selected ]] || return 92; }
+${expectedBash.replace("  export GH_TOKEN\n", "")}
+`], { env, encoding: "utf8", timeout: 10000 });
+      assert.ifError(noExport.error);
+      assert.equal(noExport.status, 92, "missing export must be detected in a child process");
+    }
     const ps = spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-Command", `
 $ErrorActionPreference = 'Stop'
 function gh {
