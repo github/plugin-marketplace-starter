@@ -229,7 +229,9 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           name: skill-comparison-${{ github.run_attempt }}-${{ matrix.id }}
-          path: ${{ runner.temp }}/skill-comparison/*.json
+          path: |
+            ${{ runner.temp }}/skill-comparison/${{ matrix.id }}-before.json
+            ${{ runner.temp }}/skill-comparison/${{ matrix.id }}-after.json
           if-no-files-found: error
           retention-days: 7
       - name: Keep failed native outcomes visible

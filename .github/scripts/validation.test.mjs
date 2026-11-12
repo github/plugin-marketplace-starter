@@ -450,6 +450,11 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     for (const step of [...publisher.jobs.select.steps, ...job.steps].filter((step) => step.uses?.startsWith("actions/upload-artifact@"))) {
       assert.match(step.with.name, /github\.run_attempt/, "reruns must not collide with or import earlier-attempt artifacts");
     }
+    const evidence = job.steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+    assert.deepEqual(evidence.with.path.trim().split("\n"), [
+      "${{ runner.temp }}/skill-comparison/${{ matrix.id }}-before.json",
+      "${{ runner.temp }}/skill-comparison/${{ matrix.id }}-after.json",
+    ], "paid jobs may upload only the exact expected verdict files, not extra candidate-created JSON");
     assert.equal(job.permissions["pull-requests"], undefined);
     assert.equal(comment.steps.find((step) => step.uses?.startsWith("actions/checkout@")).with.ref,
       "${{ github.sha }}", "workflow_run's default-branch SHA, never the PR head, supplies executable publishing code");
