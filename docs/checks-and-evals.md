@@ -139,7 +139,8 @@ npm run eval -- --suite smoke
 ```
 
 For these direct Vally runs, results follow `paths.results` in
-[.vally.yaml](../.vally.yaml), currently `vally-results/`.
+[.vally.yaml](../.vally.yaml), currently `evals/results/`. The report command
+uses the same configured directory unless you supply an explicit results path.
 
 Summarize the newest saved run (verdicts, scores, input/output/total tokens,
 and duration) or compare a baseline run against a candidate run without calling

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createDefaultGraderRegistry } from "@microsoft/vally";
+import { createDefaultGraderRegistry, gradeInDisposableWorkspace } from "@microsoft/vally";
 import { parse } from "yaml";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -34,11 +34,11 @@ async function fixture(t) {
     "```sh", `copilot --plugin-dir "${path}"`, "```",
     "Session: not started", "Discovery: unverified", "Behavior: unverified",
   ].join("\n");
-  const grade = (text = output(), commands = [], toolCalls = [], results = []) => score("local-guidance", evaluate({
+  const grade = (text = output(), commands = [], toolCalls = [], results = [], extraEvents = []) => score("local-guidance", evaluate({
     output: text,
     events: [...[...commands.map((command) => ({ toolName: "powershell", arguments: { command } })), ...toolCalls].map((call, index) => ({
       type: "tool_call", data: { toolCallId: String(index), ...call },
-    })), ...results],
+    })), ...results, ...extraEvents],
   }, directory));
   return { directory, selected, output, grade };
 }
@@ -53,6 +53,50 @@ guidanceTest("local guidance accepts the selected absolute checkout path with sp
   assert.equal(grade(`${output()}\nRun it using --plugin-dir with your absolute path: \`copilot --plugin-dir "${selected}"\`.`).passed, true,
     "unquoted prose words after --plugin-dir and repeated identical operands must pass");
   if (process.platform === "win32") assert.equal(grade(output(selected.toLowerCase())).passed, true);
+});
+
+guidanceTest("local guidance checks the original agent path when Vally grades a workspace copy", async (t) => {
+  const { directory, output, grade } = await fixture(t);
+  const original = resolve(directory, "original trial");
+  const selected = resolve(original, "plugins/sample-notes");
+  const activation = [{ type: "skill_activation", data: {
+    name: "try-plugin-locally", path: resolve(original, "try-plugin-locally/SKILL.md"),
+  } }];
+  assert.equal(grade(output(selected), [], [], [], activation).passed, true);
+  for (const wrong of [resolve(directory, "plugins/sample-notes"), resolve(original, "installed/sample-notes"), "./plugins/sample-notes"]) {
+    assert.equal(grade(output(wrong), [], [], [], activation).passed, false, wrong);
+  }
+  assert.equal(grade(output(selected)).passed, false, "an answer cannot declare its own original workspace");
+});
+
+guidanceTest("local guidance accepts explicit tool-use approval without dropping the permission requirement", async (t) => {
+  const { output, grade } = await fixture(t);
+  const approved = output().replace("host trust and tool permissions", "host trust and approve tool use");
+  assert.equal(grade(approved).passed, true);
+  assert.equal(grade(approved.replace(" and approve tool use", "")).passed, false);
+});
+
+guidanceTest("native disposable grading preserves the selected agent-workspace identity", async (t) => {
+  const { directory, output } = await fixture(t);
+  const grader = createDefaultGraderRegistry().get("program");
+  const result = await gradeInDisposableWorkspace({
+    trajectory: {
+      output: output(),
+      workDir: directory,
+      events: [{ type: "skill_activation", data: {
+        name: "try-plugin-locally", path: resolve(directory, "try-plugin-locally/SKILL.md"),
+      } }],
+    },
+    graderFiles: [
+      { src: resolve(directory, "grader.mjs"), dest: ".grading/grader.mjs" },
+      { src: resolve(directory, "common.mjs"), dest: ".grading/common.mjs" },
+    ],
+    grade: async (trajectory) => {
+      assert.notEqual(trajectory.workDir, directory);
+      return grader.grade({ trajectory, config: { program: process.execPath, args: [".grading/grader.mjs"] } });
+    },
+  });
+  assert.equal(result.passed, true, result.evidence);
 });
 
 guidanceTest("local guidance rejects relative, wrong, installed, and published plugin sources", async (t) => {

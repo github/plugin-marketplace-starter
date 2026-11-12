@@ -1,6 +1,6 @@
 ---
 name: release-plugins
-description: "Prepare a marketplace release, fix catalog inconsistencies, or retire a stale plugin. Use whenever asked to get a catalog ready to release, check changed plugin versions and changelogs, draft release notes, or retire or remove a plugin from the marketplace. Don't use for a single contribution's PR draft, remote pin updates alone, or publishing without approval."
+description: "Prepare a marketplace release, fix catalog inconsistencies, or retire a stale plugin. Use whenever asked to get a catalog ready to release, check changed plugin versions and changelogs, draft marketplace release notes including confirmed first releases with no file changes, or retire or remove a plugin from the marketplace. Don't use for a single contribution's PR draft, remote pin updates alone, or publishing without approval."
 ---
 
 # Prepare a marketplace release
