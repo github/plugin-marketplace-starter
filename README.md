@@ -198,6 +198,8 @@ request.
 
 **Paid evals:** first complete the
 [Docker and scoped authentication setup](docs/checks-and-evals.md#native-docker-evals).
+Local examples use a dedicated Copilot Requests token with public-repository
+access for the synthetic fixtures, not a broad GitHub CLI login credential.
 Then `npm run eval` runs real Copilot sessions and costs AI credits.
 [Evals](.github/workflows/evals.yml) runs only when manually started; pull
 requests never trigger paid evals.

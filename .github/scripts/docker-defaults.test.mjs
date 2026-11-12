@@ -73,14 +73,15 @@ test("shared launchers reject backend and in-place overrides in either argument 
 
 test("documented credential recipes expose only the selected token and restore ambient values on failure", () => {
   const guide = readFileSync(resolve(root, "docs/checks-and-evals.md"), "utf8");
-  const section = guide.slice(guide.indexOf("complete two-case eval"));
+  const section = guide.slice(guide.indexOf("### Native Docker evals"));
   const bash = section.match(/```sh\n([\s\S]*?)\n```/)[1];
   const powershell = section.match(/```powershell\n([\s\S]*?)\n```/)[1];
   const expectedBash = String.raw`(
   unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
-  GH_TOKEN="$(gh auth token)" || exit
-  test -n "$GH_TOKEN" || exit 1
-  export GH_TOKEN
+  read -r -s -p "Copilot Requests-only token: " COPILOT_GITHUB_TOKEN || exit
+  printf '\n'
+  test -n "$COPILOT_GITHUB_TOKEN" || exit 1
+  export COPILOT_GITHUB_TOKEN
   npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
 )`;
   const expectedPowerShell = String.raw`$names = 'COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'
@@ -92,11 +93,12 @@ try {
   foreach ($name in $names) {
     [Environment]::SetEnvironmentVariable($name, $null, 'Process')
   }
-  $token = gh auth token
-  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
-    throw 'Could not obtain the selected gh credential.'
+  $secret = Read-Host 'Copilot Requests-only token' -AsSecureString
+  $token = [System.Net.NetworkCredential]::new('', $secret).Password
+  if ([string]::IsNullOrWhiteSpace($token)) {
+    throw 'No dedicated Copilot credential was supplied.'
   }
-  $env:GH_TOKEN = $token
+  $env:COPILOT_GITHUB_TOKEN = $token
   npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
   if ($LASTEXITCODE -ne 0) { throw "Eval exited with code $LASTEXITCODE; inspect its saved results." }
 } finally {
@@ -104,6 +106,7 @@ try {
     [Environment]::SetEnvironmentVariable($name, $original[$name], 'Process')
   }
   $token = $null
+  $secret = $null
 }`;
   assert.equal(bash, expectedBash);
   assert.equal(powershell, expectedPowerShell);
@@ -114,32 +117,30 @@ try {
   const env = { ...process.env, COPILOT_GITHUB_TOKEN: "synthetic-copilot", GH_TOKEN: "synthetic-gh", GITHUB_TOKEN: "synthetic-github" };
   for (const exit of [0, 37]) {
     const sh = spawnSync("bash", ["-c", `
-gh() { [[ -z "\${COPILOT_GITHUB_TOKEN+x}\${GH_TOKEN+x}\${GITHUB_TOKEN+x}" ]] || return 91; printf 'synthetic-selected'; }
-npm() { [[ "$(printenv GH_TOKEN)" == synthetic-selected && -z "\${COPILOT_GITHUB_TOKEN+x}\${GITHUB_TOKEN+x}" ]] || return 92; return ${exit}; }
+npm() { [[ "$(printenv COPILOT_GITHUB_TOKEN)" == synthetic-selected && -z "\${GH_TOKEN+x}\${GITHUB_TOKEN+x}" ]] || return 92; return ${exit}; }
 ${expectedBash}
 result=$?
 [[ $result == ${exit} && "$COPILOT_GITHUB_TOKEN" == synthetic-copilot && "$GH_TOKEN" == synthetic-gh && "$GITHUB_TOKEN" == synthetic-github ]]
-`], { env, encoding: "utf8", timeout: 10000 });
+`], { env, input: "synthetic-selected\n", encoding: "utf8", timeout: 10000 });
     assert.ifError(sh.error);
     assert.equal(sh.status, 0, sh.stderr);
     if (exit === 0) {
       const noExport = spawnSync("bash", ["-c", `
-gh() { printf 'synthetic-selected'; }
-npm() { [[ "$(printenv GH_TOKEN)" == synthetic-selected ]] || return 92; }
-${expectedBash.replace("  export GH_TOKEN\n", "")}
-`], { env, encoding: "utf8", timeout: 10000 });
+npm() { [[ "$(printenv COPILOT_GITHUB_TOKEN)" == synthetic-selected ]] || return 92; }
+${expectedBash.replace("  export COPILOT_GITHUB_TOKEN\n", "")}
+`], { env, input: "synthetic-selected\n", encoding: "utf8", timeout: 10000 });
       assert.ifError(noExport.error);
       assert.equal(noExport.status, 92, "missing export must be detected in a child process");
     }
     const ps = spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-Command", `
 $ErrorActionPreference = 'Stop'
-function gh {
+function Read-Host {
+  param([string]$Prompt, [switch]$AsSecureString)
   if ($env:COPILOT_GITHUB_TOKEN -or $env:GH_TOKEN -or $env:GITHUB_TOKEN) { throw 'Credential lookup was not isolated' }
-  $global:LASTEXITCODE = 0
-  'synthetic-selected'
+  ConvertTo-SecureString 'synthetic-selected' -AsPlainText -Force
 }
 function npm {
-  if ($env:GH_TOKEN -ne 'synthetic-selected' -or $env:COPILOT_GITHUB_TOKEN -or $env:GITHUB_TOKEN) { throw 'Unexpected task credential' }
+  if ($env:COPILOT_GITHUB_TOKEN -ne 'synthetic-selected' -or $env:GH_TOKEN -or $env:GITHUB_TOKEN) { throw 'Unexpected task credential' }
   $global:LASTEXITCODE = ${exit}
 }
 $caught = $false
@@ -152,6 +153,30 @@ exit 0
     assert.ifError(ps.error);
     assert.equal(ps.status, 0, ps.stderr);
   }
+  for (const input of ["", "\n"]) {
+    const empty = spawnSync("bash", ["-c", `
+npm() { return 93; }
+${expectedBash}
+result=$?
+[[ $result == 1 && "$COPILOT_GITHUB_TOKEN" == synthetic-copilot && "$GH_TOKEN" == synthetic-gh && "$GITHUB_TOKEN" == synthetic-github ]]
+`], { env, input, encoding: "utf8", timeout: 10000 });
+    assert.ifError(empty.error);
+    assert.equal(empty.status, 0, empty.stderr);
+  }
+  const empty = spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-Command", `
+$ErrorActionPreference = 'Stop'
+$global:ran = $false
+function Read-Host { [Security.SecureString]::new() }
+function npm { $global:ran = $true }
+$caught = $false
+try {
+${expectedPowerShell}
+} catch { $caught = $true }
+if (-not $caught -or $ran -or $env:COPILOT_GITHUB_TOKEN -ne 'synthetic-copilot' -or $env:GH_TOKEN -ne 'synthetic-gh' -or $env:GITHUB_TOKEN -ne 'synthetic-github') { throw 'Empty input did not fail closed and restore original credentials' }
+exit 0
+`], { env, encoding: "utf8", timeout: 15000 });
+  assert.ifError(empty.error);
+  assert.equal(empty.status, 0, empty.stderr);
 });
 
 test("a missing Docker daemon rejects native preparation rather than selecting host execution", async () => {

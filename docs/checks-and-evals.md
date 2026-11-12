@@ -163,18 +163,34 @@ The container uses an isolated Copilot home and cannot reuse the host's
 interactive Copilot login. Vally automatically forwards the recognized model
 authentication variables (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`)
 to the task when using `copilot-sdk`. Use only the credential you intend to
-expose. For example, with an existing authenticated `gh` account, run this
-complete two-case eval (positive and negative), without printing or saving the
-token:
+expose. For local evals, use a dedicated
+[fine-grained token with the Copilot Requests account permission](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli#authenticating-with-environment-variables):
+choose your personal account as resource owner, **Public repositories** access,
+and only **Copilot Requests** under account permissions. The synthetic fixtures
+and pinned public `github/evals` skill source need no private-repository access
+or repository-write permissions. Do not reuse a broad `gh` login token.
+
+For custom evals needing private GitHub access, use **Only select repositories**
+where the personal-account token supports the required calls, and review minimum
+read permissions. If it cannot meet a required call, review that requirement
+separately rather than automatically broadening permissions.
+This local user-token recommendation is separate from the manual Actions
+workflow's repository/job-scoped `GITHUB_TOKEN` organization billing.
+
+Enter that dedicated token at the hidden local prompt to run this complete
+two-case eval (positive and negative), without putting it in a command, file,
+shell history or chat. The selected token is still readable by task processes
+and can authorize Copilot usage; a narrower scope does not make it harmless.
 
 Bash:
 
 ```sh
 (
   unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
-  GH_TOKEN="$(gh auth token)" || exit
-  test -n "$GH_TOKEN" || exit 1
-  export GH_TOKEN
+  read -r -s -p "Copilot Requests-only token: " COPILOT_GITHUB_TOKEN || exit
+  printf '\n'
+  test -n "$COPILOT_GITHUB_TOKEN" || exit 1
+  export COPILOT_GITHUB_TOKEN
   npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
 )
 ```
@@ -191,11 +207,12 @@ try {
   foreach ($name in $names) {
     [Environment]::SetEnvironmentVariable($name, $null, 'Process')
   }
-  $token = gh auth token
-  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
-    throw 'Could not obtain the selected gh credential.'
+  $secret = Read-Host 'Copilot Requests-only token' -AsSecureString
+  $token = [System.Net.NetworkCredential]::new('', $secret).Password
+  if ([string]::IsNullOrWhiteSpace($token)) {
+    throw 'No dedicated Copilot credential was supplied.'
   }
-  $env:GH_TOKEN = $token
+  $env:COPILOT_GITHUB_TOKEN = $token
   npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
   if ($LASTEXITCODE -ne 0) { throw "Eval exited with code $LASTEXITCODE; inspect its saved results." }
 } finally {
@@ -203,13 +220,16 @@ try {
     [Environment]::SetEnvironmentVariable($name, $original[$name], 'Process')
   }
   $token = $null
+  $secret = $null
 }
 ```
 
-Both examples clear all recognized tokens before selecting the signed-in `gh`
-account's credential. Bash confines changes to a subshell; PowerShell restores
-the original values even if credential lookup or the eval fails. Do not enable
-shell tracing or print these variables.
+Both examples clear all recognized tokens before selecting the dedicated token.
+Bash confines changes to a subshell; PowerShell restores the original values
+even if input or the eval fails. Do not enable shell tracing or print these
+variables. Model-free recipe checks do not prove token access or actual model
+authentication. The retained Docker validation used a separately approved broad
+`gh` credential; it is not evidence that these narrower credentials were tested.
 
 This uses the eval's declared model and one trial per case. The native image
 supplies its own executor runtime, distinct from the host's pinned Copilot CLI.
