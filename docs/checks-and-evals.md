@@ -172,18 +172,46 @@ token:
 Bash:
 
 ```sh
-export GH_TOKEN="$(gh auth token)"
-npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
-unset GH_TOKEN
+(
+  unset COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
+  GH_TOKEN="$(gh auth token)" || exit
+  test -n "$GH_TOKEN" || exit 1
+  export GH_TOKEN
+  npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
+)
 ```
 
 PowerShell:
 
 ```powershell
-$env:GH_TOKEN = gh auth token
-npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
-Remove-Item Env:GH_TOKEN
+$names = 'COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'
+$original = @{}
+foreach ($name in $names) {
+  $original[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+}
+try {
+  foreach ($name in $names) {
+    [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+  }
+  $token = gh auth token
+  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
+    throw 'Could not obtain the selected gh credential.'
+  }
+  $env:GH_TOKEN = $token
+  npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
+  if ($LASTEXITCODE -ne 0) { throw "Eval exited with code $LASTEXITCODE; inspect its saved results." }
+} finally {
+  foreach ($name in $names) {
+    [Environment]::SetEnvironmentVariable($name, $original[$name], 'Process')
+  }
+  $token = $null
+}
 ```
+
+Both examples clear all recognized tokens before selecting the signed-in `gh`
+account's credential. Bash confines changes to a subshell; PowerShell restores
+the original values even if credential lookup or the eval fails. Do not enable
+shell tracing or print these variables.
 
 This uses the eval's declared model and one trial per case. The native image
 supplies its own executor runtime, distinct from the host's pinned Copilot CLI.
