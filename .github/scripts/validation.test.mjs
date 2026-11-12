@@ -387,6 +387,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
   assert.deepEqual(JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")).scripts, {
     lint: "node .github/scripts/lint.mjs",
     eval: "vally eval --workers 1 --max-retries 1",
+    "eval:models": "vally experiment run evals/standard-models.experiment.yaml --output-dir evals/results/standard-models --require-pass",
     "eval:report": "node .github/scripts/eval-report.mjs",
     "eval:compare": "node .github/scripts/eval-report.mjs",
   });
@@ -425,8 +426,10 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     assert.match(before.run, /--runs 1 --workers 1 --max-retries 0 --require-pass/);
     assert.doesNotMatch(before.run, /--model|evals-action|GITHUB_EVENT_NAME=|GITHUB_SHA=/);
     assert.notEqual(before.env.NATIVE_RUN_ID, after.env.NATIVE_RUN_ID);
-    const install = job.steps.find((step) => step.run?.includes("npm install")).run;
-    assert.match(install, /--prefix "\$RUNNER_TEMP\/skill-eval-tools".*@microsoft\/vally-cli@0\.21\.0/);
+    const install = job.steps.find((step) => step.run?.includes("npm ci")).run;
+    assert.match(install, /cp "\$GITHUB_WORKSPACE\/trusted\/package\.json" "\$GITHUB_WORKSPACE\/trusted\/package-lock\.json"/);
+    assert.match(install, /npm ci --prefix "\$RUNNER_TEMP\/skill-eval-tools" --ignore-scripts/);
+    assert.doesNotMatch(install, /candidate|npm install/);
     assert.equal(job.env.VALLY_ENTRY, undefined);
     assert.doesNotMatch(JSON.stringify(job.env), /runner\./, "runner context is unavailable in job-level env");
     assert.match(install, /VALLY_ENTRY="\$RUNNER_TEMP\/skill-eval-tools\/node_modules\/@microsoft\/vally-cli\/dist\/index\.js"/);
@@ -478,6 +481,43 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
         assert.equal(step.with.ref, "${{ fromJSON(needs.select.outputs.context).merge }}");
       } else assert.equal(step.with.ref, "${{ github.sha }}");
     }
+  });
+
+  test("native bootstrap copies the trusted dependency lock, never candidate manifests", (t) => {
+    const directory = mkdtempSync(resolve(tmpdir(), "skill-native-bootstrap-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    for (const name of ["trusted", "candidate", "runner"]) mkdirSync(resolve(directory, name));
+    for (const name of ["trusted", "candidate"]) {
+      writeFileSync(resolve(directory, name, "package.json"), JSON.stringify({ name }));
+      writeFileSync(resolve(directory, name, "package-lock.json"), JSON.stringify({ name, lockfileVersion: 3 }));
+    }
+    const workflow = parse(readFileSync(resolve(root, ".github/workflows/skill-eval-comment.yml"), "utf8"));
+    const step = workflow.jobs.evals.steps.find((item) => item.run?.includes("npm ci"));
+    const result = spawnSync("bash", ["-c", `
+npm() {
+  [[ "$1" == ci && "$2" == --prefix && "$*" == *--ignore-scripts* ]] || return 91
+  mkdir -p "$3/node_modules/@microsoft/vally-cli/dist"
+  printf 'console.log("synthetic 0.21.0")\\n' > "$3/node_modules/@microsoft/vally-cli/dist/index.js"
+}
+${step.run}
+`], {
+      cwd: resolve(directory, "candidate"), encoding: "utf8", timeout: 10000,
+      env: {
+        ...process.env, RUNNER_TEMP: resolve(directory, "runner").replaceAll("\\", "/"),
+        GITHUB_WORKSPACE: directory.replaceAll("\\", "/"), GITHUB_SHA: "d".repeat(40),
+        GITHUB_ENV: resolve(directory, "environment").replaceAll("\\", "/"),
+        GITHUB_STEP_SUMMARY: resolve(directory, "summary").replaceAll("\\", "/"),
+      },
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+    for (const file of ["package.json", "package-lock.json"]) {
+      assert.equal(readFileSync(resolve(directory, "runner/skill-eval-tools", file), "utf8"),
+        readFileSync(resolve(directory, "trusted", file), "utf8"));
+    }
+    assert.match(readFileSync(resolve(directory, "environment"), "utf8"), /VALLY_ENTRY=.*skill-eval-tools/);
+    assert.match(readFileSync(resolve(directory, "summary"), "utf8"), new RegExp("d".repeat(40)));
+    assert.match(result.stdout, /synthetic 0.21.0/);
   });
 
   test("native arm commands isolate credentials, retain raw output privately and still execute After following failed Before", (t) => {

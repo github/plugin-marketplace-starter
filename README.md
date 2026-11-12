@@ -42,8 +42,9 @@ For marketplace development and evals, use this shared setup.
 - **Node.js 24+ and npm** for repository tooling and the bundled
   [local-install validator](plugins/plugin-authoring/skills/try-plugin-locally/references/local-install.md#test-installation-without-publishing).
 - **GitHub Copilot CLI 1.0.85+**.
-- **Vally ([`@microsoft/vally-cli`](https://www.npmjs.com/package/@microsoft/vally-cli)) 0.19.0+**.
+- **Vally ([`@microsoft/vally-cli`](https://www.npmjs.com/package/@microsoft/vally-cli)) 0.21.0**, pinned in `package.json`.
 - **Git 2.28.0+**.
+- For paid repository evals, **Docker with Compose and a running Linux daemon**.
 
 ## Make it yours
 
@@ -195,7 +196,11 @@ npm run lint
 validation, catalog consistency checks, and remote-pin checks on every pull
 request.
 
-**Paid evals:** `npm run eval` runs real Copilot sessions and costs AI credits.
+**Paid evals:** first complete the
+[Docker and scoped authentication setup](docs/checks-and-evals.md#native-docker-evals).
+Local examples use a dedicated Copilot Requests token with public-repository
+access for the synthetic fixtures, not a broad GitHub CLI login credential.
+Then `npm run eval` runs real Copilot sessions and costs AI credits.
 [Evals](.github/workflows/evals.yml) runs only when manually started; pull
 requests that change a plugin skill use the separate
 [before/after workflow](.github/workflows/skill-evals.yml), with maintainer approval
@@ -208,6 +213,28 @@ Paid execution and publication use a separate
 native Vally behind approval, then a different job with comment-write access.
 The [trust limits and temporary Action workaround](docs/checks-and-evals.md#pr-comparison-comment)
 explain the separate credential/code boundaries.
+
+Repository evals **default to Vally's native Docker backend** in
+[.vally.yaml](.vally.yaml), including `npm run eval` and the manually dispatched
+eval workflow. `npm run eval -- --suite full` selects every retained case,
+including the independent reviewer agent. These runs still spend AI credits
+and require Docker, Compose, network access, and container-compatible
+authentication. Missing Docker or image preparation fails the run; it does not
+silently fall back to host execution. Vally builds and caches its version-matched
+default image locally.
+See [Native Docker evals and isolation limits](docs/checks-and-evals.md#native-docker-evals)
+before running. The pinned Evals plugin's Run entrypoint cannot read the new
+project backend default and currently rejects this configuration; use the native
+Vally CLI rather than assuming plugin Run is container-isolated. Paid CI remains
+manual-only.
+
+**Standard models:** `npm run eval:models` uses the native
+[model experiment](evals/standard-models.experiment.yaml) to test every retained
+skill and agent eval with Claude Sonnet 5.5 and GPT-6.1 Terra. These are starter
+defaults: during setup, customize `matrix.model.values` and its `baseline.model`
+to the models you want to test and can access. Preview without model calls with
+`npm run eval:models -- --dry-run`. Individual evals and Actions keep their
+existing single-model defaults; the experiment does not override them globally.
 
 See [Checks and evals](docs/checks-and-evals.md) for CI details, local test
 commands, and Bash and PowerShell eval setup.

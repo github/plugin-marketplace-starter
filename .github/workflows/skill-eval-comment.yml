@@ -141,11 +141,14 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
-      - name: Install the pinned native CLI outside the candidate checkout
+      - name: Install locked native tools from the trusted revision, not candidate dependencies
         run: |
-          npm install --prefix "$RUNNER_TEMP/skill-eval-tools" --no-audit --no-fund @microsoft/vally-cli@0.21.0
+          mkdir -p "$RUNNER_TEMP/skill-eval-tools"
+          cp "$GITHUB_WORKSPACE/trusted/package.json" "$GITHUB_WORKSPACE/trusted/package-lock.json" "$RUNNER_TEMP/skill-eval-tools/"
+          npm ci --prefix "$RUNNER_TEMP/skill-eval-tools" --ignore-scripts --no-audit --no-fund
           VALLY_ENTRY="$RUNNER_TEMP/skill-eval-tools/node_modules/@microsoft/vally-cli/dist/index.js"
           echo "VALLY_ENTRY=$VALLY_ENTRY" >> "$GITHUB_ENV"
+          echo "Native tool dependency lock revision: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
           mkdir -p "$RUNNER_TEMP/skill-native"
           node "$VALLY_ENTRY" --version
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5

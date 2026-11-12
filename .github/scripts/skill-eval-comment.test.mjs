@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { collectNative, comparisonContext, inventorySkills, loadComparison, postComparison, projectTrials, publisherContext, renderComparison, validateSelection } from "./skill-eval-comment.mjs";
+import { collectNative, comparisonContext, inventorySkills, loadComparison, postComparison, projectTrials, publisherContext, renderComparison, selectionContext, validateSelection } from "./skill-eval-comment.mjs";
 
 const trial = (extra = {}) => ({
   type: "trial-result", runId: "native", evalName: "draft", stimulus: "draft-positive", model: "model-a", variant: "main",
@@ -234,6 +234,21 @@ test("publisher authenticates workflow, source attempt and PR independently from
   }
   await assert.rejects(publisherContext({ workflow_run: source }, async (endpoint) =>
     endpoint.includes("/actions/workflows/") ? { path: ".github/workflows/spoofed.yml" } : api(endpoint), env), /workflow path/);
+});
+
+test("selection derives its baseline from verified merge parents, not stale PR base metadata", async () => {
+  const { context, selected, api } = sourceFixture();
+  const pr = { state: "open", base: { sha: "e".repeat(40) }, head: {
+    sha: selected.head, repo: { full_name: context.repository },
+  }, merge_commit_sha: selected.merge };
+  const resolved = await selectionContext(context, pr, api);
+  assert.equal(resolved.base, selected.base);
+  assert.notEqual(resolved.base, pr.base.sha);
+  assert.equal(resolved.merge, selected.merge);
+  await assert.rejects(selectionContext(context, { ...pr, state: "closed" }, api), /Source PR/);
+  await assert.rejects(selectionContext(context, pr, async () => ({
+    sha: selected.merge, parents: [{ sha: selected.base }, { sha: "f".repeat(40) }],
+  })), /expected base and head/);
 });
 
 test("untrusted artifacts are bounded data, source-bound and re-sanitized before rendering", async (t) => {

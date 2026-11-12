@@ -459,16 +459,25 @@ function validateIdentity(selection, env) {
       selection.attempt !== env.GITHUB_RUN_ATTEMPT) throw new Error("Comparison artifact context changed.");
 }
 
+export async function selectionContext(context, pr, api = github) {
+  if (pr.state !== "open" || pr.head?.sha !== context.head || pr.head?.repo?.full_name !== context.repository ||
+      !sha.test(pr.merge_commit_sha ?? "")) {
+    throw new Error("Source PR closed, changed, forked or lacks a verifiable merge revision.");
+  }
+  const commit = await api(`repos/${context.repository}/git/commits/${pr.merge_commit_sha}`);
+  if (commit.sha !== pr.merge_commit_sha || commit.parents?.length !== 2 ||
+      !sha.test(commit.parents[0].sha) || commit.parents[1].sha !== context.head) {
+    throw new Error("Current PR merge does not have the expected base and head parents.");
+  }
+  return { ...context, base: commit.parents[0].sha, merge: commit.sha };
+}
+
 async function main() {
   const [command, path] = process.argv.slice(2);
   if (command === "context") {
     const context = await comparisonContext(json(process.env.GITHUB_EVENT_PATH));
     const pr = await github(`repos/${context.repository}/pulls/${context.pullNumber}`);
-    if (pr.state !== "open" || pr.head?.sha !== context.head || pr.head?.repo?.full_name !== context.repository ||
-        !sha.test(pr.base?.sha ?? "") || !sha.test(pr.merge_commit_sha ?? "")) {
-      throw new Error("Source PR closed, changed, forked or lacks a verifiable merge revision.");
-    }
-    const selected = { ...context, base: pr.base.sha, merge: pr.merge_commit_sha };
+    const selected = await selectionContext(context, pr);
     writeJson(path, selected);
     for (const [key, value] of Object.entries({ context: JSON.stringify(selected), merge: selected.merge })) {
       writeFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`, { flag: "a" });
