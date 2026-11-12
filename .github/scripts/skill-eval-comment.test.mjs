@@ -9,12 +9,17 @@ import { collectNative, comparisonContext, inventorySkills, loadComparison, post
 
 const trial = (extra = {}) => ({
   type: "trial-result", runId: "native", evalName: "draft", stimulus: "draft-positive", model: "model-a", variant: "main",
+  evalFilePath: "evals/local/skills/draft/eval.yaml",
   status: "success", gradeResult: { passed: false, details: [
     { graderType: "completed", name: "completed", passed: true },
     { graderType: "skill-invocation", name: "routing", passed: false, evidence: "SECRET_RAW_GRADER_OUTPUT" },
   ] }, trajectory: { output: "SECRET_RAW_ANSWER", events: [] }, ...extra,
 });
-const footer = { type: "run-summary", runId: "native", hadExecutionErrors: false, passed: false };
+const footer = {
+  type: "run-summary", runId: "native", hadExecutionErrors: false, passed: false,
+  evals: [{ evalFilePath: "evals/local/skills/draft/eval.yaml", variant: "main", model: "model-a",
+    passed: false, stimuliRun: 1, stimuliTotal: 1 }],
+};
 const selection = {
   base: "a".repeat(40), head: "b".repeat(40), changed: ["local/draft"],
   skills: [{ key: "local/draft", hasEval: true }, { key: "local/neighbor", hasEval: true }, { key: "remote/run", hasEval: false }],
@@ -49,7 +54,18 @@ test("native CLI outcomes preserve behavioral failures and completed checks besi
   assert.equal(collectNative(contents(trial(), footer), "native", 1).state, "complete");
   assert.equal(collectNative(contents(trial(), footer), "native", 2).state, "error");
   assert.equal(collectNative(contents(trial(), { ...footer, passed: true }), "native", 1).state, "error");
-  assert.equal(collectNative(contents(footer), "native", 0).state, "not-run");
+  assert.equal(collectNative(contents({ ...footer, evals: [] }), "native", 0).state, "not-run");
+  assert.equal(collectNative(contents(footer), "native", 0).state, "error", "missing recorded cases cannot be complete");
+  for (const group of [
+    { ...footer.evals[0], stimuliTotal: 2 },
+    { ...footer.evals[0], stimuliRun: 2 },
+    { ...footer.evals[0], model: "wrong-model" },
+    { ...footer.evals[0], hadGradingErrors: true },
+  ]) {
+    const partial = collectNative(contents(trial(), { ...footer, evals: [group] }), "native", 1);
+    assert.equal(partial.state, "error");
+    assert.equal(partial.rows[0].checks[1].passed, false, "known failures remain visible in incomplete evidence");
+  }
   const errored = trial({ gradeResult: { passed: false, details: [
     { graderType: "skill-invocation", name: "routing", passed: false },
     { graderType: "program", status: "error", passed: false },
@@ -235,7 +251,7 @@ test("untrusted artifacts are bounded data, source-bound and re-sanitized before
   arm.data.rows[0].checks[1].name = "A&B";
   arm.data.rows[0].checks[1].reason = "SECRET_UNTRUSTED_EVIDENCE";
   writeFileSync(join(root, `${arm.id}-before.json`), JSON.stringify(arm));
-  const loaded = await loadComparison(root, context, api);
+  const loaded = await loadComparison(root, context, api, selected);
   const rendered = renderComparison(loaded.selection, loaded.pairs, "https://example.test");
   assert.doesNotMatch(rendered, /<script>|@everyone|SECRET_UNTRUSTED_EVIDENCE/i);
   assert.match(rendered, /A&amp;B/);
@@ -248,9 +264,11 @@ test("untrusted artifacts are bounded data, source-bound and re-sanitized before
     sha: selected.merge, parents: [{ sha: selected.head }, { sha: selected.base }],
   })), /merge parents/);
   writeFileSync(join(root, `${arm.id}-before.json`), JSON.stringify({ ...arm, attempt: "1" }));
-  await assert.rejects(loadComparison(root, context, api), /Mixed comparison artifacts/);
+  await assert.rejects(loadComparison(root, context, api, selected), /Mixed comparison artifacts/);
+  writeFileSync(join(root, "selection.json"), JSON.stringify({ ...selected, include: [] }));
+  await assert.rejects(loadComparison(root, context, api, selected), /coverage differs/);
   writeFileSync(join(root, "selection.json"), " ".repeat(1024 * 1024 + 1));
-  await assert.rejects(loadComparison(root, context, api), /bounded regular/);
+  await assert.rejects(loadComparison(root, context, api, selected), /bounded regular/);
 });
 
 test("native CLI projection binds its run and trusted workflow without an Action report", (t) => {

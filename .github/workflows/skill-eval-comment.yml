@@ -21,6 +21,7 @@ jobs:
       count: ${{ steps.select.outputs.count }}
       attempt: ${{ steps.select.outputs.attempt }}
       context: ${{ steps.context.outputs.context }}
+      selection: ${{ steps.select.outputs.selection }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -93,6 +94,7 @@ jobs:
           const selection = { ...context, include, changed: keys, skills: inventorySkills(process.cwd()) };
           writeFileSync(resolve(process.env.RUNNER_TEMP, 'selection.json'), JSON.stringify(selection));
           appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify({ include })}\ncount=${include.length}\nattempt=${context.attempt}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, `selection=${JSON.stringify(selection)}\n`);
           JS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -263,4 +265,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PRODUCING_ATTEMPT: ${{ needs.select.outputs.attempt }}
           SELECTED_CONTEXT: ${{ needs.select.outputs.context }}
+          SELECTED_SELECTION: ${{ needs.select.outputs.selection }}
         run: node .github/scripts/skill-eval-comment.mjs post "$RUNNER_TEMP/skill-comparison"

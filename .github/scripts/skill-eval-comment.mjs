@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { stripVTControlCharacters } from "node:util";
+import { isDeepStrictEqual, stripVTControlCharacters } from "node:util";
 
 const marker = "<!-- marketplace-skill-comparison:";
 const safeName = /^[a-z0-9][a-z0-9._-]*$/;
@@ -130,8 +130,27 @@ export function collectNative(contents, runId, exitCode) {
   if (typeof summary.hadExecutionErrors !== "boolean" || typeof summary.passed !== "boolean") {
     throw new Error("Invalid native completion verdict.");
   }
+  const key = (item) => JSON.stringify([item.evalFilePath, item.variant, item.model]);
+  const observed = new Map();
+  for (const trial of records.slice(0, -1)) {
+    const bucket = observed.get(key(trial)) ?? { run: 0, skipped: 0 };
+    if (trial.status === "skipped") bucket.skipped++;
+    else bucket.run++;
+    observed.set(key(trial), bucket);
+  }
+  const seen = new Set();
+  const complete = Array.isArray(summary.evals) && summary.evals.every((group) => {
+    if (!group || ![group.evalFilePath, group.variant, group.model].every((value) => typeof value === "string")) return false;
+    const identity = key(group), bucket = observed.get(identity) ?? { run: 0, skipped: 0 };
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return typeof group.passed === "boolean" && !group.hadExecutionErrors && !group.hadGradingErrors &&
+      [group.stimuliRun, group.stimuliTotal, group.stimuliSkipped ?? 0].every((value) => Number.isSafeInteger(value) && value >= 0) &&
+      group.stimuliRun === bucket.run && group.stimuliTotal === bucket.run + bucket.skipped &&
+      (group.stimuliSkipped ?? 0) === bucket.skipped;
+  }) && [...observed.keys()].every((identity) => seen.has(identity));
   return {
-    state: [0, 1].includes(exitCode) && !summary.hadExecutionErrors && (!summary.passed || exitCode === 0) &&
+    state: complete && [0, 1].includes(exitCode) && !summary.hadExecutionErrors && (!summary.passed || exitCode === 0) &&
       !rows.some((row) => row.state === "error") ? rows.length ? "complete" : "not-run" : "error",
     rows,
   };
@@ -389,8 +408,9 @@ function safeArm(data) {
   return { state: data.state, rows };
 }
 
-export async function loadComparison(root, context, api = github) {
+export async function loadComparison(root, context, api = github, expectedSelection) {
   const selection = artifact(root, "selection.json");
+  if (!isDeepStrictEqual(selection, expectedSelection)) throw new Error("Artifact coverage differs from trusted selection.");
   await validateSelection(selection, context, api);
   const pairs = selection.include.map((entry) => {
     const pair = { key: `${entry.plugin}/${entry.skill}` };
@@ -473,7 +493,7 @@ async function main() {
     for (const [key, value] of Object.entries(authenticated)) {
       if (context[key] !== value) throw new Error("Selected context differs from the authenticated workflow.");
     }
-    const { selection, pairs } = await loadComparison(resolve(path), context);
+    const { selection, pairs } = await loadComparison(resolve(path), context, github, JSON.parse(process.env.SELECTED_SELECTION));
     const evidence = `${process.env.GITHUB_SERVER_URL}/${selection.repository}/actions/runs/${selection.run}/attempts/${selection.attempt}`;
     console.log(JSON.stringify(await postComparison(selection, renderComparison(selection, pairs, evidence), github, context)));
   } else throw new Error("Expected context, native or post.");

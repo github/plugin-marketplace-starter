@@ -192,6 +192,9 @@ equal totals with changed failure identities. Errors, skipped cases and missing
 arms never become passing counts. These single-trial observations do not prove
 causation.
 Transition labels require two complete arms and the same individual checks.
+A complete native arm also requires every declared summary group/count to match
+its recorded case/model rows. Missing cases, mismatched totals and grading errors
+keep the arm incomplete while preserving any known failed-check details.
 A missing counterpart is unknown, not a resolved failure. Partial failed-check
 evidence stays visible without claiming an improvement or regression.
 
@@ -221,6 +224,9 @@ temporary storage outside the executable checkout. The trusted helper verifies
 the notifier's source workflow/repository/completed PR event/association against
 GitHub's API, separately binds the paid run/attempt/trusted SHA, and checks the
 current PR head and selected merge parents. It reads
+the selection's coverage only when it exactly matches the trusted pre-execution
+job output, so a paid-job artifact cannot silently change the selected skill or
+inventory lists. It reads
 only bounded regular JSON files at expected names, validates case/check shapes,
 escapes labels, and derives failure explanations instead of trusting arbitrary
 artifact messages. Mixed, malformed, oversized, or ambiguous data fails closed.

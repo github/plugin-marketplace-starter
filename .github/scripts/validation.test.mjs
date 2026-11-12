@@ -444,6 +444,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     const download = comment.steps.find((step) => step.uses?.startsWith("actions/download-artifact@")).with;
     assert.equal(download.pattern, "skill-comparison-${{ needs.select.outputs.attempt }}-*");
     assert.equal(comment.steps.at(-1).env.PRODUCING_ATTEMPT, "${{ needs.select.outputs.attempt }}");
+    assert.equal(comment.steps.at(-1).env.SELECTED_SELECTION, "${{ needs.select.outputs.selection }}");
     assert.equal(download["run-id"], undefined, "publication reads this trusted paid run, not request-run artifacts");
     assert.equal(download.path, "${{ runner.temp }}/skill-comparison");
     for (const step of [...publisher.jobs.select.steps, ...job.steps].filter((step) => step.uses?.startsWith("actions/upload-artifact@"))) {
