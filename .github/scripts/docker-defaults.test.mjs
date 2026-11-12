@@ -107,6 +107,10 @@ try {
 }`;
   assert.equal(bash, expectedBash);
   assert.equal(powershell, expectedPowerShell);
+  const paid = guide.slice(guide.indexOf("## Paid evals"));
+  assert.equal(paid.match(/```sh\n([\s\S]*?)\n```/)[1], expectedBash,
+    "the first paid run example must include Docker prerequisites and scoped authentication");
+  assert.ok(paid.indexOf("### Native Docker evals") < paid.indexOf("```sh"));
   const env = { ...process.env, COPILOT_GITHUB_TOKEN: "synthetic-copilot", GH_TOKEN: "synthetic-gh", GITHUB_TOKEN: "synthetic-github" };
   for (const exit of [0, 37]) {
     const sh = spawnSync("bash", ["-c", `

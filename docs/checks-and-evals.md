@@ -84,6 +84,9 @@ call a model or prove how a plugin behaves in a model session.
 ## Paid evals
 
 **These runs start real Copilot sessions and spend AI credits.**
+Complete the [Docker and scoped authentication setup](#native-docker-evals)
+before running any example. An existing host login or ambient token is not
+container authentication isolation.
 
 Docker execution readiness means every selected case finishes task execution
 and grading without execution or grading errors. A completed behavioral
@@ -113,13 +116,8 @@ already stages the candidate skills. The case checks the selected absolute
 local path, preserves the checkout, rejects installation and branch mutations,
 and requires an honest unverified discovery/behavior report. It doesn't launch
 another session or verify actual host discovery or plugin behavior. Its unrelated
-pricing question remains a negative trigger case. To run only these two cases:
-
-```sh
-npm run eval -- --eval-spec evals/plugin-authoring/skills/try-plugin-locally/eval.yaml --model claude-haiku-5.5 --require-pass
-```
-
-That command still spends AI credits for the agent under test. Optional
+pricing question remains a negative trigger case. Its two-case selection is
+shown after the authentication setup below and still spends AI credits. Optional
 install-check recipes remain covered by model-free tests. Running a real
 installation check still requires the user's exact cleanup confirmation and
 host permissions; a headless denial is a blocker, not permission to bypass them.
@@ -215,6 +213,14 @@ shell tracing or print these variables.
 
 This uses the eval's declared model and one trial per case. The native image
 supplies its own executor runtime, distinct from the host's pinned Copilot CLI.
+
+To select the two `try-plugin-locally` cases instead, replace only the
+`npm run eval` line **inside the same Bash subshell or PowerShell `try` block**
+with this line; do not omit the surrounding authentication scope:
+
+```sh
+npm run eval -- --eval-spec evals/plugin-authoring/skills/try-plugin-locally/eval.yaml --model claude-haiku-5.5 --require-pass
+```
 
 With the same explicitly selected authentication, `npm run eval -- --suite
 smoke` selects the smoke cases and `npm run eval -- --suite full --max-retries

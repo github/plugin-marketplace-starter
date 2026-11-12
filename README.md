@@ -196,7 +196,9 @@ npm run lint
 validation, catalog consistency checks, and remote-pin checks on every pull
 request.
 
-**Paid evals:** `npm run eval` runs real Copilot sessions and costs AI credits.
+**Paid evals:** first complete the
+[Docker and scoped authentication setup](docs/checks-and-evals.md#native-docker-evals).
+Then `npm run eval` runs real Copilot sessions and costs AI credits.
 [Evals](.github/workflows/evals.yml) runs only when manually started; pull
 requests never trigger paid evals.
 
