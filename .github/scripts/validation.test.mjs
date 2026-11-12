@@ -392,55 +392,58 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
   });
 });
 
-  test("PR skill evals require approval and use two sequential native Action runs with fixed measurement inputs", () => {
+  test("PR skill requests stay read-only and trusted paid jobs use sequential pinned native CLI arms", () => {
     const workflow = parse(readFileSync(resolve(root, ".github/workflows/skill-evals.yml"), "utf8"));
     assert.deepEqual(Object.keys(workflow.on), ["pull_request"]);
     assert.deepEqual(workflow.on.pull_request.paths, ["plugins/*/skills/**"]);
-    assert.equal(workflow.jobs.select.if, "github.event.pull_request.head.repo.full_name == github.repository");
+    assert.equal(workflow.jobs.request.if, "github.event.pull_request.head.repo.full_name == github.repository");
     assert.deepEqual(workflow.permissions, { contents: "read" });
     assert.deepEqual(workflow.concurrency, {
       group: "skill-evals-${{ github.event.pull_request.number }}", "cancel-in-progress": true,
     });
-    assert.deepEqual(workflow.jobs.select.permissions, { contents: "read", actions: "read" });
-    const job = workflow.jobs.evals;
+    assert.deepEqual(Object.keys(workflow.jobs), ["request"]);
+    assert.doesNotMatch(JSON.stringify(workflow), /copilot-requests|pull-requests|evals-action/);
+    assert.equal(workflow.jobs.request.environment, undefined);
+    const publisher = parse(readFileSync(resolve(root, ".github/workflows/skill-eval-comment.yml"), "utf8"));
+    assert.deepEqual(publisher.on, { workflow_run: { workflows: ["Skill evals (before and after)"], types: ["completed"] } });
+    assert.deepEqual(publisher.permissions, {});
+    assert.deepEqual(publisher.jobs.select.permissions, { contents: "read", actions: "read" });
+    assert.match(publisher.jobs.select.if, /conclusion != 'cancelled'/);
+    assert.match(publisher.jobs.select.if, /head_repository\.full_name == github\.repository/);
+    const job = publisher.jobs.evals;
     assert.equal(job.environment, "evals");
     assert.equal(job.strategy["fail-fast"], false);
     assert.deepEqual(job.permissions, { contents: "read", "copilot-requests": "write" });
-    const actions = job.steps.filter((step) => step.uses?.startsWith("github/evals-action@"));
-    assert.equal(actions.length, 2);
-    assert.equal(actions[0].uses, actions[1].uses);
-    const { "report-id": beforeId, ...before } = actions[0].with;
-    const { "report-id": afterId, ...after } = actions[1].with;
-    assert.deepEqual(before, after);
-    assert.equal(before.command, "run");
-    assert.equal(before["eval-paths"], "${{ matrix.evalPath }}");
-    assert.equal(before["vally-version"], "0.21.0");
-    assert.equal(before["working-directory"], ".");
-    assert.equal(before.runs, 1);
-    assert.equal(before.workers, 1);
-    assert.equal(before["max-retries"], 0);
-    assert.equal(before["upload-transcripts"], false);
-    assert.notEqual(beforeId, afterId);
-    assert.equal(actions[1].if, "${{ !cancelled() && steps.after_source.outcome == 'success' }}");
+    const before = job.steps.find((step) => step.id === "before");
+    const after = job.steps.find((step) => step.id === "after");
+    assert.equal(before.run, after.run, "both arms use the same native invocation");
+    assert.equal(before["working-directory"], "candidate");
+    assert.equal(after["working-directory"], "candidate");
+    assert.match(before.run, /env -i .*COPILOT_GITHUB_TOKEN/);
+    assert.match(before.run, /node "\$VALLY_ENTRY" eval/);
+    assert.match(before.run, /--output=jsonl/);
+    assert.match(before.run, /--runs 1 --workers 1 --max-retries 0 --require-pass/);
+    assert.doesNotMatch(before.run, /--model|evals-action|GITHUB_EVENT_NAME=|GITHUB_SHA=/);
+    assert.notEqual(before.env.NATIVE_RUN_ID, after.env.NATIVE_RUN_ID);
+    const install = job.steps.find((step) => step.run?.includes("npm install")).run;
+    assert.match(install, /--prefix "\$RUNNER_TEMP\/skill-eval-tools".*@microsoft\/vally-cli@0\.21\.0/);
+    assert.match(job.env.VALLY_ENTRY, /runner\.temp.*skill-eval-tools/);
+    assert.equal(after.if, "${{ !cancelled() && steps.after_source.outcome == 'success' }}");
     assert.equal(job.steps.find((step) => step.id === "after_source").if,
       "${{ !cancelled() && steps.before_source.outcome == 'success' }}");
     assert.equal(workflow.jobs.comment, undefined, "PR-controlled jobs must not publish with write permission");
     for (const step of Object.values(workflow.jobs)) assert.equal(step.permissions?.["pull-requests"], undefined);
-    const publisher = parse(readFileSync(resolve(root, ".github/workflows/skill-eval-comment.yml"), "utf8"));
-    assert.deepEqual(publisher.on, { workflow_run: { workflows: ["Skill evals (before and after)"], types: ["completed"] } });
-    assert.deepEqual(publisher.permissions, {});
     const comment = publisher.jobs.publish;
     assert.deepEqual(comment.permissions, { contents: "read", actions: "read", "pull-requests": "write" });
     assert.equal(comment.permissions["copilot-requests"], undefined);
-    assert.equal(comment.concurrency["cancel-in-progress"], false);
-    assert.match(comment.if, /workflow_run\.event == 'pull_request'/);
+    assert.match(comment.if, /!cancelled\(\)/);
     assert.ok(comment.steps.some((step) => step.run?.includes("skill-eval-comment.mjs post")));
     const download = comment.steps.find((step) => step.uses?.startsWith("actions/download-artifact@")).with;
-    assert.equal(download.pattern, "skill-comparison-${{ github.event.workflow_run.run_attempt }}-*");
-    assert.equal(download["run-id"], "${{ github.event.workflow_run.id }}");
+    assert.equal(download.pattern, "skill-comparison-${{ needs.select.outputs.attempt }}-*");
+    assert.equal(comment.steps.at(-1).env.PRODUCING_ATTEMPT, "${{ needs.select.outputs.attempt }}");
+    assert.equal(download["run-id"], undefined, "publication reads this trusted paid run, not request-run artifacts");
     assert.equal(download.path, "${{ runner.temp }}/skill-comparison");
-    assert.equal(download["github-token"], "${{ github.token }}");
-    for (const step of [...workflow.jobs.select.steps, ...job.steps].filter((step) => step.uses?.startsWith("actions/upload-artifact@"))) {
+    for (const step of [...publisher.jobs.select.steps, ...job.steps].filter((step) => step.uses?.startsWith("actions/upload-artifact@"))) {
       assert.match(step.with.name, /github\.run_attempt/, "reruns must not collide with or import earlier-attempt artifacts");
     }
     assert.equal(job.permissions["pull-requests"], undefined);
@@ -461,9 +464,63 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     }
     for (const step of job.steps.filter((step) => step.uses?.startsWith("actions/checkout@"))) {
       assert.equal(step.with["persist-credentials"], false);
-      assert.equal(step.with["fetch-depth"], 2);
-      assert.equal(step.with.ref, undefined, "HEAD must remain the merge SHA accepted by the Action");
+      if (step.with.path === "candidate") {
+        assert.equal(step.with["fetch-depth"], 2);
+        assert.equal(step.with.ref, "${{ fromJSON(needs.select.outputs.context).merge }}");
+      } else assert.equal(step.with.ref, "${{ github.sha }}");
     }
+  });
+
+  test("native arm commands isolate credentials, retain raw output privately and still execute After following failed Before", (t) => {
+    const directory = mkdtempSync(resolve(tmpdir(), "skill-native-command-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    const runner = resolve(directory, "runner");
+    mkdirSync(resolve(runner, "skill-native"), { recursive: true });
+    const entry = resolve(directory, "synthetic-vally.mjs");
+    writeFileSync(entry, `
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const value = (flag) => process.argv[process.argv.indexOf(flag) + 1];
+const before = value('--run-id').endsWith('-before');
+const output = value('--output-dir');
+mkdirSync(output, { recursive: true });
+writeFileSync(join(output, 'observed.json'), JSON.stringify({
+  args: process.argv.slice(2), credential: process.env.COPILOT_GITHUB_TOKEN,
+  leaked: ['GH_TOKEN', 'GITHUB_TOKEN', 'ACTIONS_RUNTIME_TOKEN', 'NODE_OPTIONS'].some((key) => key in process.env),
+}));
+console.log(JSON.stringify({ type: 'trial-result', runId: value('--run-id'), raw: 'SYNTHETIC_PRIVATE_OUTPUT' }));
+console.log(JSON.stringify({ type: 'run-summary', runId: value('--run-id'), passed: !before, hadExecutionErrors: false }));
+process.exitCode = before ? 1 : 0;
+`);
+    const workflow = parse(readFileSync(resolve(root, ".github/workflows/skill-eval-comment.yml"), "utf8"));
+    for (const arm of ["before", "after"]) {
+      const step = workflow.jobs.evals.steps.find((item) => item.id === arm);
+      const result = spawnSync("bash", ["-c", step.run], {
+        cwd: directory, encoding: "utf8", timeout: 10000,
+        env: {
+          ...process.env, RUNNER_TEMP: runner.replaceAll("\\", "/"),
+          GITHUB_OUTPUT: resolve(directory, "outputs").replaceAll("\\", "/"),
+          VALLY_ENTRY: entry.replaceAll("\\", "/"), ARM: arm,
+          EVAL_PATH: "evals/example/skills/changed/eval.yaml", NATIVE_RUN_ID: `fixture-${arm}`,
+          COPILOT_GITHUB_TOKEN: "synthetic-selected", GH_TOKEN: "synthetic-unselected",
+          GITHUB_TOKEN: "synthetic-reporting", ACTIONS_RUNTIME_TOKEN: "synthetic-actions",
+          NODE_OPTIONS: "--not-a-real-node-option",
+        },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.status, arm === "before" ? 1 : 0, result.stderr);
+      assert.equal(result.stdout, "", "raw native output must not enter the Actions log");
+      const observed = JSON.parse(readFileSync(resolve(runner, `skill-native/${arm}-artifacts/observed.json`), "utf8"));
+      assert.equal(observed.credential, "synthetic-selected");
+      assert.equal(observed.leaked, false);
+      assert.equal(observed.args[0], "eval");
+      assert.ok(observed.args.includes("--require-pass"));
+      assert.ok(observed.args.includes("--output=jsonl"));
+      const records = readFileSync(resolve(runner, `skill-native/${arm}.jsonl`), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      assert.equal(records.at(-1).runId, `fixture-${arm}`);
+      assert.equal(records.at(-1).passed, arm === "after");
+    }
+    assert.equal(readFileSync(resolve(directory, "outputs"), "utf8"), "exit=1\nexit=0\n");
   });
 
   test("PR selection and sequential source restores compare only eligible target skills and fail closed without approval", (t) => {
@@ -502,7 +559,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     file("plugins/example/skills/deleted/SKILL.md", "deleted skill\n");
     file("evals/example/skills/changed/eval.yaml", "fixed measurement\n");
     file("marketplace.json", JSON.stringify({ plugins: [{ name: "example", source: "./plugins/example" }] }));
-    file(".github/scripts/skill-eval-comment.mjs", readFileSync(resolve(root, ".github/scripts/skill-eval-comment.mjs"), "utf8"));
+    file(".github/scripts/skill-eval-comment.mjs", "throw new Error('Untrusted selector executed');");
     git("add", "."); git("commit", "-m", "Base fixture");
     git("checkout", "-b", "candidate");
     file(`${target}/SKILL.md`, "head skill\n");
@@ -518,8 +575,14 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     git("add", "."); git("commit", "-m", "Advance main fixture");
     const base = git("rev-parse", "HEAD");
     git("merge", "--no-ff", "candidate", "-m", "Merge fixture");
-    env.GITHUB_SHA = git("rev-parse", "HEAD");
-    const workflow = parse(readFileSync(resolve(root, ".github/workflows/skill-evals.yml"), "utf8"));
+    const merge = git("rev-parse", "HEAD");
+    env.GITHUB_SHA = "d".repeat(40);
+    env.TRUSTED_HELPER = resolve(root, ".github/scripts/skill-eval-comment.mjs");
+    writeFileSync(resolve(runner, "comparison-context.json"), JSON.stringify({
+      base, head: env.HEAD_SHA, merge, trusted: env.GITHUB_SHA,
+      repository: "fixture/repo", run: "2", attempt: "1", sourceRun: "1", sourceAttempt: "1",
+    }));
+    const workflow = parse(readFileSync(resolve(root, ".github/workflows/skill-eval-comment.yml"), "utf8"));
     const selection = workflow.jobs.select.steps.find((step) => step.id === "select").run;
     const code = selection.match(/<<'JS'\n([\s\S]*)\nJS/)[1];
     const environment = resolve(runner, "evals-environment.json");
@@ -556,7 +619,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
       });
       assert.ifError(restored.error);
       assert.equal(restored.status, 0, restored.stderr);
-      assert.equal(git("rev-parse", "HEAD"), env.GITHUB_SHA);
+      assert.equal(git("rev-parse", "HEAD"), merge);
       assert.equal(readFileSync(resolve(repository, `${target}/SKILL.md`), "utf8"), expected);
       assert.equal(existsSync(resolve(repository, `${target}/old.md`)), id === "before_source");
       assert.equal(existsSync(resolve(repository, `${target}/new.md`)), id === "after_source");

@@ -11,12 +11,13 @@ const sourceWorkflow = ".github/workflows/skill-evals.yml";
 const skillKey = (value) => typeof value === "string" && value.split("/").length === 2 &&
   value.split("/").every((part) => safeName.test(part));
 const positive = (value) => Number.isSafeInteger(value) && value > 0;
-const text = (value) => stripVTControlCharacters(String(value ?? ""))
+const label = (value) => stripVTControlCharacters(String(value ?? ""))
   // eslint-disable-next-line no-control-regex
-  .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/gu, " ")
+  .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/gu, " ").slice(0, 200);
+const text = (value) => label(value)
   .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
   .replaceAll("|", "&#124;").replaceAll("`", "&#96;").replaceAll("[", "&#91;").replaceAll("]", "&#93;")
-  .replaceAll("@", "&#64;").slice(0, 200);
+  .replaceAll("@", "&#64;");
 const json = (path) => {
   const contents = readFileSync(path, "utf8");
   try { return JSON.parse(contents); } catch { throw new Error("Malformed comparison JSON input."); }
@@ -100,39 +101,39 @@ export function projectTrials(records, expectedRunId) {
     if (state === "graded" && (typeof grade.passed !== "boolean" || !Array.isArray(grade.details) || !grade.details.length)) {
       throw new Error("Native individual grader evidence is missing.");
     }
-    const checks = state !== "graded" ? [] : grade.details.map((check, index) => {
-      if (typeof check.passed !== "boolean") throw new Error("Invalid native grader verdict.");
+    const checks = (grade?.details ?? []).flatMap((check, index) => {
+      if (check.status === "error") return [];
+      if (typeof check.passed !== "boolean") {
+        if (state !== "graded") return [];
+        throw new Error("Invalid native grader verdict.");
+      }
       const type = check.graderType ?? check.kind ?? "check";
-      return {
+      return [{
         id: `${index}:${type}`,
-        name: text(check.configuredName ?? check.name ?? type),
+        name: label(check.configuredName ?? check.name ?? type),
         passed: check.passed,
         // Never publish trajectories, raw grader output or exception strings.
         reason: check.passed ? "" : failedReason(type),
-      };
+      }];
     });
-    return { eval: text(row.evalName), stimulus: text(row.stimulus), model: text(model), state, passed: state === "graded" && grade.passed, checks };
+    return { eval: label(row.evalName), stimulus: label(row.stimulus), model: label(model), state, passed: state === "graded" && grade.passed, checks };
   });
 }
 
-export function collectArm(report, logs) {
-  if (!report || report.schemaVersion !== 2 || report.command !== "run") {
-    return { state: "error", code: "missing-action-report", rows: [] };
+export function collectNative(contents, runId, exitCode) {
+  let records;
+  try { records = contents.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line)); }
+  catch { throw new Error("Malformed native JSONL evidence."); }
+  if (!records.length) return { state: "error", rows: [] };
+  const rows = projectTrials(records, runId);
+  const summary = records.at(-1);
+  if (typeof summary.hadExecutionErrors !== "boolean" || typeof summary.passed !== "boolean") {
+    throw new Error("Invalid native completion verdict.");
   }
-  if (!report.nativeRunId) return { state: report.outcome === "not-run" ? "not-run" : "error", code: report.code, rows: [] };
-  const matches = [];
-  for (const log of logs) {
-    if (!log.trimStart().startsWith("{")) continue; // The Action also retains its plain version check.
-    let records;
-    try { records = log.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line)); }
-    catch { throw new Error("Malformed native JSONL evidence."); }
-    if (records[0]?.runId === report.nativeRunId) matches.push(records);
-  }
-  if (matches.length !== 1) throw new Error("Expected exactly one native JSONL log for this Action run.");
   return {
-    state: report.completeness === "complete" && !["error", "cancelled"].includes(report.outcome) ? "complete" : "error",
-    code: report.code,
-    rows: projectTrials(matches[0], report.nativeRunId),
+    state: [0, 1].includes(exitCode) && !summary.hadExecutionErrors && (!summary.passed || exitCode === 0) &&
+      !rows.some((row) => row.state === "error") ? rows.length ? "complete" : "not-run" : "error",
+    rows,
   };
 }
 
@@ -320,7 +321,10 @@ function artifact(root, name) {
 export async function validateSelection(selection, context, api = github) {
   if (!selection || !sha.test(selection.base) || !sha.test(selection.head) || !sha.test(selection.merge) ||
       selection.repository !== context.repository || selection.run !== context.run || selection.attempt !== context.attempt ||
-      selection.head !== context.head || ![selection.head, selection.merge].includes(context.runHead) ||
+      selection.head !== context.head ||
+      selection.sourceRun !== context.sourceRun || selection.sourceAttempt !== context.sourceAttempt ||
+      selection.trusted !== context.trusted ||
+      selection.base !== context.base || selection.merge !== context.merge ||
       !Array.isArray(selection.include) || !Array.isArray(selection.changed) || !Array.isArray(selection.skills) ||
       !selection.changed.every(skillKey) || new Set(selection.changed).size !== selection.changed.length ||
       !selection.skills.every((skill) => skillKey(skill?.key) && typeof skill.hasEval === "boolean") ||
@@ -341,6 +345,20 @@ export async function validateSelection(selection, context, api = github) {
       commit.parents[0].sha !== selection.base || commit.parents[1].sha !== selection.head) {
     throw new Error("Comparison merge parents do not match the selected source revisions.");
   }
+}
+
+export async function comparisonContext(event, api = github, env = process.env, producingAttempt = env.GITHUB_RUN_ATTEMPT) {
+  const source = await publisherContext(event, api, env);
+  if (!sha.test(env.GITHUB_SHA ?? "") || !/^[1-9]\d*$/.test(env.GITHUB_RUN_ID ?? "") ||
+      !/^[1-9]\d*$/.test(env.GITHUB_RUN_ATTEMPT ?? "") || !/^[1-9]\d*$/.test(env.GITHUB_RUN_NUMBER ?? "") ||
+      !/^[1-9]\d*$/.test(producingAttempt ?? "") || Number(producingAttempt) > Number(env.GITHUB_RUN_ATTEMPT)) {
+    throw new Error("Invalid trusted comparison workflow identity.");
+  }
+  return {
+    ...source, sourceRun: source.run, sourceAttempt: source.attempt,
+    run: env.GITHUB_RUN_ID, attempt: producingAttempt,
+    runNumber: Number(env.GITHUB_RUN_NUMBER), trusted: env.GITHUB_SHA,
+  };
 }
 
 function safeArm(data) {
@@ -416,39 +434,49 @@ export async function postComparison(selection, body, api = github, context) {
 }
 
 function validateIdentity(selection, env) {
-  if (!sha.test(selection.base) || !sha.test(selection.head) || selection.merge !== env.GITHUB_SHA ||
+  if (!sha.test(selection.base) || !sha.test(selection.head) || selection.trusted !== env.GITHUB_SHA ||
       selection.repository !== env.GITHUB_REPOSITORY || selection.run !== env.GITHUB_RUN_ID ||
       selection.attempt !== env.GITHUB_RUN_ATTEMPT) throw new Error("Comparison artifact context changed.");
 }
 
 async function main() {
   const [command, path] = process.argv.slice(2);
-  if (command === "collect") {
+  if (command === "context") {
+    const context = await comparisonContext(json(process.env.GITHUB_EVENT_PATH));
+    const pr = await github(`repos/${context.repository}/pulls/${context.pullNumber}`);
+    if (pr.state !== "open" || pr.head?.sha !== context.head || pr.head?.repo?.full_name !== context.repository ||
+        !sha.test(pr.base?.sha ?? "") || !sha.test(pr.merge_commit_sha ?? "")) {
+      throw new Error("Source PR closed, changed, forked or lacks a verifiable merge revision.");
+    }
+    const selected = { ...context, base: pr.base.sha, merge: pr.merge_commit_sha };
+    writeJson(path, selected);
+    for (const [key, value] of Object.entries({ context: JSON.stringify(selected), merge: selected.merge })) {
+      writeFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`, { flag: "a" });
+    }
+  } else if (command === "native") {
     const selection = json(resolve(process.env.SELECTION_FILE));
     validateIdentity(selection, process.env);
     const entry = selection.include.find((item) => item.id === process.env.COMPARISON_ID);
     if (!entry || !["before", "after"].includes(process.env.ARM)) throw new Error("Unknown comparison arm.");
-    const report = process.env.ACTION_REPORT && existsSync(process.env.ACTION_REPORT) ? json(process.env.ACTION_REPORT) : undefined;
-    if (report && (report.reportId !== `${entry.id}-${process.env.ARM}` ||
-      report.revision !== selection.merge || String(report.workflowRunId) !== selection.run ||
-      String(report.workflowRunAttempt) !== selection.attempt || report.repository !== selection.repository)) throw new Error("Action report identity changed.");
-    const logs = process.env.NATIVE_DIRECTORY && existsSync(process.env.NATIVE_DIRECTORY)
-      ? readdirSync(process.env.NATIVE_DIRECTORY).filter((file) => file.endsWith(".stdout.log")).map((file) => {
-        const source = resolve(process.env.NATIVE_DIRECTORY, file);
-        if (statSync(source).size > 64 * 1024 * 1024) throw new Error("Native log exceeds supported size.");
-        return readFileSync(source, "utf8");
-      }) : [];
+    const native = resolve(process.env.NATIVE_FILE);
+    if (statSync(native).size > 64 * 1024 * 1024) throw new Error("Native log exceeds supported size.");
+    const data = collectNative(readFileSync(native, "utf8"), process.env.NATIVE_RUN_ID, Number(process.env.NATIVE_EXIT));
     writeJson(resolve(path, `${entry.id}-${process.env.ARM}.json`), {
       id: entry.id, key: `${entry.plugin}/${entry.skill}`, arm: process.env.ARM,
-      repository: selection.repository, run: selection.run, attempt: selection.attempt, merge: selection.merge,
-      data: collectArm(report, logs),
+      repository: selection.repository, run: selection.run, attempt: selection.attempt, merge: selection.merge, data,
     });
+    if (data.state === "error") throw new Error("Native execution/grading evidence is incomplete or erroneous; inspect the approved run locally.");
   } else if (command === "post") {
-    const context = await publisherContext(json(process.env.GITHUB_EVENT_PATH));
+    const authenticated = await comparisonContext(json(process.env.GITHUB_EVENT_PATH), github, process.env,
+      process.env.PRODUCING_ATTEMPT ?? process.env.GITHUB_RUN_ATTEMPT);
+    const context = JSON.parse(process.env.SELECTED_CONTEXT);
+    for (const [key, value] of Object.entries(authenticated)) {
+      if (context[key] !== value) throw new Error("Selected context differs from the authenticated workflow.");
+    }
     const { selection, pairs } = await loadComparison(resolve(path), context);
-    const evidence = `${process.env.GITHUB_SERVER_URL}/${selection.repository}/actions/runs/${selection.run}`;
+    const evidence = `${process.env.GITHUB_SERVER_URL}/${selection.repository}/actions/runs/${selection.run}/attempts/${selection.attempt}`;
     console.log(JSON.stringify(await postComparison(selection, renderComparison(selection, pairs, evidence), github, context)));
-  } else throw new Error("Expected collect or post.");
+  } else throw new Error("Expected context, native or post.");
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {

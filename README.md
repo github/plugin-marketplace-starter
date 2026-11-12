@@ -203,9 +203,11 @@ required in the protected `evals` environment. Fork PRs do not run paid evals.
 The workflow updates one PR comment with per-case grader counts, failure
 details, and an all-skills coverage table. Unmeasured skills are marked not run;
 the comment does not imply a full-marketplace or multi-model run.
-Publication uses a separate [trusted `workflow_run` workflow](.github/workflows/skill-eval-comment.yml),
-not PR-controlled code with comment-write access. The paid-execution approval
-boundary remains a separate [documented integration gap](docs/checks-and-evals.md#pr-comparison-comment).
+Paid execution and publication use a separate
+[trusted `workflow_run` workflow](.github/workflows/skill-eval-comment.yml):
+native Vally behind approval, then a different job with comment-write access.
+The [trust limits and temporary Action workaround](docs/checks-and-evals.md#pr-comparison-comment)
+explain the separate credential/code boundaries.
 
 See [Checks and evals](docs/checks-and-evals.md) for CI details, local test
 commands, and Bash and PowerShell eval setup.

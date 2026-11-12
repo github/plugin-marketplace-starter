@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { collectArm, inventorySkills, loadComparison, postComparison, projectTrials, publisherContext, renderComparison, validateSelection } from "./skill-eval-comment.mjs";
+import { collectNative, comparisonContext, inventorySkills, loadComparison, postComparison, projectTrials, publisherContext, renderComparison, validateSelection } from "./skill-eval-comment.mjs";
 
 const trial = (extra = {}) => ({
   type: "trial-result", runId: "native", evalName: "draft", stimulus: "draft-positive", model: "model-a", variant: "main",
@@ -14,8 +14,7 @@ const trial = (extra = {}) => ({
     { graderType: "skill-invocation", name: "routing", passed: false, evidence: "SECRET_RAW_GRADER_OUTPUT" },
   ] }, trajectory: { output: "SECRET_RAW_ANSWER", events: [] }, ...extra,
 });
-const footer = { type: "run-summary", runId: "native", hadExecutionErrors: false };
-const report = { schemaVersion: 2, command: "run", nativeRunId: "native", outcome: "failed", completeness: "complete", code: "native-failed" };
+const footer = { type: "run-summary", runId: "native", hadExecutionErrors: false, passed: false };
 const selection = {
   base: "a".repeat(40), head: "b".repeat(40), changed: ["local/draft"],
   skills: [{ key: "local/draft", hasEval: true }, { key: "local/neighbor", hasEval: true }, { key: "remote/run", hasEval: false }],
@@ -29,7 +28,7 @@ const pair = () => ({
 });
 
 test("native grader projection preserves counts and errors, rejects mixed/repeated trials, and omits raw output", () => {
-  const data = collectArm(report, ["0.21.0\n", `${JSON.stringify(trial())}\n${JSON.stringify(footer)}\n`]);
+  const data = collectNative(`${JSON.stringify(trial())}\n${JSON.stringify(footer)}\n`, "native", 1);
   assert.equal(data.state, "complete");
   assert.equal(data.rows[0].checks.filter((check) => check.passed).length, 1);
   assert.match(data.rows[0].checks[1].reason, /activation/);
@@ -37,14 +36,34 @@ test("native grader projection preserves counts and errors, rejects mixed/repeat
   assert.throws(() => projectTrials([trial(), trial(), footer], "native"), /one trial/);
   assert.throws(() => projectTrials([trial({ runId: "other" }), footer], "native"), /identity/);
   assert.throws(() => projectTrials([trial(), { ...footer, runId: "other" }], "native"), /completion/);
-  assert.throws(() => collectArm(report, []), /exactly one/);
-  assert.equal(collectArm(undefined, []).state, "error");
-  assert.equal(collectArm({ ...report, outcome: "error", completeness: "partial" },
-    [`${JSON.stringify(trial())}\n${JSON.stringify(footer)}`]).state, "error");
+  assert.equal(collectNative("", "native", 1).state, "error");
+  assert.equal(collectNative(`${JSON.stringify(trial())}\n${JSON.stringify(footer)}`, "native", 2).state, "error");
   const errored = projectTrials([trial({ gradeResult: { passed: false, details: [{ status: "error" }] } }), footer], "native");
   assert.equal(errored[0].state, "error");
   assert.equal(errored[0].passed, false);
   assert.equal(projectTrials([trial({ status: "skipped" }), footer], "native")[0].state, "not-run");
+});
+
+test("native CLI outcomes preserve behavioral failures and completed checks beside grading errors", () => {
+  const contents = (...rows) => rows.map((row) => JSON.stringify(row)).join("\n");
+  assert.equal(collectNative(contents(trial(), footer), "native", 1).state, "complete");
+  assert.equal(collectNative(contents(trial(), footer), "native", 2).state, "error");
+  assert.equal(collectNative(contents(trial(), { ...footer, passed: true }), "native", 1).state, "error");
+  assert.equal(collectNative(contents(footer), "native", 0).state, "not-run");
+  const errored = trial({ gradeResult: { passed: false, details: [
+    { graderType: "skill-invocation", name: "routing", passed: false },
+    { graderType: "program", status: "error", passed: false },
+  ] } });
+  const data = collectNative(contents(errored, { ...footer, hadExecutionErrors: true }), "native", 1);
+  assert.equal(data.state, "error");
+  assert.equal(data.rows[0].state, "error");
+  assert.equal(data.rows[0].checks.length, 1);
+  assert.equal(data.rows[0].checks[0].id, "0:skill-invocation");
+  const rendered = renderComparison(selection, [{ ...pair(), after: data }], "https://example.test");
+  assert.match(rendered, /After failures in changed skills \(1 grader\/model results\)/);
+  assert.match(rendered, /After \(comparison unknown\) \| routing/);
+  assert.match(rendered, /⚠️ Error/);
+  assert.throws(() => collectNative(contents(trial(), footer), "other", 0), /completion/);
 });
 
 test("approved hierarchy shows grader versus scenario denominators, failed-check reasons and honest coverage", () => {
@@ -97,7 +116,7 @@ test("partial arms and absent matching graders cannot create resolved or new fai
 });
 
 test("malformed native output never leaks parser excerpts", () => {
-  assert.throws(() => collectArm(report, [`${JSON.stringify(trial())}\nSECRET_RAW_INVALID_JSON`]), (error) => {
+  assert.throws(() => collectNative(`${JSON.stringify(trial())}\nSECRET_RAW_INVALID_JSON`, "native", 1), (error) => {
     assert.equal(error.message, "Malformed native JSONL evidence.");
     assert.doesNotMatch(error.message, /SECRET/);
     return true;
@@ -151,10 +170,13 @@ test("comment publishing checks current PR head, bot ownership, run order and up
 });
 
 function sourceFixture() {
-  const context = { repository: "example/repo", run: "11", attempt: "2", runNumber: 5,
-    pullNumber: 2, head: selection.head, runHead: "c".repeat(40) };
+  const context = { repository: "example/repo", run: "999", attempt: "7", runNumber: 9,
+    pullNumber: 2, head: selection.head, runHead: "c".repeat(40),
+    sourceRun: "11", sourceAttempt: "2", trusted: "d".repeat(40),
+    base: selection.base, merge: "c".repeat(40) };
   const selected = {
     ...selection, repository: context.repository, run: context.run, attempt: context.attempt, merge: context.runHead,
+    sourceRun: context.sourceRun, sourceAttempt: context.sourceAttempt, trusted: context.trusted,
     include: [{ id: "skill-aaaaaaaaaaaa", plugin: "local", skill: "draft", directory: "plugins/local/skills/draft",
       evalPath: "evals/local/skills/draft/eval.yaml", base: selection.base, head: selection.head }],
   };
@@ -176,8 +198,16 @@ function sourceFixture() {
 test("publisher authenticates workflow, source attempt and PR independently from its own run", async () => {
   const { context, source, run, api } = sourceFixture();
   const env = { GITHUB_EVENT_NAME: "workflow_run", GITHUB_REPOSITORY: context.repository,
-    GITHUB_RUN_ID: "999", GITHUB_RUN_ATTEMPT: "7", GITHUB_SHA: "d".repeat(40) };
-  assert.deepEqual(await publisherContext({ workflow_run: source }, api, env), context);
+    GITHUB_RUN_ID: "999", GITHUB_RUN_ATTEMPT: "7", GITHUB_RUN_NUMBER: "9", GITHUB_SHA: "d".repeat(40) };
+  const { sourceRun, sourceAttempt, trusted, base, merge, ...sourceContext } = context;
+  assert.deepEqual(await publisherContext({ workflow_run: source }, api, env), {
+    ...sourceContext, run: "11", attempt: "2", runNumber: 5,
+  });
+  const { base: selectedBase, merge: selectedMerge, ...authenticated } = context;
+  assert.deepEqual(await comparisonContext({ workflow_run: source }, api, env), authenticated);
+  assert.equal((await comparisonContext({ workflow_run: source }, api, env, "2")).attempt, "2");
+  await assert.rejects(comparisonContext({ workflow_run: source }, api, env, "8"), /trusted comparison/);
+  await assert.rejects(comparisonContext({ workflow_run: source }, api, { ...env, GITHUB_RUN_NUMBER: "" }), /trusted comparison/);
   await assert.rejects(publisherContext({ workflow_run: source }, api, { ...env, GITHUB_EVENT_NAME: "pull_request" }), /workflow_run/);
   for (const change of [
     { event: "workflow_dispatch" }, { head_repository: { full_name: "fork/repo" } },
@@ -201,11 +231,15 @@ test("untrusted artifacts are bounded data, source-bound and re-sanitized before
     data: pair().before,
   };
   arm.data.rows[0].model = "@everyone | <script>bad</script>";
+  arm.data.rows[0].eval = "A&B";
+  arm.data.rows[0].checks[1].name = "A&B";
   arm.data.rows[0].checks[1].reason = "SECRET_UNTRUSTED_EVIDENCE";
   writeFileSync(join(root, `${arm.id}-before.json`), JSON.stringify(arm));
   const loaded = await loadComparison(root, context, api);
   const rendered = renderComparison(loaded.selection, loaded.pairs, "https://example.test");
-  assert.doesNotMatch(rendered, /<script>|@everyone|SECRET_UNTRUSTED_EVIDENCE/);
+  assert.doesNotMatch(rendered, /<script>|@everyone|SECRET_UNTRUSTED_EVIDENCE/i);
+  assert.match(rendered, /A&amp;B/);
+  assert.doesNotMatch(rendered, /A&amp;amp;B/);
   assert.match(rendered, /Required activation/);
   assert.match(rendered, /⚠️ Error/);
   await assert.rejects(validateSelection({ ...selected, attempt: "1" }, context, api), /authenticated source/);
@@ -219,36 +253,27 @@ test("untrusted artifacts are bounded data, source-bound and re-sanitized before
   await assert.rejects(loadComparison(root, context, api), /bounded regular/);
 });
 
-test("collect CLI binds native Action diagnostics to this selection without publishing raw evidence", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "comparison-collect-"));
+test("native CLI projection binds its run and trusted workflow without an Action report", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "comparison-native-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const context = {
-    repository: "example/repo", run: "1", attempt: "1", merge: "c".repeat(40),
-    base: selection.base, head: selection.head, include: [{ id: "skill-id", plugin: "local", skill: "draft" }],
+  const { selected } = sourceFixture();
+  writeFileSync(join(root, "selection.json"), JSON.stringify(selected));
+  writeFileSync(join(root, "native.jsonl"), [trial(), footer].map((row) => JSON.stringify(row)).join("\n"));
+  const env = {
+    ...process.env, GITHUB_REPOSITORY: selected.repository, GITHUB_RUN_ID: selected.run,
+    GITHUB_RUN_ATTEMPT: selected.attempt, GITHUB_SHA: selected.trusted,
+    COMPARISON_ID: selected.include[0].id, ARM: "before", SELECTION_FILE: join(root, "selection.json"),
+    NATIVE_FILE: join(root, "native.jsonl"), NATIVE_RUN_ID: "native", NATIVE_EXIT: "1",
   };
-  writeFileSync(join(root, "selection.json"), JSON.stringify(context));
-  const action = {
-    ...report, reportId: "skill-id-before", revision: context.merge, repository: context.repository,
-    workflowRunId: 1, workflowRunAttempt: 1,
-  };
-  writeFileSync(join(root, "report.json"), JSON.stringify(action));
-  writeFileSync(join(root, "native.stdout.log"), `${JSON.stringify(trial())}\n${JSON.stringify(footer)}\n`);
-  const options = {
-    encoding: "utf8", timeout: 10000,
-    env: { ...process.env, GITHUB_REPOSITORY: context.repository, GITHUB_RUN_ID: "1", GITHUB_RUN_ATTEMPT: "1",
-      GITHUB_SHA: context.merge, COMPARISON_ID: "skill-id", ARM: "before", SELECTION_FILE: join(root, "selection.json"),
-      ACTION_REPORT: join(root, "report.json"), NATIVE_DIRECTORY: root },
-  };
-  const args = [fileURLToPath(new URL("./skill-eval-comment.mjs", import.meta.url)), "collect", join(root, "derived")];
-  const result = spawnSync(process.execPath, args, options);
+  const args = [fileURLToPath(new URL("./skill-eval-comment.mjs", import.meta.url)), "native", root];
+  const result = spawnSync(process.execPath, args, { env, encoding: "utf8", timeout: 10000 });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr);
-  const saved = readFileSync(join(root, "derived/skill-id-before.json"), "utf8");
-  assert.equal(JSON.parse(saved).data.rows[0].checks.length, 2);
+  const saved = readFileSync(join(root, `${selected.include[0].id}-before.json`), "utf8");
+  assert.equal(JSON.parse(saved).data.state, "complete");
   assert.doesNotMatch(saved, /SECRET/);
-  writeFileSync(join(root, "report.json"), JSON.stringify({ ...action, reportId: "wrong-report" }));
-  const mixed = spawnSync(process.execPath, args, options);
+  const mixed = spawnSync(process.execPath, args, { env: { ...env, NATIVE_RUN_ID: "wrong" }, encoding: "utf8", timeout: 10000 });
   assert.ifError(mixed.error);
   assert.notEqual(mixed.status, 0);
-  assert.match(mixed.stderr, /identity changed/);
+  assert.match(mixed.stderr, /completion/);
 });
