@@ -210,9 +210,10 @@ details, and an all-skills coverage table. Unmeasured skills are marked not run;
 the comment does not imply a full-marketplace or multi-model run.
 Paid execution and publication use a separate
 [trusted `workflow_run` workflow](.github/workflows/skill-eval-comment.yml):
-native Vally behind approval, then a different job with comment-write access.
-The [trust limits and temporary Action workaround](docs/checks-and-evals.md#pr-comparison-comment)
-explain the separate credential/code boundaries.
+the pinned Evals Action comparison adapter runs native Vally behind approval,
+then a different job gets comment-write access. The
+[comparison Action integration and trust limits](docs/checks-and-evals.md#pr-comparison-comment)
+explain what stays in this repository and the upstream deployment dependency.
 
 Repository evals **default to Vally's native Docker backend** in
 [.vally.yaml](.vally.yaml), including `npm run eval` and the manually dispatched
@@ -225,8 +226,8 @@ default image locally.
 See [Native Docker evals and isolation limits](docs/checks-and-evals.md#native-docker-evals)
 before running. The pinned Evals plugin's Run entrypoint cannot read the new
 project backend default and currently rejects this configuration; use the native
-Vally CLI rather than assuming plugin Run is container-isolated. Paid CI remains
-manual-only.
+Vally CLI rather than assuming plugin Run is container-isolated. The smoke-suite
+workflow remains manual-only; PR comparisons require protected approval.
 
 **Standard models:** `npm run eval:models` uses the native
 [model experiment](evals/standard-models.experiment.yaml) to test every retained
