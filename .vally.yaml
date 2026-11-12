@@ -1,4 +1,9 @@
 # Vally configuration for the included plugins' evals.
+defaults:
+  backend:
+    name: docker
+    args:
+      grade-network: none
 paths:
   # evals/ mirrors plugins/: one eval per skill or agent, such as
   # evals/<plugin>/skills/<skill>/eval.yaml.
