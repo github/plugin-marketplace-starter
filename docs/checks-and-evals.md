@@ -340,6 +340,9 @@ parents. That selected revision, not the notifier's checkout or the trusted
 workflow's own SHA, supplies both arms' evals, graders, fixtures and shared
 marketplace context. Only the target skill switches between its exact base/head
 sources. The selected revisions are recorded before paid-job approval.
+After approval, trusted code rechecks that the PR is still open at the selected
+same-repository head immediately before each paid arm. A later closure or push
+can still race an already-started request; the check cannot undo billed work.
 
 Both native Vally CLI invocations run sequentially with the saved model, one
 trial/worker and zero retries. A failed Before verdict does not prevent After;

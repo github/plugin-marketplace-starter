@@ -113,6 +113,7 @@ jobs:
     permissions:
       contents: read
       copilot-requests: write
+      pull-requests: read
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
@@ -164,12 +165,19 @@ jobs:
           set -euo pipefail
           git --literal-pathspecs restore --source="$SOURCE_SHA" --staged --worktree -- "$SKILL_DIR"
           git --literal-pathspecs diff --exit-code "$SOURCE_SHA" -- "$SKILL_DIR"
-          if [[ -n "$(git diff --name-only HEAD | awk -v dir="$SKILL_DIR/" 'index($0,dir)!=1')$(git ls-files --others --exclude-standard)" ]]; then
+          if ! git diff --quiet HEAD -- . ":(exclude,literal)$SKILL_DIR" || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
             echo "::error::Measurement files changed outside the selected skill."
             exit 1
           fi
+      - name: Recheck PR after approval and before Before
+        id: before_current
+        env: &current_pr_environment
+          GH_TOKEN: ${{ github.token }}
+          SELECTED_CONTEXT: ${{ needs.select.outputs.context }}
+        run: &verify_current_pr node "$GITHUB_WORKSPACE/trusted/.github/scripts/skill-eval-comment.mjs" verify
       - name: Run native Before
         id: before
+        if: ${{ !cancelled() && steps.before_current.outcome == 'success' }}
         continue-on-error: true
         working-directory: candidate
         env:
@@ -189,7 +197,7 @@ jobs:
           echo "exit=$code" >> "$GITHUB_OUTPUT"
           exit "$code"
       - name: Retain only Before verdicts with trusted code
-        if: ${{ !cancelled() && steps.before_source.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.before_current.outcome == 'success' }}
         working-directory: candidate
         env:
           ARM: before
@@ -206,9 +214,14 @@ jobs:
         env:
           SOURCE_SHA: ${{ matrix.head }}
         run: *restore_source
+      - name: Recheck PR before After
+        id: after_current
+        if: ${{ !cancelled() && steps.after_source.outcome == 'success' }}
+        env: *current_pr_environment
+        run: *verify_current_pr
       - name: Run native After even when Before fails
         id: after
-        if: ${{ !cancelled() && steps.after_source.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.after_current.outcome == 'success' }}
         continue-on-error: true
         working-directory: candidate
         env:
@@ -218,7 +231,7 @@ jobs:
           NATIVE_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.id }}-after
         run: *native_run
       - name: Retain only After verdicts with trusted code
-        if: ${{ !cancelled() && steps.after_source.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.after_current.outcome == 'success' }}
         working-directory: candidate
         env:
           ARM: after

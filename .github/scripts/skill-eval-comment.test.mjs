@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { collectNative, comparisonContext, inventorySkills, loadComparison, postComparison, projectTrials, publisherContext, renderComparison, selectionContext, validateSelection } from "./skill-eval-comment.mjs";
+import { assertCurrentPullRequest, collectNative, comparisonContext, inventorySkills, loadComparison, postComparison, projectTrials, publisherContext, renderComparison, selectionContext, validateSelection } from "./skill-eval-comment.mjs";
 
 const trial = (extra = {}) => ({
   type: "trial-result", runId: "native", evalName: "draft", stimulus: "draft-positive", model: "model-a", variant: "main",
@@ -183,6 +183,17 @@ test("comment publishing checks current PR head, bot ownership, run order and up
   assert.equal(await postComparison(selection, "Older", api, context), "stale");
   head = "c".repeat(40);
   await assert.rejects(postComparison(selection, "Wrong head", api, context), /head changed/);
+});
+
+test("the pre-arm PR check rejects closure, changed heads and fork context after approval", async () => {
+  const context = { repository: "example/repo", pullNumber: 2, head: selection.head };
+  const pr = { state: "open", head: { sha: selection.head, repo: { full_name: context.repository } } };
+  await assertCurrentPullRequest(context, async () => pr);
+  for (const changed of [
+    { ...pr, state: "closed" },
+    { ...pr, head: { ...pr.head, sha: "c".repeat(40) } },
+    { ...pr, head: { ...pr.head, repo: { full_name: "fork/repo" } } },
+  ]) await assert.rejects(assertCurrentPullRequest(context, async () => changed), /no paid run or comment/);
 });
 
 function sourceFixture() {

@@ -428,13 +428,18 @@ export async function loadComparison(root, context, api = github, expectedSelect
   return { selection, pairs };
 }
 
-export async function postComparison(selection, body, api = github, context) {
-  if (!/^[\w.-]+\/[\w.-]+$/.test(context?.repository ?? "") || !positive(context.pullNumber)) throw new Error("Invalid PR context.");
-  const endpoint = `repos/${context.repository}`;
-  const pr = await api(`${endpoint}/pulls/${context.pullNumber}`);
-  if (pr.state !== "open" || pr.head.sha !== selection.head || pr.head.repo.full_name !== context.repository) {
-    throw new Error("PR closed, head changed, or fork context; no comment published.");
+export async function assertCurrentPullRequest(context, api = github) {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(context?.repository ?? "") || !positive(context.pullNumber) ||
+      !sha.test(context.head ?? "")) throw new Error("Invalid PR context.");
+  const pr = await api(`repos/${context.repository}/pulls/${context.pullNumber}`);
+  if (pr.state !== "open" || pr.head?.sha !== context.head || pr.head?.repo?.full_name !== context.repository) {
+    throw new Error("PR closed, head changed, or fork context; no paid run or comment allowed.");
   }
+}
+
+export async function postComparison(selection, body, api = github, context) {
+  await assertCurrentPullRequest({ ...context, head: selection.head }, api);
+  const endpoint = `repos/${context.repository}`;
   const key = `${marker}${context.repository}/${sourceWorkflow} -->`;
   const comments = [];
   for (let page = 1; ; page++) {
@@ -482,6 +487,10 @@ async function main() {
     for (const [key, value] of Object.entries({ context: JSON.stringify(selected), merge: selected.merge })) {
       writeFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`, { flag: "a" });
     }
+  } else if (command === "verify") {
+    const context = JSON.parse(process.env.SELECTED_CONTEXT);
+    validateIdentity(context, process.env);
+    await assertCurrentPullRequest(context);
   } else if (command === "native") {
     const selection = json(resolve(process.env.SELECTION_FILE));
     validateIdentity(selection, process.env);
@@ -505,7 +514,7 @@ async function main() {
     const { selection, pairs } = await loadComparison(resolve(path), context, github, JSON.parse(process.env.SELECTED_SELECTION));
     const evidence = `${process.env.GITHUB_SERVER_URL}/${selection.repository}/actions/runs/${selection.run}/attempts/${selection.attempt}`;
     console.log(JSON.stringify(await postComparison(selection, renderComparison(selection, pairs, evidence), github, context)));
-  } else throw new Error("Expected context, native or post.");
+  } else throw new Error("Expected context, verify, native or post.");
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {

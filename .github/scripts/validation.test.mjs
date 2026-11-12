@@ -414,7 +414,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     const job = publisher.jobs.evals;
     assert.equal(job.environment, "evals");
     assert.equal(job.strategy["fail-fast"], false);
-    assert.deepEqual(job.permissions, { contents: "read", "copilot-requests": "write" });
+    assert.deepEqual(job.permissions, { contents: "read", "copilot-requests": "write", "pull-requests": "read" });
     const before = job.steps.find((step) => step.id === "before");
     const after = job.steps.find((step) => step.id === "after");
     assert.equal(before.run, after.run, "both arms use the same native invocation");
@@ -434,7 +434,15 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     assert.doesNotMatch(JSON.stringify(job.env), /runner\./, "runner context is unavailable in job-level env");
     assert.match(install, /VALLY_ENTRY="\$RUNNER_TEMP\/skill-eval-tools\/node_modules\/@microsoft\/vally-cli\/dist\/index\.js"/);
     assert.match(install, /echo "VALLY_ENTRY=\$VALLY_ENTRY" >> "\$GITHUB_ENV"/);
-    assert.equal(after.if, "${{ !cancelled() && steps.after_source.outcome == 'success' }}");
+    for (const arm of ["before", "after"]) {
+      const current = job.steps.find((step) => step.id === `${arm}_current`);
+      assert.match(current.run, /trusted\/\.github\/scripts\/skill-eval-comment\.mjs" verify$/);
+      assert.equal(current.env.SELECTED_CONTEXT, "${{ needs.select.outputs.context }}");
+      assert.equal(current.env.GH_TOKEN, "${{ github.token }}");
+      const native = job.steps.find((step) => step.id === arm);
+      assert.equal(native.if, `\${{ !cancelled() && steps.${arm}_current.outcome == 'success' }}`);
+      assert.equal(job.steps.indexOf(current) + 1, job.steps.indexOf(native), "recheck immediately before either paid arm");
+    }
     assert.equal(job.steps.find((step) => step.id === "after_source").if,
       "${{ !cancelled() && steps.before_source.outcome == 'success' }}");
     assert.equal(workflow.jobs.comment, undefined, "PR-controlled jobs must not publish with write permission");
@@ -458,7 +466,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
       "${{ runner.temp }}/skill-comparison/${{ matrix.id }}-before.json",
       "${{ runner.temp }}/skill-comparison/${{ matrix.id }}-after.json",
     ], "paid jobs may upload only the exact expected verdict files, not extra candidate-created JSON");
-    assert.equal(job.permissions["pull-requests"], undefined);
+    assert.equal(job.permissions["pull-requests"], "read");
     assert.equal(comment.steps.find((step) => step.uses?.startsWith("actions/checkout@")).with.ref,
       "${{ github.sha }}", "workflow_run's default-branch SHA, never the PR head, supplies executable publishing code");
     assert.doesNotMatch(comment.steps.map((step) => step.run ?? "").join("\n"), /npm |evals-action|git fetch|gh pr checkout/);
@@ -612,6 +620,7 @@ process.exitCode = before ? 1 : 0;
     git("init", "--initial-branch=main");
     file(`${target}/SKILL.md`, "base skill\n");
     file(`${target}/old.md`, "base-only file\n");
+    file(`${target}/r\u00e9sum\u00e9.md`, "base non-ASCII path\n");
     file("plugins/example/skills/neighbor/SKILL.md", "base neighbor\n");
     file("plugins/example/skills/deleted/SKILL.md", "deleted skill\n");
     file("evals/example/skills/changed/eval.yaml", "fixed measurement\n");
@@ -621,6 +630,7 @@ process.exitCode = before ? 1 : 0;
     git("checkout", "-b", "candidate");
     file(`${target}/SKILL.md`, "head skill\n");
     file(`${target}/new.md`, "head-only file\n");
+    file(`${target}/r\u00e9sum\u00e9.md`, "head non-ASCII path\n");
     rmSync(resolve(repository, `${target}/old.md`));
     rmSync(resolve(repository, "plugins/example/skills/deleted/SKILL.md"));
     file("plugins/example/skills/neighbor/SKILL.md", "head neighbor without an eval\n");
@@ -678,12 +688,14 @@ process.exitCode = before ? 1 : 0;
       assert.equal(restored.status, 0, restored.stderr);
       assert.equal(git("rev-parse", "HEAD"), merge);
       assert.equal(readFileSync(resolve(repository, `${target}/SKILL.md`), "utf8"), expected);
+      assert.equal(readFileSync(resolve(repository, `${target}/r\u00e9sum\u00e9.md`), "utf8"),
+        id === "before_source" ? "base non-ASCII path\n" : "head non-ASCII path\n");
       assert.equal(existsSync(resolve(repository, `${target}/old.md`)), id === "before_source");
       assert.equal(existsSync(resolve(repository, `${target}/new.md`)), id === "after_source");
       assert.equal(existsSync(resolve(repository, `${target}/main.md`)), id === "before_source");
       assert.equal(readFileSync(resolve(repository, "plugins/example/skills/neighbor/SKILL.md"), "utf8"), "head neighbor without an eval\n");
       assert.equal(readFileSync(resolve(repository, "evals/example/skills/changed/eval.yaml"), "utf8"), "fixed measurement\n");
-      assert.ok(git("diff", "--name-only", "HEAD").split("\n").every((path) => path.startsWith(`${target}/`)));
+      assert.ok(git("diff", "--name-only", "-z", "HEAD").split("\0").filter(Boolean).every((path) => path.startsWith(`${target}/`)));
     }
     file("evals/example/skills/changed/eval.yaml", "unexpected measurement change\n");
     const drift = spawnSync("bash", ["-c", workflow.jobs.evals.steps.find((entry) => entry.id === "after_source").run], {
