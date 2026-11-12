@@ -111,7 +111,8 @@ npm run eval -- --suite smoke
 ```
 
 For these direct Vally runs, results follow `paths.results` in
-[.vally.yaml](../.vally.yaml), currently `vally-results/`.
+[.vally.yaml](../.vally.yaml), currently `evals/results/`. The report command
+uses the same configured directory unless you supply an explicit results path.
 
 Summarize the newest saved run (verdicts, scores, input/output/total tokens,
 and duration) or compare a baseline run against a candidate run without calling
@@ -136,6 +137,11 @@ Vally installation. They use one trial per case and no trial retries. A failed
 before verdict does not prevent the after run; failures remain visible, without
 a new regression-only gate or statistical claim.
 
+The workflow uses Vally 0.21, so native project Docker defaults are honored
+when configured. It does not configure or bypass the Copilot Evals plugin's
+separate Run entrypoint. The Action manages its runtime dependencies; parity
+with the locally pinned Copilot CLI is not assumed.
+
 A maintainer must first configure the `evals` environment with required
 reviewers and review the PR's workflow, eval code and billing effects before
 approval. The read-only selection job refuses missing or unprotected
@@ -148,7 +154,43 @@ The workflow changes none of these repository or organization settings.
 New or deleted skills and skills without their corresponding
 `evals/<plugin>/skills/<skill>/eval.yaml` cannot form a before/after pair. They are
 reported as not run, not counted as passing, and do not make evals mandatory for
-every catalog skill. Each Action invocation retains its structured report;
-raw transcript uploads and PR-comment permissions are disabled. The Action
-manages its own runtime dependencies, so parity with the locally pinned Copilot
-CLI is not assumed.
+every catalog skill.
+
+### PR comparison comment
+
+The comment shows one visible table per changed skill. Rows are eval/case
+identities; columns are models actually observed in native results. Cells show
+Before → After **passing/total graders**. After failures stay visible; Before
+failures are collapsed. A separate collapsed marketplace table shows
+**passing/total recorded cases**, with nested failure details.
+
+The current workflow evaluates each eligible changed skill separately using its
+saved model, not a new model roster or all marketplace evals. Other skill
+sources stay fixed at the merge revision in each comparison. Unchanged skills
+and remote skills without repo evals remain explicitly not evaluated; loading
+their context does not measure regressions. Local `skills/<name>/SKILL.md`
+folders and equivalent folders in each remote plugin's exact pinned GitHub tree
+provide the inventory, without installing those plugins. Nonstandard remote
+skill layouts need an inventory adaptation.
+
+One scenario can pass under its native scoring rule even if some individual
+graders fail. New, resolved and persistent failures are distinguished, including
+equal totals with changed failure identities. Errors, skipped cases and missing
+arms never become passing counts. These single-trial observations do not prove
+causation.
+
+The small presentation helper reads the pinned Action's local native JSONL logs
+and uploads only case/model identities, verdicts and safe check explanations.
+Raw trajectories, outputs, grader evidence, exceptions and transcripts are not
+uploaded or copied into comments. Failure reasons describe the check that
+failed, not a generated diagnosis; the evidence link leads to this workflow's
+native summaries and derived artifacts. Structured/derived artifacts use seven-day
+retention, subject to repository policy.
+
+The comment job has `actions: read` and `pull-requests: write`, but no model-billing
+permission. Paid jobs have no comment-write permission. Publishing checks the
+live PR head, refuses forks/closed PRs, and updates only its own bot comment;
+serialized publishing and run/attempt ordering prevent older runs replacing
+newer comments. No custom Run button, new trigger or branch-protection change is
+introduced. The layout supports multiple observed models without selecting or
+paying for additional models automatically.

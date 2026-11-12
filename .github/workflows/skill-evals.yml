@@ -11,6 +11,9 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
       count: ${{ steps.select.outputs.count }}
@@ -30,12 +33,14 @@ jobs:
         id: select
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           node --input-type=module <<'JS'
           import { execFileSync, spawnSync } from 'node:child_process';
           import { createHash } from 'node:crypto';
-          import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+          import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
           import { resolve } from 'node:path';
+          import { inventorySkills } from './.github/scripts/skill-eval-comment.mjs';
           const environment = JSON.parse(readFileSync(resolve(process.env.RUNNER_TEMP, 'evals-environment.json'), 'utf8'));
           if (!environment.protection_rules?.some(rule => rule.type === 'required_reviewers' && rule.reviewers?.length > 0)) {
             throw new Error('Configure the evals environment with required maintainer reviewers before enabling paid PR evals.');
@@ -71,8 +76,22 @@ jobs:
             }
             include.push({ plugin, skill, directory, evalPath, base, head, id: `skill-${createHash('sha256').update(key).digest('hex').slice(0, 12)}` });
           }
+          const selection = {
+            include, changed: keys, skills: inventorySkills(process.cwd()),
+            base, head, merge: process.env.GITHUB_SHA,
+            repository: process.env.GITHUB_REPOSITORY,
+            run: process.env.GITHUB_RUN_ID, attempt: process.env.GITHUB_RUN_ATTEMPT,
+          };
+          writeFileSync(resolve(process.env.RUNNER_TEMP, 'selection.json'), JSON.stringify(selection));
           appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify({ include })}\ncount=${include.length}\n`);
           JS
+      - name: Retain comparison selection
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: skill-comparison-selection
+          path: ${{ runner.temp }}/selection.json
+          if-no-files-found: error
+          retention-days: 7
 
   evals:
     needs: select
@@ -98,6 +117,11 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
+      - name: Read comparison selection
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: skill-comparison-selection
+          path: ${{ runner.temp }}/skill-selection
       - name: Select the target skill from current main
         id: before_source
         env:
@@ -112,17 +136,28 @@ jobs:
           fi
           echo "Before: $SKILL_DIR from $SOURCE_SHA; measurement revision $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
       - name: Run before evals
+        id: before
         uses: github/evals-action@6e4c077e92194c7e75663d8d782426841047e887 # v0.2.0
         with:
           command: run
+          working-directory: .
           eval-paths: ${{ matrix.evalPath }}
-          vally-version: '0.19.0'
+          vally-version: '0.21.0'
           copilot-token: ${{ github.token }}
           runs: 1
           workers: 1
           max-retries: 0
           upload-transcripts: false
           report-id: ${{ matrix.id }}-before
+      - name: Keep only before grader verdicts
+        if: ${{ !cancelled() && steps.before_source.outcome == 'success' }}
+        env:
+          ARM: before
+          COMPARISON_ID: ${{ matrix.id }}
+          SELECTION_FILE: ${{ runner.temp }}/skill-selection/selection.json
+          ACTION_REPORT: ${{ steps.before.outputs.result-path }}
+          NATIVE_DIRECTORY: ${{ steps.before.outputs.native-diagnostics-path }}
+        run: node .github/scripts/skill-eval-comment.mjs collect "$RUNNER_TEMP/skill-comparison"
       - name: Select the target skill from the PR head
         id: after_source
         if: ${{ !cancelled() && steps.before_source.outcome == 'success' }}
@@ -138,15 +173,65 @@ jobs:
           fi
           echo "After: $SKILL_DIR from $SOURCE_SHA; measurement revision $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
       - name: Run after evals even if the before verdict failed
+        id: after
         if: ${{ !cancelled() && steps.after_source.outcome == 'success' }}
         uses: github/evals-action@6e4c077e92194c7e75663d8d782426841047e887 # v0.2.0
         with:
           command: run
+          working-directory: .
           eval-paths: ${{ matrix.evalPath }}
-          vally-version: '0.19.0'
+          vally-version: '0.21.0'
           copilot-token: ${{ github.token }}
           runs: 1
           workers: 1
           max-retries: 0
           upload-transcripts: false
           report-id: ${{ matrix.id }}-after
+      - name: Keep only after grader verdicts
+        if: ${{ !cancelled() && steps.after_source.outcome == 'success' }}
+        env:
+          ARM: after
+          COMPARISON_ID: ${{ matrix.id }}
+          SELECTION_FILE: ${{ runner.temp }}/skill-selection/selection.json
+          ACTION_REPORT: ${{ steps.after.outputs.result-path }}
+          NATIVE_DIRECTORY: ${{ steps.after.outputs.native-diagnostics-path }}
+        run: node .github/scripts/skill-eval-comment.mjs collect "$RUNNER_TEMP/skill-comparison"
+      - name: Retain minimal comparison evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: skill-comparison-${{ matrix.id }}
+          path: ${{ runner.temp }}/skill-comparison/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  comment:
+    needs: [select, evals]
+    if: ${{ !cancelled() && needs.select.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: skill-eval-comment-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: Read this run's comparison evidence only
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: skill-comparison-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/skill-comparison
+      - name: Update the PR comparison comment without model access
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node .github/scripts/skill-eval-comment.mjs post "$RUNNER_TEMP/skill-comparison"

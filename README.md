@@ -200,6 +200,9 @@ request.
 requests that change a plugin skill use the separate
 [before/after workflow](.github/workflows/skill-evals.yml), with maintainer approval
 required in the protected `evals` environment. Fork PRs do not run paid evals.
+The workflow updates one PR comment with per-case grader counts, failure
+details, and an all-skills coverage table. Unmeasured skills are marked not run;
+the comment does not imply a full-marketplace or multi-model run.
 
 See [Checks and evals](docs/checks-and-evals.md) for CI details, local test
 commands, and Bash and PowerShell eval setup.

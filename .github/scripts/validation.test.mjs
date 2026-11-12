@@ -398,7 +398,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     assert.deepEqual(workflow.on.pull_request.paths, ["plugins/*/skills/**"]);
     assert.equal(workflow.jobs.select.if, "github.event.pull_request.head.repo.full_name == github.repository");
     assert.deepEqual(workflow.permissions, { contents: "read" });
-    assert.equal(workflow.jobs.select.permissions, undefined);
+    assert.deepEqual(workflow.jobs.select.permissions, { contents: "read", actions: "read" });
     const job = workflow.jobs.evals;
     assert.equal(job.environment, "evals");
     assert.equal(job.strategy["fail-fast"], false);
@@ -411,7 +411,8 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     assert.deepEqual(before, after);
     assert.equal(before.command, "run");
     assert.equal(before["eval-paths"], "${{ matrix.evalPath }}");
-    assert.equal(before["vally-version"], "0.19.0");
+    assert.equal(before["vally-version"], "0.21.0");
+    assert.equal(before["working-directory"], ".");
     assert.equal(before.runs, 1);
     assert.equal(before.workers, 1);
     assert.equal(before["max-retries"], 0);
@@ -420,6 +421,13 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     assert.equal(actions[1].if, "${{ !cancelled() && steps.after_source.outcome == 'success' }}");
     assert.equal(job.steps.find((step) => step.id === "after_source").if,
       "${{ !cancelled() && steps.before_source.outcome == 'success' }}");
+    const comment = workflow.jobs.comment;
+    assert.deepEqual(comment.permissions, { contents: "read", actions: "read", "pull-requests": "write" });
+    assert.deepEqual(comment.needs, ["select", "evals"]);
+    assert.equal(comment.concurrency["cancel-in-progress"], false);
+    assert.match(comment.if, /!cancelled\(\)/);
+    assert.ok(comment.steps.some((step) => step.run?.includes("skill-eval-comment.mjs post")));
+    assert.equal(job.permissions["pull-requests"], undefined);
     for (const step of job.steps.filter((step) => step.uses?.startsWith("actions/checkout@"))) {
       assert.equal(step.with["persist-credentials"], false);
       assert.equal(step.with["fetch-depth"], 2);
@@ -462,6 +470,8 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     file("plugins/example/skills/neighbor/SKILL.md", "base neighbor\n");
     file("plugins/example/skills/deleted/SKILL.md", "deleted skill\n");
     file("evals/example/skills/changed/eval.yaml", "fixed measurement\n");
+    file("marketplace.json", JSON.stringify({ plugins: [{ name: "example", source: "./plugins/example" }] }));
+    file(".github/scripts/skill-eval-comment.mjs", readFileSync(resolve(root, ".github/scripts/skill-eval-comment.mjs"), "utf8"));
     git("add", "."); git("commit", "-m", "Base fixture");
     git("checkout", "-b", "candidate");
     file(`${target}/SKILL.md`, "head skill\n");

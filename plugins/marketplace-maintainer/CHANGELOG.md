@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+- Route confirmed first-release note requests through the release skill even when no files need changing.
+
 ## 0.1.0
 
 - Resolve annotated release tags through the GitHub commit API.
