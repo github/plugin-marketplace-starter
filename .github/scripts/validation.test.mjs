@@ -427,6 +427,11 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     assert.equal(comment.concurrency["cancel-in-progress"], false);
     assert.match(comment.if, /!cancelled\(\)/);
     assert.ok(comment.steps.some((step) => step.run?.includes("skill-eval-comment.mjs post")));
+    assert.equal(comment.steps.find((step) => step.uses?.startsWith("actions/download-artifact@")).with.pattern,
+      "skill-comparison-${{ github.run_attempt }}-*");
+    for (const step of [...workflow.jobs.select.steps, ...job.steps].filter((step) => step.uses?.startsWith("actions/upload-artifact@"))) {
+      assert.match(step.with.name, /github\.run_attempt/, "reruns must not collide with or import earlier-attempt artifacts");
+    }
     assert.equal(job.permissions["pull-requests"], undefined);
     for (const step of job.steps.filter((step) => step.uses?.startsWith("actions/checkout@"))) {
       assert.equal(step.with["persist-credentials"], false);

@@ -88,7 +88,7 @@ jobs:
       - name: Retain comparison selection
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: skill-comparison-selection
+          name: skill-comparison-${{ github.run_attempt }}-selection
           path: ${{ runner.temp }}/selection.json
           if-no-files-found: error
           retention-days: 7
@@ -120,7 +120,7 @@ jobs:
       - name: Read comparison selection
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
-          name: skill-comparison-selection
+          name: skill-comparison-${{ github.run_attempt }}-selection
           path: ${{ runner.temp }}/skill-selection
       - name: Select the target skill from current main
         id: before_source
@@ -200,7 +200,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: skill-comparison-${{ matrix.id }}
+          name: skill-comparison-${{ github.run_attempt }}-${{ matrix.id }}
           path: ${{ runner.temp }}/skill-comparison/*.json
           if-no-files-found: error
           retention-days: 7
@@ -227,7 +227,7 @@ jobs:
       - name: Read this run's comparison evidence only
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
-          pattern: skill-comparison-*
+          pattern: skill-comparison-${{ github.run_attempt }}-*
           merge-multiple: true
           path: ${{ runner.temp }}/skill-comparison
       - name: Update the PR comparison comment without model access
