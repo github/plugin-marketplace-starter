@@ -281,6 +281,36 @@ Know the boundary before approving a run:
   or cleanup fails. An interrupted host or daemon can leave resources behind;
   do not remove other runs' containers or volumes.
 
+### Standard model roster
+
+[The native experiment](../evals/standard-models.experiment.yaml) is the single
+source for the standard model roster: `claude-sonnet-5.5` and `gpt-6.1-terra`.
+When adopting the template, replace `matrix.model.values` with your own model
+IDs and set `baseline.model` to one of them. Vally requires at least two variants;
+for a single model, use `npm run eval -- --model <model-id>` instead.
+
+After `npm ci`, preview the selected evals, variants and configuration hashes
+without running setup, Docker or a model:
+
+```sh
+npm run eval:models -- --dry-run
+```
+
+`npm run eval:models` executes the planned variants and spends AI credits for
+each case under each model. Use the same Docker prerequisites and scoped
+authentication above; the experiment inherits the project Docker backend and
+offline grading default, without forwarding a host `COPILOT_CLI_PATH`.
+The two-model roster is not a guarantee of account access or a quality claim.
+The baseline identifies the experiment's control, not a preferred winner; the
+command does not invoke an extra comparison judge. Only the model varies,
+preserving the evals, graders, fixtures and shared marketplace environment.
+The existing single-model commands and Actions do not consume this experiment.
+
+Native experiments have a separate output flag rather than reading
+`paths.results`. The npm command explicitly writes timestamped per-variant
+results under `evals/results/standard-models/`. If you customize the output
+location, update the command's `--output-dir` too.
+
 ### Saved results
 
 For these direct Vally runs, results follow `paths.results` in
