@@ -81,6 +81,29 @@ test("equal aggregate counts expose changed failure identities and missing arms 
   assert.doesNotMatch(missing, /📈 1\/2/);
 });
 
+test("partial arms and absent matching graders cannot create resolved or new failure claims", () => {
+  for (const change of ["partial", "missing-check"]) {
+    const sample = pair();
+    if (change === "partial") sample.after.state = "error";
+    else sample.after.rows[0].checks.pop();
+    const rendered = renderComparison(selection, [sample], "https://example.test");
+    assert.match(rendered, /0 resolved · 📉 0 new failures/);
+    assert.match(rendered, /Before \(comparison unknown\) \| routing/);
+    assert.match(rendered, /comparison unknown/);
+    assert.doesNotMatch(rendered, /resolved After|After \(new\)|📈 1\/2/);
+    if (change === "partial") assert.match(rendered, /1\/2 → ⚠️ Error/);
+    else assert.match(rendered, /1\/2 → 1\/1 \(comparison unknown\)/);
+  }
+});
+
+test("malformed native output never leaks parser excerpts", () => {
+  assert.throws(() => collectArm(report, [`${JSON.stringify(trial())}\nSECRET_RAW_INVALID_JSON`]), (error) => {
+    assert.equal(error.message, "Malformed native JSONL evidence.");
+    assert.doesNotMatch(error.message, /SECRET/);
+    return true;
+  });
+});
+
 test("catalog inventory enumerates local and exact pinned remote skill folders without executing them", (t) => {
   const root = mkdtempSync(join(tmpdir(), "comparison-inventory-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

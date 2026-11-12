@@ -398,6 +398,9 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     assert.deepEqual(workflow.on.pull_request.paths, ["plugins/*/skills/**"]);
     assert.equal(workflow.jobs.select.if, "github.event.pull_request.head.repo.full_name == github.repository");
     assert.deepEqual(workflow.permissions, { contents: "read" });
+    assert.deepEqual(workflow.concurrency, {
+      group: "skill-evals-${{ github.event.pull_request.number }}", "cancel-in-progress": true,
+    });
     assert.deepEqual(workflow.jobs.select.permissions, { contents: "read", actions: "read" });
     const job = workflow.jobs.evals;
     assert.equal(job.environment, "evals");
@@ -433,6 +436,22 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
       assert.match(step.with.name, /github\.run_attempt/, "reruns must not collide with or import earlier-attempt artifacts");
     }
     assert.equal(job.permissions["pull-requests"], undefined);
+    assert.equal(comment.steps.find((step) => step.uses?.startsWith("actions/checkout@")).with.ref,
+      "${{ github.event.pull_request.base.sha }}");
+    assert.match(comment.steps.find((step) => step.name?.includes("trusted base")).run,
+      /Merge the reviewed publisher into the base branch/);
+    for (const guarded of [job, comment]) {
+      assert.equal(guarded.steps[0].env.SELECTED_ATTEMPT, "${{ needs.select.outputs.attempt }}");
+      for (const attempt of ["1", "2"]) {
+        const checked = spawnSync("bash", ["-c", guarded.steps[0].run], {
+          encoding: "utf8", timeout: 10000,
+          env: { ...process.env, SELECTED_ATTEMPT: "1", GITHUB_RUN_ATTEMPT: attempt },
+        });
+        assert.ifError(checked.error);
+        assert.equal(checked.status, attempt === "1" ? 0 : 1);
+        if (attempt === "2") assert.match(checked.stdout, /Re-run all jobs/);
+      }
+    }
     for (const step of job.steps.filter((step) => step.uses?.startsWith("actions/checkout@"))) {
       assert.equal(step.with["persist-credentials"], false);
       assert.equal(step.with["fetch-depth"], 2);

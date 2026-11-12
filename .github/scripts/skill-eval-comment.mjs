@@ -13,7 +13,10 @@ const text = (value) => stripVTControlCharacters(String(value ?? ""))
   .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
   .replaceAll("|", "&#124;").replaceAll("`", "&#96;").replaceAll("[", "&#91;").replaceAll("]", "&#93;")
   .replaceAll("@", "&#64;").slice(0, 200);
-const json = (path) => JSON.parse(readFileSync(path, "utf8"));
+const json = (path) => {
+  const contents = readFileSync(path, "utf8");
+  try { return JSON.parse(contents); } catch { throw new Error("Malformed comparison JSON input."); }
+};
 const writeJson = (path, value) => {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value)}\n`, { mode: 0o600 });
@@ -116,7 +119,9 @@ export function collectArm(report, logs) {
   const matches = [];
   for (const log of logs) {
     if (!log.trimStart().startsWith("{")) continue; // The Action also retains its plain version check.
-    const records = log.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line));
+    let records;
+    try { records = log.split(/\r?\n/).filter((line) => line.trim()).map((line) => JSON.parse(line)); }
+    catch { throw new Error("Malformed native JSONL evidence."); }
     if (records[0]?.runId === report.nativeRunId) matches.push(records);
   }
   if (matches.length !== 1) throw new Error("Expected exactly one native JSONL log for this Action run.");
@@ -131,6 +136,12 @@ const findRow = (arm, row) => arm?.rows.find((item) =>
   item.eval === row.eval && item.stimulus === row.stimulus && item.model === row.model);
 const failures = (row) => new Set(row?.checks.filter((check) => !check.passed).map((check) => check.id) ?? []);
 const difference = (a, b) => [...a].filter((id) => !b.has(id)).length;
+function comparable(pair, before, after) {
+  return pair.before?.state === "complete" && pair.after?.state === "complete" &&
+    before?.state === "graded" && after?.state === "graded" &&
+    before.checks.length === after.checks.length &&
+    before.checks.every((check) => after.checks.some((other) => other.id === check.id));
+}
 function counts(arm, row) {
   if (arm?.state === "error") return "⚠️ Error";
   if (arm?.state === "not-run") return "⏭️ Not run";
@@ -139,9 +150,9 @@ function counts(arm, row) {
   if (row.state === "not-run") return "⏭️ Not run";
   return `${row.checks.filter((check) => check.passed).length}/${row.checks.length}`;
 }
-function transition(before, after) {
+function transition(pair, before, after) {
   const old = failures(before), current = failures(after);
-  if (before?.state !== "graded" || after?.state !== "graded") return "";
+  if (!comparable(pair, before, after)) return "";
   const added = difference(current, old), resolved = difference(old, current);
   if (added && resolved) return `🔄 `;
   if (added) return "📉 ";
@@ -155,7 +166,7 @@ export function renderComparison(selection, pairs, evidenceUrl) {
   let added = 0, resolved = 0;
   for (const pair of pairs) for (const after of pair.after?.rows ?? []) {
     const before = findRow(pair.before, after);
-    if (before?.state === "graded" && after.state === "graded") {
+    if (comparable(pair, before, after)) {
       added += difference(failures(after), failures(before));
       resolved += difference(failures(before), failures(after));
     }
@@ -168,7 +179,8 @@ export function renderComparison(selection, pairs, evidenceUrl) {
     "**Cells: Before → After.** A scenario is one case; graders are its individual checks.", "",
   ];
   if (pairs.some((pair) => ["before", "after"].some((arm) => pair[arm]?.state !== "complete" ||
-    pair[arm]?.rows.some((row) => row.state !== "graded")))) {
+    pair[arm]?.rows.some((row) => row.state !== "graded")) ||
+    (pair.after?.rows ?? []).some((after) => !comparable(pair, findRow(pair.before, after), after)))) {
     lines.push("**⚠️ Incomplete/error evidence:** affected cells are not passing results. Check the linked workflow.", "");
   }
   const rowIdentities = (pair) => [...new Map([...(pair.before?.rows ?? []), ...(pair.after?.rows ?? [])]
@@ -187,7 +199,9 @@ export function renderComparison(selection, pairs, evidenceUrl) {
       const cells = models.map((model) => {
         const identity = { ...row, model };
         const before = findRow(pair.before, identity), after = findRow(pair.after, identity);
-        return `${transition(before, after)}${counts(pair.before, before)} → ${counts(pair.after, after)}`;
+        const unknown = before?.state === "graded" && after?.state === "graded" && !comparable(pair, before, after)
+          ? " (comparison unknown)" : "";
+        return `${transition(pair, before, after)}${counts(pair.before, before)} → ${counts(pair.after, after)}${unknown}`;
       });
       const short = row.stimulus.startsWith(`${row.eval}-`) ? row.stimulus.slice(row.eval.length + 1) : row.stimulus;
       lines.push(`| ${row.eval} : ${short} | ${cells.join(" | ")} |`);
@@ -211,7 +225,7 @@ export function renderComparison(selection, pairs, evidenceUrl) {
         for (const { arm, row, check } of rows) {
           const other = findRow(pair[arm === "before" ? "after" : "before"], row);
           const otherFailed = failures(other).has(check.id);
-          const change = other?.state !== "graded" ? "comparison unknown" :
+          const change = !comparable(pair, arm === "before" ? row : other, arm === "after" ? row : other) ? "comparison unknown" :
             arm === "after" ? otherFailed ? "already present" : "new" : otherFailed ? "persists After" : "resolved After";
           output.push(`| ${arm === "after" ? "After" : "Before"} (${change}) | ${check.name} | ${row.model} | ${check.reason} | [Native run](${evidenceUrl}) |`);
         }
@@ -244,12 +258,15 @@ export function renderComparison(selection, pairs, evidenceUrl) {
       let added = 0, resolved = 0;
       for (const after of pair.after?.rows.filter((row) => row.model === model) ?? []) {
         const before = findRow(pair.before, after);
-        if (before?.state === "graded" && after.state === "graded") {
+        if (comparable(pair, before, after)) {
           added += difference(failures(after), failures(before));
           resolved += difference(failures(before), failures(after));
         }
       }
-      return added && resolved ? `🔄 ${values} (${added} new, ${resolved} resolved grader failures)` : values;
+      const unknown = (pair.after?.rows.filter((row) => row.model === model) ?? [])
+        .some((after) => !comparable(pair, findRow(pair.before, after), after));
+      return unknown ? `${values} (comparison unknown)` :
+        added && resolved ? `🔄 ${values} (${added} new, ${resolved} resolved grader failures)` : values;
     });
     lines.push(`| ${text(skill.key)} | ${cells.join(" | ")} |`);
   }

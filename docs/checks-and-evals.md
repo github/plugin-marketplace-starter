@@ -178,6 +178,9 @@ graders fail. New, resolved and persistent failures are distinguished, including
 equal totals with changed failure identities. Errors, skipped cases and missing
 arms never become passing counts. These single-trial observations do not prove
 causation.
+Transition labels require two complete arms and the same individual checks.
+A missing counterpart is unknown, not a resolved failure. Partial failed-check
+evidence stays visible without claiming an improvement or regression.
 
 The small presentation helper reads the pinned Action's local native JSONL logs
 and uploads only case/model identities, verdicts and safe check explanations.
@@ -194,3 +197,23 @@ serialized publishing and run/attempt ordering prevent older runs replacing
 newer comments. No custom Run button, new trigger or branch-protection change is
 introduced. The layout supports multiple observed models without selecting or
 paying for additional models automatically.
+
+The publisher checks out the exact base SHA, never the PR's helper. Its reviewed
+helper must already exist on that trusted revision; otherwise publication fails
+closed. Workflow-level per-PR concurrency cancels stale runs before more work is
+scheduled. Cancellation cannot undo already billed model requests.
+
+**Partial job reruns are unsupported.** Use **Re-run all jobs** so selection and
+both paid arms share an attempt and approval. A retry reusing a successful
+selection from a previous attempt is rejected before either paid arm, rather
+than spending credits and then failing to collect its artifacts. This also
+applies to comment-only retries.
+
+**Approval boundary:** required environment reviewers protect jobs that reference
+that environment, not every job an authorized workflow editor could add.
+`copilot-requests: write` is a workflow-token permission, not an environment
+secret. These declarations are not an immutable organization-wide billing
+policy. A trusted publishing checkout also does not make the surrounding
+PR-editable workflow immutable. Do not treat this workflow as a security boundary
+against untrusted workflow editors; the trusted-entrypoint/billing design remains
+under review before enabling it.
