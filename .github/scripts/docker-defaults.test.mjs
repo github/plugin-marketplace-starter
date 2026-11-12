@@ -23,6 +23,14 @@ function assertBackendInheritance(command) {
   assert.doesNotMatch(command, /--(?:backend(?:-args)?|in-place)\b/);
 }
 
+function assertDocumentedEval(projectRoot, path) {
+  assert.match(path, /^evals\/[a-zA-Z0-9._/-]+\.yaml$/);
+  assert.ok(!path.split("/").includes(".."), "Documented eval path must stay in the checkout");
+  if (existsSync(resolve(projectRoot, "plugins")) || existsSync(resolve(projectRoot, "evals"))) {
+    assert.ok(existsSync(resolve(projectRoot, path)), `Documented eval must exist: ${path}`);
+  }
+}
+
 test("native full-suite and explicit-spec launches inherit Docker for every retained eval", async () => {
   const project = await ProjectContext.load(root);
   const suite = project.resolveSuite("full");
@@ -71,6 +79,22 @@ test("shared launchers reject backend and in-place overrides in either argument 
   }
 });
 
+test("documented eval checks permit removed local trees but reject missing retained specs", (t) => {
+  const directory = resolve(root, ".vally", `documented-eval-${randomUUID()}`);
+  mkdirSync(directory, { recursive: true });
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = "evals/example/eval.yaml";
+  assertDocumentedEval(directory, path);
+  assert.throws(() => assertDocumentedEval(directory, "evals/../outside.yaml"), /stay in the checkout/);
+  mkdirSync(resolve(directory, "plugins"));
+  assert.throws(() => assertDocumentedEval(directory, path), /must exist/);
+  mkdirSync(resolve(directory, "evals/example"), { recursive: true });
+  writeFileSync(resolve(directory, path), "synthetic");
+  assertDocumentedEval(directory, path);
+  rmSync(resolve(directory, "plugins"), { recursive: true });
+  assert.throws(() => assertDocumentedEval(directory, "evals/example/missing.yaml"), /must exist/);
+});
+
 test("documented credential recipes expose only the selected token and restore ambient values on failure", () => {
   const guide = readFileSync(resolve(root, "docs/checks-and-evals.md"), "utf8");
   const section = guide.slice(guide.indexOf("### Native Docker evals"));
@@ -113,8 +137,7 @@ try {
     const specs = [...script.matchAll(/--eval-spec (\S+)/g)];
     assert.equal(specs.length, 1, "the credential recipe must select one explicit eval");
     const path = specs[0][1];
-    assert.match(path, /^evals\/[a-zA-Z0-9._/-]+\.yaml$/);
-    assert.ok(!path.split("/").includes("..") && existsSync(resolve(root, path)), `Documented eval must exist: ${path}`);
+    assertDocumentedEval(root, path);
   }
   assert.equal(normalizeSpec(bash), normalizeSpec(expectedBash));
   assert.equal(normalizeSpec(powershell), normalizeSpec(expectedPowerShell));
