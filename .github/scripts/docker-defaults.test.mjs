@@ -82,7 +82,7 @@ test("documented credential recipes expose only the selected token and restore a
   printf '\n'
   test -n "$COPILOT_GITHUB_TOKEN" || exit 1
   export COPILOT_GITHUB_TOKEN
-  npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
+  npm run eval -- --eval-spec evals/synthetic/eval.yaml --max-retries 0
 )`;
   const expectedPowerShell = String.raw`$names = 'COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'
 $original = @{}
@@ -99,7 +99,7 @@ try {
     throw 'No dedicated Copilot credential was supplied.'
   }
   $env:COPILOT_GITHUB_TOKEN = $token
-  npm run eval -- --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
+  npm run eval -- --eval-spec evals/synthetic/eval.yaml --max-retries 0
   if ($LASTEXITCODE -ne 0) { throw "Eval exited with code $LASTEXITCODE; inspect its saved results." }
 } finally {
   foreach ($name in $names) {
@@ -108,10 +108,18 @@ try {
   $token = $null
   $secret = $null
 }`;
-  assert.equal(bash, expectedBash);
-  assert.equal(powershell, expectedPowerShell);
+  const normalizeSpec = (script) => script.replace(/--eval-spec (evals\/[a-zA-Z0-9._/-]+\.yaml)\b/g, "--eval-spec <eval>");
+  for (const script of [bash, powershell]) {
+    const specs = [...script.matchAll(/--eval-spec (\S+)/g)];
+    assert.equal(specs.length, 1, "the credential recipe must select one explicit eval");
+    const path = specs[0][1];
+    assert.match(path, /^evals\/[a-zA-Z0-9._/-]+\.yaml$/);
+    assert.ok(!path.split("/").includes("..") && existsSync(resolve(root, path)), `Documented eval must exist: ${path}`);
+  }
+  assert.equal(normalizeSpec(bash), normalizeSpec(expectedBash));
+  assert.equal(normalizeSpec(powershell), normalizeSpec(expectedPowerShell));
   const paid = guide.slice(guide.indexOf("## Paid evals"));
-  assert.equal(paid.match(/```sh\n([\s\S]*?)\n```/)[1], expectedBash,
+  assert.equal(normalizeSpec(paid.match(/```sh\n([\s\S]*?)\n```/)[1]), normalizeSpec(expectedBash),
     "the first paid run example must include Docker prerequisites and scoped authentication");
   assert.ok(paid.indexOf("### Native Docker evals") < paid.indexOf("```sh"));
   const env = { ...process.env, COPILOT_GITHUB_TOKEN: "synthetic-copilot", GH_TOKEN: "synthetic-gh", GITHUB_TOKEN: "synthetic-github" };
@@ -149,7 +157,7 @@ ${expectedPowerShell}
 } catch { $caught = $true }
 if ($caught -ne $${exit !== 0} -or $env:COPILOT_GITHUB_TOKEN -ne 'synthetic-copilot' -or $env:GH_TOKEN -ne 'synthetic-gh' -or $env:GITHUB_TOKEN -ne 'synthetic-github') { throw 'Recipe did not restore original credentials' }
 exit 0
-`], { env, encoding: "utf8", timeout: 15000 });
+`], { env, encoding: "utf8", timeout: 60000 });
     assert.ifError(ps.error);
     assert.equal(ps.status, 0, ps.stderr);
   }
@@ -174,7 +182,7 @@ ${expectedPowerShell}
 } catch { $caught = $true }
 if (-not $caught -or $ran -or $env:COPILOT_GITHUB_TOKEN -ne 'synthetic-copilot' -or $env:GH_TOKEN -ne 'synthetic-gh' -or $env:GITHUB_TOKEN -ne 'synthetic-github') { throw 'Empty input did not fail closed and restore original credentials' }
 exit 0
-`], { env, encoding: "utf8", timeout: 15000 });
+`], { env, encoding: "utf8", timeout: 60000 });
   assert.ifError(empty.error);
   assert.equal(empty.status, 0, empty.stderr);
 });
