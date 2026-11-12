@@ -42,7 +42,7 @@ For marketplace development and evals, use this shared setup.
 - **Node.js 24+ and npm** for repository tooling and the bundled
   [local-install validator](plugins/plugin-authoring/skills/try-plugin-locally/references/local-install.md#test-installation-without-publishing).
 - **GitHub Copilot CLI 1.0.85+**.
-- **Vally ([`@microsoft/vally-cli`](https://www.npmjs.com/package/@microsoft/vally-cli)) 0.19.0+**.
+- **Vally ([`@microsoft/vally-cli`](https://www.npmjs.com/package/@microsoft/vally-cli)) 0.21.0**, pinned in `package.json`.
 - **Git 2.28.0+**.
 
 ## Make it yours
@@ -198,6 +198,15 @@ request.
 **Paid evals:** `npm run eval` runs real Copilot sessions and costs AI credits.
 [Evals](.github/workflows/evals.yml) runs only when manually started; pull
 requests never trigger paid evals.
+
+For explicit container-isolated runs, the pinned Vally CLI supports
+`npm run eval -- --backend docker --suite smoke`. This still spends AI credits
+and requires a running Linux Docker daemon, Compose, network access, and
+container-compatible authentication. Vally builds and caches its version-matched
+default image locally; no manual Dockerfile or registry image pin is needed.
+See [Native Docker evals and isolation limits](docs/checks-and-evals.md#native-docker-evals)
+before running. Existing execution defaults and CI triggers are unchanged;
+whether to require Docker by default is a separate policy decision.
 
 See [Checks and evals](docs/checks-and-evals.md) for CI details, local test
 commands, and Bash and PowerShell eval setup.

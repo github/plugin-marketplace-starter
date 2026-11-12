@@ -10,6 +10,18 @@ npm ci
 npm run lint
 ```
 
+The lockfile keeps exact versions and integrity hashes without registry-specific
+tarball URLs. After changing dependencies, preserve that format with npm's
+[`omit-lockfile-registry-resolved`](https://docs.npmjs.com/cli/v11/using-npm/config/#omit-lockfile-registry-resolved)
+option:
+
+```sh
+npm install --package-lock-only --ignore-scripts --omit-lockfile-registry-resolved
+```
+
+`npm ci` resolves tarball endpoints through the configured registry. A successful
+install through a development mirror does not verify public-registry availability.
+
 `npm run lint` checks local catalog consistency, then checks every skill under
 `plugins/` and every eval under `evals/` with the pinned
 [Vally](https://microsoft.github.io/vally/) CLI. A remote-only marketplace can
@@ -109,6 +121,90 @@ PowerShell:
 $env:COPILOT_CLI_PATH = "$PWD\node_modules\@github\copilot\npm-loader.js"
 npm run eval -- --suite smoke
 ```
+
+### Native Docker evals
+
+**These are real Copilot runs and still spend AI credits.** Use Vally 0.21.0's
+native [`docker` backend](https://microsoft.github.io/vally/guides/running-evals-in-docker/)
+with an explicit CLI flag. This capability does not change the existing local
+execution defaults, CI triggers, or the Evals plugin's Run behavior. Choosing
+whether Docker should be mandatory is a separate policy decision. The pinned
+Evals plugin's project parser does not accept `defaults.backend`; don't add it
+to [.vally.yaml](../.vally.yaml) to configure plugin Run.
+
+After `npm ci`, make sure `docker` is on `PATH`, your account can access a
+running **Linux** Docker daemon, and `docker compose version` succeeds. The
+first uncached run needs network access and enough disk space to build Vally's
+default appliance. Vally builds it from the installed core package and caches
+it as `vally-task:<content-hash>`. Its image/core versions must match exactly;
+let Vally select/build the image after upgrades rather than reusing an older
+registry image. No repository Dockerfile or manual image rebuild is needed.
+Host npm connectivity does not prove registry connectivity inside Docker's
+build environment. Resolve build-network or certificate-trust failures before
+running; do not disable TLS verification.
+
+On restricted-registry networks, Vally 0.21.0's default builder does not inherit
+host `.npmrc` files or expose an npm-registry build override. A separately
+reviewed, version-matched custom image can be selected explicitly with
+`--backend-args task-image=<immutable-image-id>`. A successful run with that
+image verifies native task/grade execution, **not** the unmodified default-image
+bootstrap. Never tag a modified recipe with Vally's canonical default cache tag.
+
+The container uses an isolated Copilot home and cannot reuse the host's
+interactive Copilot login. Vally automatically forwards the recognized model
+authentication variables (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`)
+to the task when using `copilot-sdk`. Use only the credential you intend to
+expose. For example, with an existing authenticated `gh` account, run this
+complete two-case eval (positive and negative), without printing or saving the
+token:
+
+Bash:
+
+```sh
+export GH_TOKEN="$(gh auth token)"
+npm run eval -- --backend docker --backend-args grade-network=none --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
+unset GH_TOKEN
+```
+
+PowerShell:
+
+```powershell
+$env:GH_TOKEN = gh auth token
+npm run eval -- --backend docker --backend-args grade-network=none --eval-spec evals/pr-description/skills/pr-description/eval.yaml --max-retries 0
+Remove-Item Env:GH_TOKEN
+```
+
+This uses the eval's declared model and one trial per case. The native image
+supplies its own executor runtime; the host `COPILOT_CLI_PATH` setting above
+is for local runs, not a path to forward into Linux containers.
+
+Know the boundary before approving a run:
+
+- The host still runs Vally orchestration and trusted build/setup tooling.
+  Task execution and grading use separate containers and workspaces, even
+  when they share the cached image. Hidden grading files are not staged into
+  the task; grading receives captured task evidence. Graders within one trial
+  share their grade environment and must treat agent-authored files as untrusted.
+- Task and grade roles run as non-root with capabilities dropped and
+  `no-new-privileges`. Vally also uses root-running initialization/evidence
+  helpers with limited capabilities; Docker is not protection against every
+  kernel escape or a substitute for reviewing trusted code.
+- Both role networks default to Docker's normal network, **not offline**.
+  The task needs network for Copilot and the shared marketplace environment's
+  pinned remote-skill fetch. `task-network=none` is only suitable for a
+  self-contained model-free probe. The command above sets `grade-network=none`
+  because this eval's graders are deterministic; LLM or network-dependent
+  graders need their own reviewed networking and credentials.
+- The task can read and use its forwarded model credential and reach allowed
+  network services. Custom `task-env` and `grade-env` forwards are role-specific;
+  never forward judge secrets to the task. Review eval setup commands, network
+  effects, and credentials separately from the container boundary.
+- Vally exports task workspaces and releases trial resources. Check warnings
+  for preserved host paths or `docker-volume://` recovery locations if export
+  or cleanup fails. An interrupted host or daemon can leave resources behind;
+  do not remove other runs' containers or volumes.
+
+### Saved results
 
 For these direct Vally runs, results follow `paths.results` in
 [.vally.yaml](../.vally.yaml), currently `evals/results/`. The report command
