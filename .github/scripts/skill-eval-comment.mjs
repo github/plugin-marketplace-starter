@@ -1,12 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 
 const marker = "<!-- marketplace-skill-comparison:";
 const safeName = /^[a-z0-9][a-z0-9._-]*$/;
 const sha = /^[a-f0-9]{40}$/;
+const sourceWorkflow = ".github/workflows/skill-evals.yml";
+const skillKey = (value) => typeof value === "string" && value.split("/").length === 2 &&
+  value.split("/").every((part) => safeName.test(part));
+const positive = (value) => Number.isSafeInteger(value) && value > 0;
 const text = (value) => stripVTControlCharacters(String(value ?? ""))
   // eslint-disable-next-line no-control-regex
   .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/gu, " ")
@@ -278,28 +282,136 @@ export function renderComparison(selection, pairs, evidenceUrl) {
   return lines.join("\n");
 }
 
-export async function postComparison(selection, body, api = github, env = process.env) {
-  if (!/^[\w.-]+\/[\w.-]+$/.test(env.GITHUB_REPOSITORY ?? "") || !/^\d+$/.test(env.PR_NUMBER ?? "")) throw new Error("Invalid PR context.");
-  const endpoint = `repos/${env.GITHUB_REPOSITORY}`;
-  const pr = await api(`${endpoint}/pulls/${env.PR_NUMBER}`);
-  if (pr.state !== "open" || pr.head.sha !== selection.head || pr.head.repo.full_name !== env.GITHUB_REPOSITORY) {
+export async function publisherContext(event, api = github, env = process.env) {
+  const repository = env.GITHUB_REPOSITORY;
+  const source = event?.workflow_run;
+  if (env.GITHUB_EVENT_NAME !== "workflow_run" || !/^[\w.-]+\/[\w.-]+$/.test(repository ?? "") ||
+      !positive(source?.id) || !positive(source?.run_attempt)) throw new Error("Expected a workflow_run publisher context.");
+  const endpoint = `repos/${repository}`;
+  const run = await api(`${endpoint}/actions/runs/${source.id}/attempts/${source.run_attempt}`);
+  if (run.id !== source.id || run.run_attempt !== source.run_attempt || run.repository?.full_name !== repository ||
+      run.head_repository?.full_name !== repository || run.event !== "pull_request" || run.status !== "completed" ||
+      !sha.test(run.head_sha) || !positive(run.run_number) || !positive(run.workflow_id)) {
+    throw new Error("Untrusted or incomplete source workflow run.");
+  }
+  const workflow = await api(`${endpoint}/actions/workflows/${run.workflow_id}`);
+  if (workflow.path !== sourceWorkflow) throw new Error("Unexpected source workflow path.");
+  if (!Array.isArray(run.pull_requests) || run.pull_requests.length !== 1 ||
+      !positive(run.pull_requests[0].number) || !sha.test(run.pull_requests[0].head?.sha) ||
+      source.pull_requests?.[0]?.number !== run.pull_requests[0].number) {
+    throw new Error("Cannot establish the source run's PR association.");
+  }
+  return {
+    repository, run: String(run.id), attempt: String(run.run_attempt), runNumber: run.run_number,
+    pullNumber: run.pull_requests[0].number, head: run.pull_requests[0].head.sha, runHead: run.head_sha,
+  };
+}
+
+function artifact(root, name) {
+  const file = resolve(root, name);
+  const rel = relative(realpathSync(root), realpathSync(file));
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) ||
+      !lstatSync(file).isFile() || statSync(file).size > 1024 * 1024) {
+    throw new Error("Expected a bounded regular comparison artifact inside the download directory.");
+  }
+  return json(file);
+}
+
+export async function validateSelection(selection, context, api = github) {
+  if (!selection || !sha.test(selection.base) || !sha.test(selection.head) || !sha.test(selection.merge) ||
+      selection.repository !== context.repository || selection.run !== context.run || selection.attempt !== context.attempt ||
+      selection.head !== context.head || ![selection.head, selection.merge].includes(context.runHead) ||
+      !Array.isArray(selection.include) || !Array.isArray(selection.changed) || !Array.isArray(selection.skills) ||
+      !selection.changed.every(skillKey) || new Set(selection.changed).size !== selection.changed.length ||
+      !selection.skills.every((skill) => skillKey(skill?.key) && typeof skill.hasEval === "boolean") ||
+      new Set(selection.skills.map((skill) => skill.key)).size !== selection.skills.length) {
+    throw new Error("Comparison selection does not match the authenticated source run.");
+  }
+  const ids = new Set(), keys = new Set();
+  for (const entry of selection.include) {
+    const key = `${entry?.plugin}/${entry?.skill}`;
+    if (!skillKey(key) || !/^skill-[a-f0-9]{12}$/.test(entry.id ?? "") || ids.has(entry.id) || keys.has(key) ||
+        !selection.changed.includes(key) || entry.directory !== `plugins/${key.replace("/", "/skills/")}` ||
+        entry.evalPath !== `evals/${key.replace("/", "/skills/")}/eval.yaml` ||
+        entry.base !== selection.base || entry.head !== selection.head) throw new Error("Invalid comparison selection entry.");
+    ids.add(entry.id); keys.add(key);
+  }
+  const commit = await api(`repos/${context.repository}/git/commits/${selection.merge}`);
+  if (commit.sha !== selection.merge || commit.parents?.length !== 2 ||
+      commit.parents[0].sha !== selection.base || commit.parents[1].sha !== selection.head) {
+    throw new Error("Comparison merge parents do not match the selected source revisions.");
+  }
+}
+
+function safeArm(data) {
+  if (!data || !["complete", "error", "not-run"].includes(data.state) || !Array.isArray(data.rows)) {
+    throw new Error("Invalid comparison arm.");
+  }
+  const identities = new Set();
+  const rows = data.rows.map((row) => {
+    if (!row || !["graded", "error", "not-run"].includes(row.state) || typeof row.passed !== "boolean" ||
+        row.state !== "graded" && row.passed || !Array.isArray(row.checks) ||
+        ![row.eval, row.stimulus, row.model].every((label) => typeof label === "string" && label.length > 0 && label.length <= 200)) {
+      throw new Error("Invalid comparison case.");
+    }
+    const key = JSON.stringify([row.eval, row.stimulus, row.model]);
+    if (identities.has(key)) throw new Error("Duplicate comparison case.");
+    identities.add(key);
+    const checkIds = new Set();
+    const checks = row.checks.map((check) => {
+      if (!/^\d+:[a-z0-9._-]+$/.test(check?.id ?? "") || checkIds.has(check.id) ||
+          typeof check.passed !== "boolean" || typeof check.name !== "string") throw new Error("Invalid comparison check.");
+      checkIds.add(check.id);
+      return { id: check.id, name: text(check.name), passed: check.passed,
+        reason: check.passed ? "" : failedReason(check.id.split(":")[1]) };
+    });
+    if (row.state === "graded" && !checks.length) throw new Error("Missing comparison checks.");
+    return { eval: text(row.eval), stimulus: text(row.stimulus), model: text(row.model), state: row.state, passed: row.passed, checks };
+  });
+  return { state: data.state, rows };
+}
+
+export async function loadComparison(root, context, api = github) {
+  const selection = artifact(root, "selection.json");
+  await validateSelection(selection, context, api);
+  const pairs = selection.include.map((entry) => {
+    const pair = { key: `${entry.plugin}/${entry.skill}` };
+    for (const arm of ["before", "after"]) {
+      const file = `${entry.id}-${arm}.json`;
+      if (!existsSync(resolve(root, file))) { pair[arm] = { state: "error", rows: [] }; continue; }
+      const saved = artifact(root, file);
+      if (saved.key !== pair.key || saved.id !== entry.id || saved.arm !== arm ||
+          saved.repository !== context.repository || saved.run !== context.run ||
+          saved.attempt !== context.attempt || saved.merge !== selection.merge) throw new Error("Mixed comparison artifacts.");
+      pair[arm] = safeArm(saved.data);
+    }
+    return pair;
+  });
+  return { selection, pairs };
+}
+
+export async function postComparison(selection, body, api = github, context) {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(context?.repository ?? "") || !positive(context.pullNumber)) throw new Error("Invalid PR context.");
+  const endpoint = `repos/${context.repository}`;
+  const pr = await api(`${endpoint}/pulls/${context.pullNumber}`);
+  if (pr.state !== "open" || pr.head.sha !== selection.head || pr.head.repo.full_name !== context.repository) {
     throw new Error("PR closed, head changed, or fork context; no comment published.");
   }
-  const key = `${marker}${env.GITHUB_WORKFLOW_REF} -->`;
+  const key = `${marker}${context.repository}/${sourceWorkflow} -->`;
   const comments = [];
   for (let page = 1; ; page++) {
-    const batch = await api(`${endpoint}/issues/${env.PR_NUMBER}/comments?per_page=100&page=${page}`);
+    const batch = await api(`${endpoint}/issues/${context.pullNumber}/comments?per_page=100&page=${page}`);
     comments.push(...batch);
     if (batch.length < 100) break;
   }
   const existing = comments.find((comment) => comment.user?.login === "github-actions[bot]" && comment.body.startsWith(key));
-  const order = [Number(env.GITHUB_RUN_NUMBER), Number(env.GITHUB_RUN_ATTEMPT)];
+  const order = [context.runNumber, Number(context.attempt)];
   if (!order.every((n) => Number.isSafeInteger(n) && n > 0)) throw new Error("Invalid workflow run order.");
   const previous = existing?.body.match(/<!-- run:(\d+):(\d+) -->/);
   if (previous && (Number(previous[1]) > order[0] || Number(previous[1]) === order[0] && Number(previous[2]) > order[1])) return "stale";
   const content = `${key}\n<!-- run:${order.join(":")} -->\n${body}`;
   if (content.length > 60000) throw new Error("Comparison exceeds the comment limit; no misleading truncated report published.");
-  return api(existing ? `${endpoint}/issues/comments/${existing.id}` : `${endpoint}/issues/${env.PR_NUMBER}/comments`,
+  return api(existing ? `${endpoint}/issues/comments/${existing.id}` : `${endpoint}/issues/${context.pullNumber}/comments`,
     existing ? "PATCH" : "POST", { body: content });
 }
 
@@ -332,23 +444,10 @@ async function main() {
       data: collectArm(report, logs),
     });
   } else if (command === "post") {
-    const selection = json(resolve(path, "selection.json"));
-    validateIdentity(selection, process.env);
-    const pairs = selection.include.map((entry) => {
-      const pair = { key: `${entry.plugin}/${entry.skill}` };
-      for (const arm of ["before", "after"]) {
-        const file = resolve(path, `${entry.id}-${arm}.json`);
-        if (!existsSync(file)) { pair[arm] = { state: "error", rows: [] }; continue; }
-        const saved = json(file);
-        if (saved.key !== pair.key || saved.id !== entry.id || saved.arm !== arm ||
-          saved.repository !== selection.repository || saved.run !== selection.run ||
-          saved.attempt !== selection.attempt || saved.merge !== selection.merge) throw new Error("Mixed comparison artifacts.");
-        pair[arm] = saved.data;
-      }
-      return pair;
-    });
+    const context = await publisherContext(json(process.env.GITHUB_EVENT_PATH));
+    const { selection, pairs } = await loadComparison(resolve(path), context);
     const evidence = `${process.env.GITHUB_SERVER_URL}/${selection.repository}/actions/runs/${selection.run}`;
-    console.log(JSON.stringify(await postComparison(selection, renderComparison(selection, pairs, evidence))));
+    console.log(JSON.stringify(await postComparison(selection, renderComparison(selection, pairs, evidence), github, context)));
   } else throw new Error("Expected collect or post.");
 }
 

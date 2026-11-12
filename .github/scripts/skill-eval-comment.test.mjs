@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { collectArm, inventorySkills, postComparison, projectTrials, renderComparison } from "./skill-eval-comment.mjs";
+import { collectArm, inventorySkills, loadComparison, postComparison, projectTrials, publisherContext, renderComparison, validateSelection } from "./skill-eval-comment.mjs";
 
 const trial = (extra = {}) => ({
   type: "trial-result", runId: "native", evalName: "draft", stimulus: "draft-positive", model: "model-a", variant: "main",
@@ -128,10 +128,7 @@ test("catalog inventory enumerates local and exact pinned remote skill folders w
 });
 
 test("comment publishing checks current PR head, bot ownership, run order and updates only one comment", async () => {
-  const env = {
-    GITHUB_REPOSITORY: "example/repo", PR_NUMBER: "2", GITHUB_WORKFLOW_REF: "example/repo/.github/workflows/skill-evals.yml@refs/pull/2/merge",
-    GITHUB_RUN_NUMBER: "5", GITHUB_RUN_ATTEMPT: "1",
-  };
+  const context = { repository: "example/repo", pullNumber: 2, runNumber: 5, attempt: "1" };
   const calls = [];
   let head = selection.head, comments = [];
   const api = async (endpoint, method = "GET", body) => {
@@ -140,17 +137,86 @@ test("comment publishing checks current PR head, bot ownership, run order and up
     if (method === "GET") return comments;
     return { id: 8 };
   };
-  await postComparison(selection, "Report", api, env);
+  await postComparison(selection, "Report", api, context);
   assert.equal(calls.at(-1).method, "POST");
   comments = [{ id: 8, user: { login: "github-actions[bot]" }, body: calls.at(-1).body.body }];
   calls.length = 0;
-  await postComparison(selection, "Updated", api, env);
+  await postComparison(selection, "Updated", api, context);
   assert.equal(calls.at(-1).method, "PATCH");
   assert.match(calls.at(-1).endpoint, /issues\/comments\/8$/);
   comments[0].body = comments[0].body.replace("run:5:1", "run:6:1");
-  assert.equal(await postComparison(selection, "Older", api, env), "stale");
+  assert.equal(await postComparison(selection, "Older", api, context), "stale");
   head = "c".repeat(40);
-  await assert.rejects(postComparison(selection, "Wrong head", api, env), /head changed/);
+  await assert.rejects(postComparison(selection, "Wrong head", api, context), /head changed/);
+});
+
+function sourceFixture() {
+  const context = { repository: "example/repo", run: "11", attempt: "2", runNumber: 5,
+    pullNumber: 2, head: selection.head, runHead: "c".repeat(40) };
+  const selected = {
+    ...selection, repository: context.repository, run: context.run, attempt: context.attempt, merge: context.runHead,
+    include: [{ id: "skill-aaaaaaaaaaaa", plugin: "local", skill: "draft", directory: "plugins/local/skills/draft",
+      evalPath: "evals/local/skills/draft/eval.yaml", base: selection.base, head: selection.head }],
+  };
+  const source = { id: 11, run_attempt: 2, pull_requests: [{ number: 2 }] };
+  const run = { ...source, repository: { full_name: context.repository }, head_repository: { full_name: context.repository },
+    event: "pull_request", status: "completed", conclusion: "failure", head_sha: context.runHead,
+    run_number: 5, workflow_id: 7, pull_requests: [{ number: 2, head: { sha: selection.head } }] };
+  const api = async (endpoint) => {
+    if (endpoint.endsWith("/actions/runs/11/attempts/2")) return run;
+    if (endpoint.endsWith("/actions/workflows/7")) return { path: ".github/workflows/skill-evals.yml" };
+    if (endpoint.endsWith(`/git/commits/${selected.merge}`)) return {
+      sha: selected.merge, parents: [{ sha: selected.base }, { sha: selected.head }],
+    };
+    throw new Error("Unexpected test API request.");
+  };
+  return { context, selected, source, run, api };
+}
+
+test("publisher authenticates workflow, source attempt and PR independently from its own run", async () => {
+  const { context, source, run, api } = sourceFixture();
+  const env = { GITHUB_EVENT_NAME: "workflow_run", GITHUB_REPOSITORY: context.repository,
+    GITHUB_RUN_ID: "999", GITHUB_RUN_ATTEMPT: "7", GITHUB_SHA: "d".repeat(40) };
+  assert.deepEqual(await publisherContext({ workflow_run: source }, api, env), context);
+  await assert.rejects(publisherContext({ workflow_run: source }, api, { ...env, GITHUB_EVENT_NAME: "pull_request" }), /workflow_run/);
+  for (const change of [
+    { event: "workflow_dispatch" }, { head_repository: { full_name: "fork/repo" } },
+    { repository: { full_name: "other/repo" } }, { pull_requests: [] }, { run_attempt: 1 },
+  ]) {
+    await assert.rejects(publisherContext({ workflow_run: source }, async (endpoint) =>
+      endpoint.includes("/actions/runs/") ? { ...run, ...change } : api(endpoint), env));
+  }
+  await assert.rejects(publisherContext({ workflow_run: source }, async (endpoint) =>
+    endpoint.includes("/actions/workflows/") ? { path: ".github/workflows/spoofed.yml" } : api(endpoint), env), /workflow path/);
+});
+
+test("untrusted artifacts are bounded data, source-bound and re-sanitized before rendering", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "comparison-publisher-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const { selected, context, api } = sourceFixture();
+  writeFileSync(join(root, "selection.json"), JSON.stringify(selected));
+  const arm = {
+    id: selected.include[0].id, key: "local/draft", arm: "before", repository: context.repository,
+    run: context.run, attempt: context.attempt, merge: selected.merge,
+    data: pair().before,
+  };
+  arm.data.rows[0].model = "@everyone | <script>bad</script>";
+  arm.data.rows[0].checks[1].reason = "SECRET_UNTRUSTED_EVIDENCE";
+  writeFileSync(join(root, `${arm.id}-before.json`), JSON.stringify(arm));
+  const loaded = await loadComparison(root, context, api);
+  const rendered = renderComparison(loaded.selection, loaded.pairs, "https://example.test");
+  assert.doesNotMatch(rendered, /<script>|@everyone|SECRET_UNTRUSTED_EVIDENCE/);
+  assert.match(rendered, /Required activation/);
+  assert.match(rendered, /⚠️ Error/);
+  await assert.rejects(validateSelection({ ...selected, attempt: "1" }, context, api), /authenticated source/);
+  await assert.rejects(validateSelection({ ...selected, include: [{ ...selected.include[0], id: "../../outside" }] }, context, api), /selection entry/);
+  await assert.rejects(validateSelection(selected, context, async () => ({
+    sha: selected.merge, parents: [{ sha: selected.head }, { sha: selected.base }],
+  })), /merge parents/);
+  writeFileSync(join(root, `${arm.id}-before.json`), JSON.stringify({ ...arm, attempt: "1" }));
+  await assert.rejects(loadComparison(root, context, api), /Mixed comparison artifacts/);
+  writeFileSync(join(root, "selection.json"), " ".repeat(1024 * 1024 + 1));
+  await assert.rejects(loadComparison(root, context, api), /bounded regular/);
 });
 
 test("collect CLI binds native Action diagnostics to this selection without publishing raw evidence", (t) => {

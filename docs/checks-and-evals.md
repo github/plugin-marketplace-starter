@@ -190,30 +190,54 @@ failed, not a generated diagnosis; the evidence link leads to this workflow's
 native summaries and derived artifacts. Structured/derived artifacts use seven-day
 retention, subject to repository policy.
 
-The comment job has `actions: read` and `pull-requests: write`, but no model-billing
-permission. Paid jobs have no comment-write permission. Publishing checks the
-live PR head, refuses forks/closed PRs, and updates only its own bot comment;
-serialized publishing and run/attempt ordering prevent older runs replacing
-newer comments. No custom Run button, new trigger or branch-protection change is
-introduced. The layout supports multiple observed models without selecting or
-paying for additional models automatically.
+Publication follows GitHub's standard
+[unprivileged PR / trusted `workflow_run` pattern](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/).
+The PR's selection/collection code has no comment-write permission. The separate
+[publisher](../.github/workflows/skill-eval-comment.yml) runs its workflow and
+helper from its exact default-branch `GITHUB_SHA`, with `contents: read`,
+`actions: read`, and `pull-requests: write`, but no model-billing permission.
+It never checks out the PR, installs PR dependencies, runs its grader/setup code,
+or executes downloaded artifacts. This workflow and helper must first be merged
+into the default branch before automatic publication can run.
 
-The publisher checks out the exact base SHA, never the PR's helper. Its reviewed
-helper must already exist on that trusted revision; otherwise publication fails
-closed. Workflow-level per-PR concurrency cancels stale runs before more work is
-scheduled. Cancellation cannot undo already billed model requests.
+Artifacts are untrusted data, not trusted because `workflow_run` downloaded
+them. Downloads select the triggering run and its producing attempt, into
+temporary storage outside the executable checkout. The trusted helper verifies
+the source workflow path, repository, completed PR event, run/attempt, PR
+association, current PR head, and merge parents against GitHub's API. It reads
+only bounded regular JSON files at expected names, validates case/check shapes,
+escapes labels, and derives failure explanations instead of trusting arbitrary
+artifact messages. Mixed, malformed, oversized, or ambiguous data fails closed.
+These checks do not make results supplied by PR-controlled code an independent
+attestation of that code's correctness.
 
-**Partial job reruns are unsupported.** Use **Re-run all jobs** so selection and
+Publishing updates only its own bot comment. Per-PR serialization and the
+**source** run/attempt order prevent older results replacing newer comments;
+the publisher's own run number is not used as measurement provenance.
+Workflow-level per-PR concurrency cancels stale producing runs, but cannot undo
+already billed model requests. No custom Run button, GitHub App, billing setting,
+or branch-protection change is introduced.
+
+**Partial producing-job reruns are unsupported.** Use **Re-run all jobs** so selection and
 both paid arms share an attempt and approval. A retry reusing a successful
 selection from a previous attempt is rejected before either paid arm, rather
-than spending credits and then failing to collect its artifacts. This also
-applies to comment-only retries.
+than spending credits and then failing to collect its artifacts. Retrying the
+separate publication workflow reuses the original source run/attempt and never
+repeats paid evals.
 
 **Approval boundary:** required environment reviewers protect jobs that reference
 that environment, not every job an authorized workflow editor could add.
 `copilot-requests: write` is a workflow-token permission, not an environment
 secret. These declarations are not an immutable organization-wide billing
-policy. A trusted publishing checkout also does not make the surrounding
-PR-editable workflow immutable. Do not treat this workflow as a security boundary
-against untrusted workflow editors; the trusted-entrypoint/billing design remains
-under review before enabling it.
+policy. The publication split fixes comment-write privilege separation, not the
+paid job's independent approval boundary.
+
+**Remaining paid-entrypoint gap:** the pinned native Action supports
+`pull_request`, `push`, and `workflow_dispatch`, but rejects `workflow_run`
+([source](https://github.com/github/evals-action/blob/6e4c077e92194c7e75663d8d782426841047e887/src/policy.ts#L9-L27)).
+Paid execution therefore still uses the existing PR-event route and must not be
+treated as secure against untrusted workflow editors. Moving that job behind a
+trusted `workflow_run` approval gate needs supported Action functionality or the
+existing native Vally CLI directly. Do not spoof a PR event or imply that moving
+the publisher has also solved billing authorization. No authentication or
+organization policy was changed by this publication implementation.

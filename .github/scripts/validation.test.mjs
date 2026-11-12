@@ -424,23 +424,30 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     assert.equal(actions[1].if, "${{ !cancelled() && steps.after_source.outcome == 'success' }}");
     assert.equal(job.steps.find((step) => step.id === "after_source").if,
       "${{ !cancelled() && steps.before_source.outcome == 'success' }}");
-    const comment = workflow.jobs.comment;
+    assert.equal(workflow.jobs.comment, undefined, "PR-controlled jobs must not publish with write permission");
+    for (const step of Object.values(workflow.jobs)) assert.equal(step.permissions?.["pull-requests"], undefined);
+    const publisher = parse(readFileSync(resolve(root, ".github/workflows/skill-eval-comment.yml"), "utf8"));
+    assert.deepEqual(publisher.on, { workflow_run: { workflows: ["Skill evals (before and after)"], types: ["completed"] } });
+    assert.deepEqual(publisher.permissions, {});
+    const comment = publisher.jobs.publish;
     assert.deepEqual(comment.permissions, { contents: "read", actions: "read", "pull-requests": "write" });
-    assert.deepEqual(comment.needs, ["select", "evals"]);
+    assert.equal(comment.permissions["copilot-requests"], undefined);
     assert.equal(comment.concurrency["cancel-in-progress"], false);
-    assert.match(comment.if, /!cancelled\(\)/);
+    assert.match(comment.if, /workflow_run\.event == 'pull_request'/);
     assert.ok(comment.steps.some((step) => step.run?.includes("skill-eval-comment.mjs post")));
-    assert.equal(comment.steps.find((step) => step.uses?.startsWith("actions/download-artifact@")).with.pattern,
-      "skill-comparison-${{ github.run_attempt }}-*");
+    const download = comment.steps.find((step) => step.uses?.startsWith("actions/download-artifact@")).with;
+    assert.equal(download.pattern, "skill-comparison-${{ github.event.workflow_run.run_attempt }}-*");
+    assert.equal(download["run-id"], "${{ github.event.workflow_run.id }}");
+    assert.equal(download.path, "${{ runner.temp }}/skill-comparison");
+    assert.equal(download["github-token"], "${{ github.token }}");
     for (const step of [...workflow.jobs.select.steps, ...job.steps].filter((step) => step.uses?.startsWith("actions/upload-artifact@"))) {
       assert.match(step.with.name, /github\.run_attempt/, "reruns must not collide with or import earlier-attempt artifacts");
     }
     assert.equal(job.permissions["pull-requests"], undefined);
     assert.equal(comment.steps.find((step) => step.uses?.startsWith("actions/checkout@")).with.ref,
-      "${{ github.event.pull_request.base.sha }}");
-    assert.match(comment.steps.find((step) => step.name?.includes("trusted base")).run,
-      /Merge the reviewed publisher into the base branch/);
-    for (const guarded of [job, comment]) {
+      "${{ github.sha }}", "workflow_run's default-branch SHA, never the PR head, supplies executable publishing code");
+    assert.doesNotMatch(comment.steps.map((step) => step.run ?? "").join("\n"), /npm |evals-action|git fetch|gh pr checkout/);
+    for (const guarded of [job]) {
       assert.equal(guarded.steps[0].env.SELECTED_ATTEMPT, "${{ needs.select.outputs.attempt }}");
       for (const attempt of ["1", "2"]) {
         const checked = spawnSync("bash", ["-c", guarded.steps[0].run], {
