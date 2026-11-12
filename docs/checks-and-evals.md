@@ -446,8 +446,13 @@ attestation of that code's correctness.
 Publishing updates only its own bot comment. Per-PR serialization and the
 **paid producing run/attempt** order prevent older results replacing newer
 comments. The notifier run is separately retained, not confused with the run
-that measured results. Per-PR workflow concurrency cancels stale runs, but cannot undo
-already billed model requests. No custom Run button, GitHub App, billing setting,
+that measured results. Paid-job concurrency starts only after authenticated
+selection and is scoped to the verified PR/head/skill, so a rejected or delayed
+old-head notification cannot cancel another head's approved comparison.
+Same-head duplicates can be cancelled; a newer PR head does not automatically
+cancel an already-running old-head arm. The pre-arm check prevents its next paid
+arm, but cannot undo already billed requests. Publisher jobs serialize by
+verified PR without cancelling each other. No custom Run button, GitHub App, billing setting,
 or branch-protection change is introduced.
 
 **Partial paid-job reruns are unsupported.** Use **Re-run all jobs** so selection and

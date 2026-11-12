@@ -408,10 +408,15 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     const publisher = parse(readFileSync(resolve(root, ".github/workflows/skill-eval-comment.yml"), "utf8"));
     assert.deepEqual(publisher.on, { workflow_run: { workflows: ["Skill evals (before and after)"], types: ["completed"] } });
     assert.deepEqual(publisher.permissions, {});
+    assert.equal(publisher.concurrency, undefined, "unverified source events must not cancel privileged work");
     assert.deepEqual(publisher.jobs.select.permissions, { contents: "read", actions: "read", "pull-requests": "read" });
     assert.match(publisher.jobs.select.if, /conclusion != 'cancelled'/);
     assert.match(publisher.jobs.select.if, /head_repository\.full_name == github\.repository/);
     const job = publisher.jobs.evals;
+    assert.match(job.if, /needs\.select\.result == 'success'/);
+    assert.equal(job.concurrency["cancel-in-progress"], true);
+    assert.equal(job.concurrency.group,
+      "skill-eval-run-${{ github.repository }}-${{ fromJSON(needs.select.outputs.context).pullNumber }}-${{ fromJSON(needs.select.outputs.context).head }}-${{ matrix.id }}");
     assert.equal(job.environment, "evals");
     assert.equal(job.strategy["fail-fast"], false);
     assert.deepEqual(job.permissions, { contents: "read", "copilot-requests": "write", "pull-requests": "read" });
@@ -448,6 +453,9 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     assert.equal(workflow.jobs.comment, undefined, "PR-controlled jobs must not publish with write permission");
     for (const step of Object.values(workflow.jobs)) assert.equal(step.permissions?.["pull-requests"], undefined);
     const comment = publisher.jobs.publish;
+    assert.equal(comment.concurrency["cancel-in-progress"], false);
+    assert.equal(comment.concurrency.group,
+      "skill-eval-comment-${{ github.repository }}-${{ fromJSON(needs.select.outputs.context).pullNumber }}");
     assert.deepEqual(comment.permissions, { contents: "read", actions: "read", "pull-requests": "write" });
     assert.equal(comment.permissions["copilot-requests"], undefined);
     assert.match(comment.if, /!cancelled\(\)/);
