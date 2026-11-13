@@ -304,14 +304,15 @@ If you change the results directory, update the alias or run
 directory, as described above.
 
 For native judged comparison, supply real baseline and treatment run directories
-or JSONL files:
+or JSONL files. This is `vally compare`, not a custom result parser: it calls a
+comparison judge using the saved rubrics and **spends additional AI credits**.
+Obtain user approval for those judge calls before running it; permission to view
+reports or publish a PR comment does not authorize them.
 
 ```sh
 npm run eval:compare -- --baseline path/to/baseline-run --treatment path/to/treatment-run
 ```
 
-This is `vally compare`, not a custom result parser. It pairs saved trajectories
-and calls a comparison judge using their rubrics, so **it spends AI credits**.
 You can instead supply a native experiment output directory, or use
 `--judge-model` and `--output` as documented in
 [`compare`](https://microsoft.github.io/vally/reference/cli/compare/).
@@ -336,8 +337,8 @@ do not.
 ### PR comparison comment
 
 All three calls use `github/evals-action/comparison` at
-`6011d304a88589aefe590238f80c3da4b140d43e`. The
-[pinned Action contract](https://github.com/github/evals-action/blob/6011d304a88589aefe590238f80c3da4b140d43e/comparison/README.md)
+`60106995a5105bc3fd67f0aa4cbf0ad9b0972cf6`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/60106995a5105bc3fd67f0aa4cbf0ad9b0972cf6/comparison/README.md)
 owns source-workflow/run/attempt authentication, verified merge parents,
 source switching, native verdict projection, bounded artifact intake and the
 bot-owned comment. The existing root Action's event policy is unchanged.
@@ -361,6 +362,11 @@ Skills, evals, fixtures, graders, catalog, models and native configuration remai
 repository-owned. Local results use Vally's native dashboard and comparison
 commands above.
 
+Eligibility proves source/eval file pairing, not that a custom eval uses the
+changed code. Before approving paid arms, verify its native `agent_environment`
+stages that local skill directory and its positive cases grade the intended
+invocation. The catalog does not update `.vally.yaml`'s skill paths automatically.
+
 The protected job runs native Vally **0.21.0** sequentially with the saved model,
 one trial/worker and zero retries. Only the target skill switches between
 base/head sources; measurements and neighbors stay at the selected merge.
@@ -369,8 +375,10 @@ provenance failures still fail closed. Either failed/incomplete arm keeps
 the job failed. The Action fingerprints actual checkout bytes, types,
 permissions and symlink targets outside the selected skill before execution.
 It checks that baseline before After and after each native arm, rejecting
-drift even if native grading passed. Initialized or nonempty submodules fail
-explicitly; empty uninitialized gitlinks are allowed.
+drift even if native grading passed. Regular-file symlinks include resolved
+bytes and permissions; directory/special-file symlink targets fail explicitly.
+Initialized or nonempty submodules fail explicitly; empty uninitialized
+gitlinks are allowed.
 The Action's Node 24 runtime acquires native tools outside the
 candidate checkout with install scripts disabled and a job-private generated
 integrity lock. Both arms share one acquired dependency graph; recorded
