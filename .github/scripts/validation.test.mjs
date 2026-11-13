@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
@@ -361,7 +362,7 @@ test("schema validation skips absent local manifests without downloading or inst
   }
 });
 
-test("validation calls CI scripts, and paid eval activation is manual-only", () => {
+test("validation stays model-free and the smoke workflow remains manual-only", () => {
   const validate = readFileSync(resolve(root, ".github/workflows/validate.yml"), "utf8");
   assert.doesNotMatch(validate, /node -e|run: \|/);
   for (const script of ["validate-schema.sh", "check-local-catalog.mjs", "check-remote-pins.mjs"]) {
@@ -370,7 +371,7 @@ test("validation calls CI scripts, and paid eval activation is manual-only", () 
   assert.match(validate, /node --test \.github\/scripts\/\*\.test\.mjs/);
   const evals = readFileSync(resolve(root, ".github/workflows/evals.yml"), "utf8");
   assert.match(evals, /^on:\n  workflow_dispatch:\npermissions:/m);
-  assert.doesNotMatch(evals, /pull_request:|ENABLE_EVALS|^\s+if:|eval:report/m);
+  assert.doesNotMatch(evals, /pull_request:|ENABLE_EVALS|^\s+if:|eval:(?:serve|compare)/m);
   assert.match(evals, /^\s+environment:\s*evals$/m);
   assert.match(evals, /copilot-requests: write/);
   assert.match(evals, /npm run eval -- --suite smoke --require-pass/);
@@ -387,10 +388,119 @@ test("validation calls CI scripts, and paid eval activation is manual-only", () 
     lint: "node .github/scripts/lint.mjs",
     eval: "vally eval --workers 1 --max-retries 1",
     "eval:models": "vally experiment run evals/standard-models.experiment.yaml --output-dir evals/results/standard-models --require-pass",
-    "eval:report": "node .github/scripts/eval-report.mjs",
-    "eval:compare": "node .github/scripts/eval-report.mjs",
+    "eval:serve": "vally serve evals/results",
+    "eval:compare": "vally compare",
   });
 });
+
+  test("PR comparisons keep repository approval and permissions around three pinned Action calls", () => {
+    const workflow = parse(readFileSync(resolve(root, ".github/workflows/skill-evals.yml"), "utf8"));
+    assert.deepEqual(Object.keys(workflow.on), ["pull_request"]);
+    assert.deepEqual(workflow.on.pull_request.paths, ["plugins/*/skills/**"]);
+    assert.equal(workflow.jobs.request.if, "github.event.pull_request.head.repo.full_name == github.repository");
+    assert.deepEqual(workflow.permissions, { contents: "read" });
+    assert.deepEqual(workflow.concurrency, {
+      group: "skill-evals-${{ github.event.pull_request.number }}", "cancel-in-progress": true,
+    });
+    assert.deepEqual(Object.keys(workflow.jobs), ["request"]);
+    assert.doesNotMatch(JSON.stringify(workflow), /copilot-requests|pull-requests|evals-action/);
+    assert.equal(workflow.jobs.request.environment, undefined);
+    const publisher = parse(readFileSync(resolve(root, ".github/workflows/skill-eval-comment.yml"), "utf8"));
+    assert.deepEqual(publisher.on, { workflow_run: { workflows: ["Skill evals (before and after)"], types: ["completed"] } });
+    assert.deepEqual(publisher.permissions, {});
+    assert.equal(publisher.concurrency, undefined, "unverified source events must not cancel privileged work");
+    assert.deepEqual(publisher.jobs.select.permissions, { contents: "read", actions: "read", "pull-requests": "read" });
+    assert.match(publisher.jobs.select.if, /conclusion != 'cancelled'/);
+    assert.match(publisher.jobs.select.if, /head_repository\.full_name == github\.repository/);
+    const calls = Object.values(publisher.jobs).flatMap((job) => job.steps)
+      .filter((step) => step.uses?.startsWith("github/evals-action/"));
+    assert.deepEqual(calls.map((step) => step.with.command), ["context", "run", "report"]);
+    for (const step of calls) {
+      assert.equal(step.uses, "github/evals-action/comparison@750ff67f1e0a98cfa6a042e89efa99cd7825146b");
+      assert.equal(step.with["source-workflow"], ".github/workflows/skill-evals.yml");
+    }
+    const context = calls[0];
+    assert.equal(context.id, "context");
+    const select = publisher.jobs.select;
+    assert.equal(select.outputs.context, "${{ steps.context.outputs.context }}");
+    assert.equal(select.outputs.selection, "${{ steps.select.outputs.selection }}");
+    const trusted = select.steps.find((step) => step.with?.path === "trusted");
+    assert.equal(trusted.with.ref, "${{ github.sha }}");
+    assert.equal(trusted.with["persist-credentials"], false);
+    const candidate = select.steps.find((step) => step.with?.path === "candidate");
+    assert.equal(candidate.with.ref, "${{ steps.context.outputs.merge }}");
+    assert.equal(candidate.with["fetch-depth"], 2);
+    assert.equal(candidate.with["persist-credentials"], false);
+    const selection = select.steps.find((step) => step.id === "select");
+    assert.equal(selection["working-directory"], "candidate");
+    assert.equal(selection.env.CONTEXT_FILE, "${{ steps.context.outputs.context-path }}");
+    assert.equal(selection.env.GH_TOKEN, "${{ github.token }}",
+      "PR-controlled inventory must use this job's repository-scoped token, not a broader credential");
+    assert.match(selection.run, /node "\$GITHUB_WORKSPACE\/trusted\/\.github\/scripts\/select-skill-evals\.mjs"/);
+    assert.match(selection.run, /"\$CONTEXT_FILE" "\$RUNNER_TEMP\/evals-environment\.json" "\$RUNNER_TEMP\/selection\.json"/);
+    const job = publisher.jobs.evals;
+    assert.match(job.if, /needs\.select\.result == 'success'/);
+    assert.equal(job.concurrency["cancel-in-progress"], true);
+    assert.equal(job.concurrency.group,
+      "skill-eval-run-${{ github.repository }}-${{ fromJSON(needs.select.outputs.context).pullNumber }}-${{ fromJSON(needs.select.outputs.context).head }}-${{ matrix.id }}");
+    assert.equal(job.environment, "evals");
+    assert.equal(job.env.VALLY_TELEMETRY_OPTOUT, "1");
+    assert.equal(job.strategy["fail-fast"], false);
+    assert.equal(job.name, "${{ matrix.key }}");
+    assert.equal(job.strategy.matrix, "${{ fromJSON(needs.select.outputs.matrix) }}");
+    assert.deepEqual(job.permissions, { contents: "read", actions: "read", "copilot-requests": "write", "pull-requests": "read" });
+    const run = calls[1];
+    assert.equal(run.id, "comparison");
+    assert.equal(run.with["working-directory"], "candidate");
+    assert.equal(run.with["vally-version"], "0.21.0");
+    assert.equal(run.with["comparison-id"], "${{ matrix.id }}");
+    assert.equal(run.with["copilot-token"], "${{ github.token }}");
+    assert.equal(run["continue-on-error"], undefined, "native failures must keep the paid job failed");
+    for (const step of [run, calls[2]]) {
+      assert.equal(step.with.context, "${{ needs.select.outputs.context }}");
+      assert.equal(step.with.selection, "${{ needs.select.outputs.selection }}");
+      assert.equal(step.with["producing-attempt"], "${{ needs.select.outputs.attempt }}");
+    }
+    assert.equal(workflow.jobs.comment, undefined, "PR-controlled jobs must not publish with write permission");
+    for (const step of Object.values(workflow.jobs)) assert.equal(step.permissions?.["pull-requests"], undefined);
+    const comment = publisher.jobs.publish;
+    assert.equal(comment.concurrency["cancel-in-progress"], false);
+    assert.equal(comment.concurrency.queue, "max");
+    assert.equal(comment.concurrency.group,
+      "skill-eval-comment-${{ github.repository }}-${{ fromJSON(needs.select.outputs.context).pullNumber }}");
+    assert.deepEqual(comment.permissions, { contents: "read", actions: "read", "pull-requests": "write" });
+    assert.equal(comment.permissions["copilot-requests"], undefined);
+    assert.deepEqual(comment.needs, ["select", "evals"]);
+    assert.match(comment.if, /!cancelled\(\)/);
+    assert.match(comment.if, /needs\.select\.result == 'success'/);
+    assert.equal(calls[2].with["artifact-directory"], "${{ runner.temp }}/skill-comparison");
+    assert.equal(calls[2].with["copilot-token"], undefined);
+    assert.equal(context.with["copilot-token"], undefined);
+    const download = comment.steps.find((step) => step.uses?.startsWith("actions/download-artifact@")).with;
+    assert.equal(download.pattern, "skill-comparison-${{ needs.select.outputs.attempt }}-*");
+    assert.equal(download["run-id"], undefined, "publication reads this trusted paid run, not request-run artifacts");
+    assert.equal(download.path, "${{ runner.temp }}/skill-comparison");
+    for (const step of [...publisher.jobs.select.steps, ...job.steps].filter((step) => step.uses?.startsWith("actions/upload-artifact@"))) {
+      assert.match(step.with.name, /github\.run_attempt/, "reruns must not collide with or import earlier-attempt artifacts");
+    }
+    const evidence = job.steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+    assert.deepEqual(evidence.with.path.trim().split("\n"), [
+      "${{ steps.comparison.outputs.before-path }}",
+      "${{ steps.comparison.outputs.after-path }}",
+    ], "paid jobs may upload only the exact expected verdict files, not extra candidate-created JSON");
+    assert.equal(evidence.if, "${{ !cancelled() }}");
+    assert.equal(evidence.with["if-no-files-found"], "error");
+    assert.equal(evidence.with["retention-days"], 7);
+    assert.equal(job.permissions["pull-requests"], "read");
+    assert.ok(comment.steps.every((step) => !step.run && !step.uses?.startsWith("actions/checkout@")),
+      "the fresh publisher executes only packaged Actions, never a candidate checkout or local script");
+    const checkout = job.steps.filter((step) => step.uses?.startsWith("actions/checkout@"));
+    assert.equal(checkout.length, 1);
+    assert.equal(checkout[0].with.path, "candidate");
+    assert.equal(checkout[0].with["persist-credentials"], false);
+    assert.equal(checkout[0].with["fetch-depth"], 2);
+    assert.equal(checkout[0].with.ref, "${{ fromJSON(needs.select.outputs.context).merge }}");
+  });
 
 for (const [plugin, skillName, readInstruction] of [
   ["marketplace-maintainer", "update-remote-pins", "Read its `AGENTS.md` and `marketplace.json`, and this skill's [remote pin rules](references/remote-pins.md)."],

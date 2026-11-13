@@ -1,0 +1,140 @@
+name: Run and publish skill eval comparison
+on:
+  workflow_run:
+    workflows: ["Skill evals (before and after)"]
+    types: [completed]
+permissions: {}
+jobs:
+  select:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion != 'cancelled' && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      count: ${{ steps.select.outputs.count }}
+      attempt: ${{ steps.select.outputs.attempt }}
+      context: ${{ steps.context.outputs.context }}
+      selection: ${{ steps.select.outputs.selection }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: Authenticate the source request and select the current PR merge revision
+        id: context
+        uses: github/evals-action/comparison@750ff67f1e0a98cfa6a042e89efa99cd7825146b
+        with:
+          command: context
+          source-workflow: .github/workflows/skill-evals.yml
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ steps.context.outputs.merge }}
+          path: candidate
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Read approval protection without creating an environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/$GITHUB_REPOSITORY/environments/evals" > "$RUNNER_TEMP/evals-environment.json"
+      - name: Require approval protection and select changed skills with trusted code
+        id: select
+        working-directory: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTEXT_FILE: ${{ steps.context.outputs.context-path }}
+        run: |
+          node "$GITHUB_WORKSPACE/trusted/.github/scripts/select-skill-evals.mjs" \
+            "$CONTEXT_FILE" "$RUNNER_TEMP/evals-environment.json" "$RUNNER_TEMP/selection.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: skill-comparison-${{ github.run_attempt }}-selection
+          path: ${{ runner.temp }}/selection.json
+          if-no-files-found: error
+          retention-days: 7
+
+  evals:
+    needs: select
+    if: needs.select.result == 'success' && needs.select.outputs.count != '0'
+    name: ${{ matrix.key }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: evals
+    env:
+      VALLY_TELEMETRY_OPTOUT: '1'
+    permissions:
+      contents: read
+      actions: read
+      copilot-requests: write
+      pull-requests: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+    concurrency:
+      group: skill-eval-run-${{ github.repository }}-${{ fromJSON(needs.select.outputs.context).pullNumber }}-${{ fromJSON(needs.select.outputs.context).head }}-${{ matrix.id }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ fromJSON(needs.select.outputs.context).merge }}
+          path: candidate
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Compare selected skill with native Vally
+        id: comparison
+        uses: github/evals-action/comparison@750ff67f1e0a98cfa6a042e89efa99cd7825146b
+        with:
+          command: run
+          source-workflow: .github/workflows/skill-evals.yml
+          context: ${{ needs.select.outputs.context }}
+          selection: ${{ needs.select.outputs.selection }}
+          producing-attempt: ${{ needs.select.outputs.attempt }}
+          comparison-id: ${{ matrix.id }}
+          working-directory: candidate
+          vally-version: '0.21.0'
+          copilot-token: ${{ github.token }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: skill-comparison-${{ github.run_attempt }}-${{ matrix.id }}
+          path: |
+            ${{ steps.comparison.outputs.before-path }}
+            ${{ steps.comparison.outputs.after-path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [select, evals]
+    if: ${{ !cancelled() && needs.select.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: skill-eval-comment-${{ github.repository }}-${{ fromJSON(needs.select.outputs.context).pullNumber }}
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: skill-comparison-${{ needs.select.outputs.attempt }}-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/skill-comparison
+      - name: Validate source provenance and publish with trusted code
+        uses: github/evals-action/comparison@750ff67f1e0a98cfa6a042e89efa99cd7825146b
+        with:
+          command: report
+          source-workflow: .github/workflows/skill-evals.yml
+          context: ${{ needs.select.outputs.context }}
+          selection: ${{ needs.select.outputs.selection }}
+          producing-attempt: ${{ needs.select.outputs.attempt }}
+          artifact-directory: ${{ runner.temp }}/skill-comparison

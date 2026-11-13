@@ -1,0 +1,18 @@
+name: Skill evals (before and after)
+on:
+  pull_request:
+    paths:
+      - plugins/*/skills/**
+permissions:
+  contents: read
+concurrency:
+  group: skill-evals-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  request:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Request comparison in the trusted workflow
+        run: echo "The default-branch workflow_run evaluates eligible skills after protected-environment approval."

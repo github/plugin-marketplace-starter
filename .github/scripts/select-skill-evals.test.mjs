@@ -1,0 +1,248 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { parse } from "yaml";
+import { inventorySkills, selectSkillEvals } from "./select-skill-evals.mjs";
+
+test("marketplace inventory reads local skills and exact pinned remote trees without installing plugins", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "skill-inventory-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "plugins/local/skills/draft"), { recursive: true });
+  writeFileSync(join(root, "plugins/local/skills/draft/SKILL.md"), "synthetic");
+  mkdirSync(join(root, "evals/local/skills/draft"), { recursive: true });
+  writeFileSync(join(root, "evals/local/skills/draft/eval.yaml"), "synthetic");
+  const local = { name: "local", source: "./plugins/local" };
+  const remote = { name: "remote", source: { source: "github", repo: "example/plugin", sha: "c".repeat(40), path: "package" } };
+  const catalog = (plugins) => writeFileSync(join(root, "marketplace.json"), JSON.stringify({ plugins }));
+  catalog([local, remote]);
+  const readTree = (repo, commit) => {
+    assert.equal(repo, "example/plugin");
+    assert.equal(commit, "c".repeat(40));
+    return { truncated: false, tree: [
+      { type: "blob", path: "package/skills/run/SKILL.md" },
+      { type: "blob", path: "other/skills/unrelated/SKILL.md" },
+    ] };
+  };
+  for (const source of ["./plugins/local", "plugins/local"]) {
+    catalog([{ ...local, source }, remote]);
+    assert.deepEqual(inventorySkills(root, readTree), [
+      { key: "local/draft", hasEval: true }, { key: "remote/run", hasEval: false },
+    ]);
+  }
+  for (const tree of [{ truncated: true, tree: [] }, { truncated: false, tree: null }]) {
+    assert.throws(() => inventorySkills(root, () => tree), /Incomplete pinned remote skill inventory/);
+  }
+  mkdirSync(join(root, "plugins/custom/skills/triage"), { recursive: true });
+  writeFileSync(join(root, "plugins/custom/skills/triage/SKILL.md"), "synthetic customization");
+  catalog([local, { name: "custom", source: "./plugins/custom" }, remote]);
+  assert.deepEqual(inventorySkills(root, readTree).map((skill) => skill.key),
+    ["custom/triage", "local/draft", "remote/run"]);
+  mkdirSync(join(root, "evals/custom/skills/triage"), { recursive: true });
+  const customEval = join(root, "evals/custom/skills/triage/eval.yaml");
+  writeFileSync(customEval, "synthetic");
+  assert.equal(inventorySkills(root, readTree).find((skill) => skill.key === "custom/triage").hasEval, true);
+  rmSync(customEval);
+  assert.equal(inventorySkills(root, readTree).find((skill) => skill.key === "custom/triage").hasEval, false);
+  catalog([local]);
+  assert.deepEqual(inventorySkills(root, readTree), [{ key: "local/draft", hasEval: true }]);
+  for (const source of ["../plugins/local", "./plugins/local/..", "plugins/other"]) {
+    catalog([{ ...local, source }]);
+    assert.throws(() => inventorySkills(root, readTree), /self-contained local plugin path/);
+  }
+  rmSync(join(root, "plugins"), { recursive: true });
+  catalog([remote]);
+  assert.deepEqual(inventorySkills(root, readTree), [{ key: "remote/run", hasEval: false }]);
+});
+
+test("inventory rejects malformed catalog fields before fetching authenticated remote trees", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "skill-inventory-rejection-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const source = { source: "github", repo: "example/plugin", sha: "c".repeat(40), path: "package" };
+  const remote = { name: "remote", source };
+  const nameError = "Unsupported catalog plugin name.";
+  const pinError = "Remote skill inventory requires a pinned GitHub source.";
+  const pathError = "Unsupported remote plugin path.";
+  writeFileSync(join(root, "marketplace.json"), '{"synthetic-private-input":');
+  assert.throws(() => inventorySkills(root, () => assert.fail("Malformed catalog must not reach the tree reader")),
+    { message: "Invalid marketplace catalog JSON." });
+  for (const [plugin, message] of [
+    [{ ...remote, name: "bad/plugin" }, nameError],
+    [{ ...remote, name: null }, nameError],
+    [{ ...remote, name: "remote\n" }, nameError],
+    [{ ...remote, source: { ...source, source: "git" } }, pinError],
+    [{ ...remote, source: { ...source, repo: "example/plugin/extra" } }, pinError],
+    [{ ...remote, source: { ...source, repo: [source.repo] } }, pinError],
+    [{ ...remote, source: { ...source, repo: `${source.repo}\n` } }, pinError],
+    [{ ...remote, source: { ...source, sha: "main" } }, pinError],
+    [{ ...remote, source: { ...source, sha: [source.sha] } }, pinError],
+    [{ ...remote, source: { ...source, sha: `${source.sha}\n` } }, pinError],
+    [{ ...remote, source: { ...source, path: "../package" } }, pathError],
+    [{ ...remote, source: { ...source, path: [source.path] } }, pathError],
+  ]) {
+    writeFileSync(join(root, "marketplace.json"), JSON.stringify({ plugins: [plugin] }));
+    let lookups = 0;
+    assert.throws(() => inventorySkills(root, () => {
+      lookups++;
+      return { truncated: false, tree: [] };
+    }), { message }, JSON.stringify(plugin));
+    assert.equal(lookups, 0, "Invalid catalog data must not reach the authenticated tree reader");
+  }
+});
+
+test("selection requires approval protection and existing paired skills with repo evals at the verified merge", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "skill selection-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const root = resolve(directory, "repository"), hooks = resolve(directory, "hooks");
+  mkdirSync(root);
+  mkdirSync(hooks);
+  const config = resolve(directory, "gitconfig");
+  writeFileSync(config, "");
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: config, GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (...args) => {
+    const result = spawnSync("git", [
+      "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test",
+      "-c", "commit.gpgsign=false", "-c", `core.hooksPath=${hooks}`, ...args,
+    ], { cwd: root, env, encoding: "utf8", timeout: 10000 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  const file = (path, content) => {
+    mkdirSync(resolve(root, path, ".."), { recursive: true });
+    writeFileSync(resolve(root, path), content);
+  };
+  const target = "plugins/example/skills/changed";
+  git("init", "--initial-branch=main");
+  file(`${target}/SKILL.md`, "base");
+  file(`${target}/r\u00e9sum\u00e9.md`, "base non-ASCII path");
+  file("plugins/example/skills/neighbor/SKILL.md", "base neighbor");
+  file("plugins/example/skills/deleted/SKILL.md", "deleted");
+  file("plugins/custom/skills/triage/SKILL.md", "base custom skill");
+  file("plugins/custom/skills/no-eval/SKILL.md", "base skill with eval");
+  file("plugins/uncatalogued/skills/changed/SKILL.md", "base uncatalogued skill");
+  file("evals/uncatalogued/skills/changed/eval.yaml", "unselected measurement");
+  file("evals/custom/skills/no-eval/eval.yaml", "removed measurement");
+  file("evals/example/skills/changed/eval.yaml", "fixed measurement");
+  file("marketplace.json", JSON.stringify({ plugins: [
+    { name: "example", source: "plugins/example" }, { name: "custom", source: "./plugins/custom" },
+  ] }));
+  file(".github/scripts/select-skill-evals.mjs", "throw new Error('Candidate selector must not run');");
+  git("add", "."); git("commit", "-m", "Base fixture");
+  git("checkout", "-b", "candidate");
+  file(`${target}/SKILL.md`, "head");
+  file(`${target}/r\u00e9sum\u00e9.md`, "head non-ASCII path");
+  file("plugins/example/skills/neighbor/SKILL.md", "head neighbor");
+  file("plugins/example/skills/added/SKILL.md", "added");
+  file("plugins/custom/skills/triage/SKILL.md", "head custom skill");
+  file("evals/custom/skills/triage/eval.yaml", "new custom measurement");
+  file("plugins/custom/skills/no-eval/SKILL.md", "head skill without eval");
+  file("plugins/uncatalogued/skills/changed/SKILL.md", "head uncatalogued skill");
+  rmSync(resolve(root, "evals/custom/skills/no-eval/eval.yaml"));
+  rmSync(resolve(root, "plugins/example/skills/deleted"), { recursive: true });
+  git("add", "."); git("commit", "-m", "Candidate fixture");
+  const head = git("rev-parse", "HEAD");
+  git("checkout", "main");
+  file(`${target}/main.md`, "current-main-only file");
+  git("add", "."); git("commit", "-m", "Advance main fixture");
+  const base = git("rev-parse", "HEAD");
+  git("merge", "--no-ff", "candidate", "-m", "Merge fixture");
+  const context = {
+    base, head, merge: git("rev-parse", "HEAD"), trusted: "d".repeat(40),
+    runHead: head,
+    repository: "fixture/repo", run: "2", attempt: "1", sourceRun: "1", sourceAttempt: "1",
+    sourceWorkflow: ".github/workflows/skill-evals.yml",
+    workflowRef: "fixture/repo/.github/workflows/skill-eval-comment.yml@refs/heads/main",
+  };
+  const protection = { protection_rules: [{ type: "required_reviewers", reviewers: [{ type: "Team" }] }] };
+  assert.throws(() => selectSkillEvals(root, context, {}), /required maintainer reviewers/);
+  assert.throws(() => selectSkillEvals(root, { ...context, head: "f".repeat(40) }, protection), /exact parents/);
+  const selection = selectSkillEvals(root, context, protection);
+  assert.equal(selection.workflowRef, context.workflowRef);
+  assert.deepEqual(selection.changed,
+    ["custom/no-eval", "custom/triage", "example/added", "example/changed", "example/deleted", "example/neighbor", "uncatalogued/changed"]);
+  assert.deepEqual(selection.include.map((entry) => entry.key), ["custom/triage", "example/changed"]);
+  assert.ok(selection.include.every((entry) => selection.skills.some((skill) => skill.key === entry.key)));
+  const selected = selection.include.find((entry) => entry.key === "example/changed");
+  assert.deepEqual(selected, {
+    key: "example/changed", id: selected.id, directory: target,
+    evalPath: "evals/example/skills/changed/eval.yaml", base, head,
+  });
+  assert.match(selection.include[0].id, /^skill-[a-f0-9]{12}$/);
+  assert.equal(readFileSync(resolve(root, `${target}/SKILL.md`), "utf8"), "head", "selection must not switch source files");
+  const contextFile = resolve(directory, "context.json"), environmentFile = resolve(directory, "evals-environment.json");
+  const selectionFile = resolve(directory, "selection.json"), outputFile = resolve(directory, "outputs");
+  writeFileSync(contextFile, JSON.stringify(context));
+  writeFileSync(environmentFile, JSON.stringify(protection));
+  const trusted = resolve(directory, "trusted/.github/scripts");
+  mkdirSync(trusted, { recursive: true });
+  for (const script of ["select-skill-evals.mjs", "check-remote-pins.mjs"]) {
+    copyFileSync(new URL(`./${script}`, import.meta.url), resolve(trusted, script));
+  }
+  const workflow = parse(readFileSync(new URL("../workflows/skill-eval-comment.yml", import.meta.url), "utf8"));
+  const command = workflow.jobs.select.steps.find((step) => step.id === "select").run;
+  const result = spawnSync("bash", ["-c", command], {
+    cwd: root, encoding: "utf8", timeout: 10000,
+    env: { ...env, GITHUB_OUTPUT: outputFile, CONTEXT_FILE: contextFile,
+      GITHUB_WORKSPACE: directory.replaceAll("\\", "/"), RUNNER_TEMP: directory.replaceAll("\\", "/") },
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /No before\/after pair for example\/added/);
+  assert.match(result.stdout, /No before\/after pair for example\/deleted/);
+  assert.match(result.stdout, /No before\/after pair for example\/neighbor/);
+  assert.match(result.stdout, /No before\/after pair for custom\/no-eval/);
+  assert.match(result.stdout, /No before\/after pair for uncatalogued\/changed: a catalogued skill/);
+  assert.deepEqual(JSON.parse(readFileSync(selectionFile, "utf8")), selection);
+  assert.match(readFileSync(outputFile, "utf8"), /\ncount=2\nattempt=1\n/);
+
+  for (const [role, label] of [["context", "comparison context"], ["environment", "evals environment"]]) {
+    const invalidDirectory = mkdtempSync(join(directory, "invalid-json-"));
+    const invalidContext = resolve(invalidDirectory, "context.json");
+    const invalidOutputs = resolve(invalidDirectory, "outputs");
+    writeFileSync(invalidContext, role === "context" ? '{"synthetic-private-input":' : JSON.stringify(context));
+    writeFileSync(resolve(invalidDirectory, "evals-environment.json"),
+      role === "environment" ? '{"synthetic-private-input":' : JSON.stringify(protection));
+    const rejected = spawnSync("bash", ["-c", command], {
+      cwd: root, encoding: "utf8", timeout: 10000,
+      env: { ...env, GITHUB_OUTPUT: invalidOutputs, CONTEXT_FILE: invalidContext,
+        GITHUB_WORKSPACE: directory.replaceAll("\\", "/"), RUNNER_TEMP: invalidDirectory.replaceAll("\\", "/") },
+    });
+    assert.ifError(rejected.error);
+    assert.equal(rejected.status, 1, rejected.stderr);
+    assert.match(rejected.stderr, new RegExp(`^Invalid ${label} JSON\\.\\s*$`));
+    assert.doesNotMatch(rejected.stdout + rejected.stderr, /synthetic-private-input|::(?:warning|error|notice)::/);
+    assert.equal(existsSync(resolve(invalidDirectory, "selection.json")), false);
+    assert.equal(existsSync(invalidOutputs), false);
+  }
+
+  for (const [plugin, skill] of [["bad plugin", "safe"], ["example", "bad%0Aname"]]) {
+    const invalidBase = git("rev-parse", "HEAD");
+    git("checkout", "candidate");
+    file(`plugins/${plugin}/skills/${skill}/SKILL.md`, "synthetic invalid directory");
+    git("add", "."); git("commit", "-m", "Invalid directory fixture");
+    const invalidHead = git("rev-parse", "HEAD");
+    git("checkout", "main");
+    git("merge", "--no-ff", "candidate", "-m", "Invalid directory merge fixture");
+    const invalidDirectory = mkdtempSync(join(directory, "invalid-"));
+    const invalidContext = resolve(invalidDirectory, "context.json");
+    const invalidOutputs = resolve(invalidDirectory, "outputs");
+    writeFileSync(invalidContext, JSON.stringify({
+      ...context, base: invalidBase, head: invalidHead, merge: git("rev-parse", "HEAD"),
+    }));
+    copyFileSync(environmentFile, resolve(invalidDirectory, "evals-environment.json"));
+    const rejected = spawnSync("bash", ["-c", command], {
+      cwd: root, encoding: "utf8", timeout: 10000,
+      env: { ...env, GITHUB_OUTPUT: invalidOutputs, CONTEXT_FILE: invalidContext,
+        GITHUB_WORKSPACE: directory.replaceAll("\\", "/"), RUNNER_TEMP: invalidDirectory.replaceAll("\\", "/") },
+    });
+    assert.ifError(rejected.error);
+    assert.equal(rejected.status, 1, rejected.stderr);
+    assert.match(rejected.stderr, /^Unsupported plugin or skill path in PR changes\.\s*$/);
+    assert.doesNotMatch(rejected.stdout + rejected.stderr, /::(?:warning|error|notice)::|bad plugin|bad%0Aname/);
+    assert.equal(existsSync(resolve(invalidDirectory, "selection.json")), false);
+    assert.equal(existsSync(invalidOutputs), false);
+  }
+});

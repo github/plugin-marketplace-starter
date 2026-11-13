@@ -32,8 +32,8 @@ its files directly. [README.md](README.md) shows the steps.
 - `npm run lint` checks skills and eval files and never calls a model. CI also
   validates each `plugin.json` against the Agent Plugins schema, matches local
   catalog entries to their `plugin.json`, and checks remote pins.
-  `npm run eval` and the evals workflow run real Copilot sessions and spend AI
-  credits; don't run them unless the user asks.
+  `npm run eval`, `npm run eval:models`, `npm run eval:compare`, and the evals
+  workflow call models and spend AI credits; don't run them unless the user asks.
 - Use the `plugin-authoring` and `marketplace-maintainer` skills and the
   read-only `plugin-reviewer` agent when they fit the task.
 - Keep secrets and token-bearing URLs out of files. Don't commit, push, publish,

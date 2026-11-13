@@ -142,6 +142,8 @@ Then add the plugin's skills, agents, or other parts to its folder. The
 lists what a plugin can contain. Put any evals for it in `evals/<name>/`.
 Eval files that several plugins share live in `evals/_shared/`, which can't
 clash with a plugin because plugin names start with a lowercase letter or digit.
+For shared eval context and PR comparison layout, follow
+[customizing evals and marketplace context](docs/checks-and-evals.md#customizing-evals-and-marketplace-context).
 
 For changes since a known released base, bump the plugin's version in
 `plugin.json` and `marketplace.json` together and add a `CHANGELOG.md` entry.
@@ -177,8 +179,9 @@ The `release-plugins` skill can retire a plugin for you. By hand, delete
 `plugins/<name>/` and `evals/<name>/`, then remove the plugin's entry from
 `marketplace.json` and its row and install command from this README. If it's
 one of the two plugins in `.github/copilot/settings.json`, remove its key there
-too. If surviving cohort evals under `evals/` list the retired plugin's skills
-in `agent_environment.skills` or `disallowed`, remove those entries as well.
+too. Remove its skill paths from `.vally.yaml`'s shared marketplace environment
+and any surviving eval's explicit `agent_environment.skills` or `disallowed`
+entries.
 
 You can keep only remote entries by removing both bundled local plugins and
 their eval folders. No empty `plugins/` or `evals/` directory is needed.
@@ -195,13 +198,32 @@ npm run lint
 validation, catalog consistency checks, and remote-pin checks on every pull
 request.
 
+Use Copilot to help author evals, choose native commands, and interpret results.
+The npm eval aliases call Vally directly: `eval` runs cases, `eval:models` runs
+the model experiment, `eval:serve` serves its native results dashboard, and
+`eval:compare` invokes its comparison judge.
+See [native saved-results viewing and comparison](docs/checks-and-evals.md#saved-results)
+for paths and costs; serving saved results does not call a model, but comparing
+them does.
+
 **Paid evals:** first complete the
 [execution and scoped authentication setup](docs/checks-and-evals.md#execution-and-authentication).
 Local examples use a dedicated Copilot Requests token with public-repository
 access for the synthetic fixtures, not a broad GitHub CLI login credential.
 Then `npm run eval` runs real Copilot sessions and costs AI credits.
-[Evals](.github/workflows/evals.yml) runs only when manually started; pull
-requests never trigger paid evals.
+[Evals](.github/workflows/evals.yml) runs only when manually started. Pull
+requests that change a plugin skill send a
+[read-only PR notification](.github/workflows/skill-evals.yml); that workflow has
+no approval gate or paid execution.
+The [trusted `workflow_run` workflow](.github/workflows/skill-eval-comment.yml)
+owns both: its `evals` job requires maintainer approval through the protected
+`evals` environment and runs native Before/After using the pinned Evals Action.
+Its separate `publish` job gets comment-write access, not billing permission,
+and updates one PR comment with per-case grader counts, failure details and an
+all-skills coverage table. Fork PRs do not run paid evals. Unmeasured skills are
+marked not run; the comment does not imply a full-marketplace or multi-model run. The
+[comparison Action integration and trust limits](docs/checks-and-evals.md#pr-comparison-comment)
+explain what stays in this repository and the upstream deployment dependency.
 
 Repository evals use **Vally's default local backend**, without an advanced
 project backend setting. This keeps [.vally.yaml](.vally.yaml) within the GitHub
@@ -211,7 +233,8 @@ review eval setup, tools, network access and credential exposure before approval
 `npm run eval -- --suite full` selects every retained case, including the
 independent reviewer agent, and still spends AI credits. See
 [execution and authentication](docs/checks-and-evals.md#execution-and-authentication)
-for the compatibility and isolation limits. Paid CI remains manual-only.
+for the compatibility and isolation limits. The smoke-suite workflow remains
+manual-only; PR comparisons require protected approval.
 
 **Standard models:** `npm run eval:models` uses the native
 [model experiment](evals/standard-models.experiment.yaml) to test every retained

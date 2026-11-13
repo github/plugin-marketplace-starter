@@ -81,6 +81,25 @@ follow the skill's
 which uses its bundled Node helper before invoking Copilot. Installing doesn't
 call a model or prove how a plugin behaves in a model session.
 
+### Customizing evals and marketplace context
+
+The checks and PR selector discover catalog entries rather than assuming the
+bundled plugin names. Local skill comparisons use
+`plugins/<plugin>/skills/<skill>/SKILL.md` and
+`evals/<plugin>/skills/<skill>/eval.yaml`; both source versions must exist.
+Other eval names can be discovered by native Vally, but are not automatically
+paired by this PR integration. Agents and newly added/deleted skills are not
+Before/After pairs under this policy.
+
+The native shared context is explicit, not generated from the catalog. When
+adding/removing local skills, update `environments.marketplace.skills` in
+`.vally.yaml` and affected `disallowed` lists. Remote context uses the reviewed
+pinned staging commands there; update them when changing the remote context.
+The comment inventory reads standard `skills/<name>/SKILL.md` folders from exact
+pinned GitHub trees, without installing plugins. A remote-pin-only change does
+not trigger the local-skill comparison workflow. This is not arbitrary plugin
+layout support or automatic activation of hooks, agents or MCP tools.
+
 ## Paid evals
 
 **These runs start real Copilot sessions and spend AI credits.**
@@ -264,19 +283,183 @@ location, update the command's `--output-dir` too.
 ### Saved results
 
 For these direct Vally runs, results follow `paths.results` in
-[.vally.yaml](../.vally.yaml), currently `evals/results/`. The report command
-uses the same configured directory unless you supply an explicit results path.
+[.vally.yaml](../.vally.yaml), currently `evals/results/`. Native run directories
+contain `results.jsonl` and the saved trajectory artifacts. Copilot can help
+inspect a selected run or choose the appropriate native command.
 
-Summarize the newest saved run (verdicts, scores, input/output/total tokens,
-and duration) or compare a baseline run against a candidate run without calling
-a model:
+View reports in Vally's built-in dashboard without calling a model:
 
 ```sh
-npm run eval:report
-npm run eval:compare -- --baseline evals/_shared/fixtures/pr-description/baseline-results.jsonl --candidate evals/_shared/fixtures/pr-description/candidate-results.jsonl
+npm run eval:serve
 ```
+
+This is just `vally serve evals/results`, using the native
+[`serve`](https://microsoft.github.io/vally/reference/cli/serve/) command.
+Open `http://127.0.0.1:3200`; keep the default loopback binding because saved
+trajectories and grader evidence can contain sensitive data. The pinned
+`@microsoft/vally-cli` 0.21.0 includes `@microsoft/vally-server` as a dependency:
+`npm ci` installs it, with no separate server package required.
+If you change the results directory, update the alias or run
+`vally serve <directory>` directly. Experiments use their explicit output
+directory, as described above.
+
+For native judged comparison, supply real baseline and treatment run directories
+or JSONL files. This is `vally compare`, not a custom result parser: it calls a
+comparison judge using the saved rubrics and **spends additional AI credits**.
+Obtain user approval for those judge calls before running it; permission to view
+reports or publish a PR comment does not authorize them.
+
+```sh
+npm run eval:compare -- --baseline path/to/baseline-run --treatment path/to/treatment-run
+```
+
+You can instead supply a native experiment output directory, or use
+`--judge-model` and `--output` as documented in
+[`compare`](https://microsoft.github.io/vally/reference/cli/compare/).
+Viewing results and PR comment publication do not automatically invoke this
+judge. No local Markdown report implementation is maintained here.
 
 [Evals](../.github/workflows/evals.yml) runs the smoke suite only when you
 explicitly start it with **Run workflow** in GitHub Actions
-(`workflow_dispatch`). Pull requests never start paid evals. Review the
-selected branch and its eval code before dispatching a run.
+(`workflow_dispatch`). Review the selected branch and its eval code before
+dispatching a run.
+
+[Skill evals](../.github/workflows/skill-evals.yml) is a read-only PR notification
+for plugin skill changes. The
+[trusted default-branch workflow](../.github/workflows/skill-eval-comment.yml)
+uses the standard
+[unprivileged PR / trusted `workflow_run` pattern](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/).
+It calls the pinned Evals Action `comparison` subaction for authentication,
+paired native execution and publication. Its `evals` job owns the protected
+approval gate and paid Before/After execution; its separate `publish` job owns
+comment-write access. The PR notification workflow owns neither.
+Repository-specific selection and
+approval policy stay here; the generic runner, projection and comment machinery
+do not.
+
+### PR comparison comment
+
+All three calls use `github/evals-action/comparison` at
+`750ff67f1e0a98cfa6a042e89efa99cd7825146b`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/750ff67f1e0a98cfa6a042e89efa99cd7825146b/comparison/README.md)
+owns source-workflow/run/attempt authentication, verified merge parents,
+source switching, native verdict projection, bounded artifact intake and the
+bot-owned comment. The existing root Action's event policy is unchanged.
+This pin is the accessible implementation from
+[github/evals-action#28](https://github.com/github/evals-action/pull/28), addressing
+[github/evals-action#26](https://github.com/github/evals-action/issues/26);
+it is an **unmerged upstream dependency**, not a released or live-qualified
+integration. Review that dependency before deployment. Both workflows and the
+trusted selector must reach the default branch before automatic activation.
+
+The [repository selector](../.github/scripts/select-skill-evals.mjs) verifies the
+merge checkout, required environment reviewers and changed skill paths without
+executing candidate scripts. Before uses the current merge's first parent, not
+possibly stale PR base metadata. Eligible pairs require a skill in the catalog
+inventory, both source versions and `evals/<plugin>/skills/<skill>/eval.yaml`.
+Uncatalogued, new, deleted and unpaired skills are explicitly not run.
+Local skill folders and exact pinned remote GitHub trees
+supply the display inventory without installing plugins. Each entry's name and
+pinned-source fields are validated before its tree read; incomplete remote
+trees fail rather than producing partial inventory. Malformed JSON reports its
+input kind without echoing its contents. Loading neighboring
+skill context does not evaluate those skills or enable full plugin hooks/MCP.
+Skills, evals, fixtures, graders, catalog, models and native configuration remain
+repository-owned. Local results use Vally's native dashboard and comparison
+commands above.
+
+Eligibility proves source/eval file pairing, not that a custom eval uses the
+changed code. Before approving paid arms, verify its native `agent_environment`
+stages that local skill directory and its positive cases grade the intended
+invocation. The catalog does not update `.vally.yaml`'s skill paths automatically.
+
+The protected job runs native Vally **0.21.0** sequentially with the saved model,
+one trial/worker and zero retries. Only the target skill switches between
+base/head sources; measurements and neighbors stay at the selected merge.
+A native Before verdict failure does not suppress After; integrity and
+provenance failures still fail closed. Either failed/incomplete arm keeps
+the job failed. The Action fingerprints actual checkout bytes, types,
+permissions and symlink targets outside the selected skill before execution.
+It checks that baseline before After and after each native arm, rejecting
+drift even if native grading passed. Regular-file symlinks include resolved
+bytes and permissions; directory/special-file symlink targets fail explicitly.
+Initialized or nonempty submodules fail explicitly; empty uninitialized
+gitlinks are allowed.
+Declared Git filter attributes on tracked files are unsupported, including
+negative declarations and drivers literally named `unset` or `unspecified`.
+This conservative check fails before source restoration; normal text/EOL
+normalization remains supported.
+The Action's Node 24 runtime acquires native tools outside the
+candidate checkout with install scripts disabled and a job-private generated
+integrity lock. Both arms share one acquired dependency graph; recorded
+CLI/lock/dependency digests are in the job summary. Unlike the previous trusted
+committed-lock bootstrap, transitive resolution can differ **across jobs**.
+Candidate manifests are not bootstrap inputs. Native backend configuration is
+honored; this repository leaves it unset for compatible local execution.
+Host exposure, the Copilot Evals tools' configuration support and live-execution
+limits are documented under [execution and authentication](#execution-and-authentication).
+
+Repository policy stays visible in the workflow: same-repository PRs only,
+read-only selection, the protected `evals` environment, job permissions,
+timeouts, retention and concurrency. Owners must configure required reviewers
+and permit CI-token billing. Missing/unprotected environments fail preflight.
+Remote inventory reads use the selection job's repository-scoped
+`GITHUB_TOKEN`, not a broad account credential. Public outside sources remain
+supported; unrelated private repositories are not accessible with that token.
+Wider credentials would require a separately reviewed target-authorization
+policy, not simply replacing this step's token.
+The paid job has read-only repository/PR/Actions access and
+`copilot-requests: write`, but no PR-write access. The fresh publisher has
+PR-write access but no billing permission and performs no checkout or candidate
+execution. Approval intentionally allows candidate eval/setup/grader code to
+execute with the model credential. Fresh HOME/TMP and a narrow environment are
+process hygiene, not credential, network or shared-kernel isolation.
+Environment reviewers protect this job, not arbitrary workflows authorized
+editors could add; a workflow-token permission is not an environment secret or
+an organization-wide billing ceiling. No settings/authentication policy changes
+or `pull_request_target` are introduced.
+
+The default publisher uses the shared `github-actions[bot]` identity, not
+workflow-exclusive attestation. Another permitted PR-write workflow can forge
+that bot's comparison marker and ordering metadata and suppress genuine reports.
+This MVP retains the default token without requiring publisher-exclusive App
+credentials; that trust limitation remains accepted, not fixed.
+
+Paid concurrency uses authenticated PR/head/skill outputs. Same-head duplicates
+can cancel; a newer head does not immediately cancel an old in-flight arm.
+The Action rechecks current PR/head after approval and before each paid arm,
+blocking the next stale arm and stale publication, not undoing requests already
+billed. Publishers serialize by verified PR without cancellation, with up to
+100 pending jobs using GitHub's `queue: max`; excess jobs can still be canceled.
+Producing run/attempt order is namespaced by the authenticated `workflowRef`
+and prevents older legitimate publications overwriting newer results; it does
+not make the shared bot identity exclusive.
+**Partial paid retries are unsupported: use Re-run all jobs.** Publisher-only
+retries reuse the original selection producing attempt without repeating models.
+The authenticated context also fixes the selected base and test-merge commit.
+A base-branch update that refreshes that merge can block the next arm or
+publication even when the PR head is unchanged. Recovery requires **Re-run all
+jobs**, renewed approval of the refreshed selection and repeating both paid
+arms; a publisher-only retry cannot repair that changed context.
+
+The approved comment retains per-changed-skill case/model tables showing
+Before → After **passing/total graders**, visible After failures, collapsed
+Before failures and collapsed marketplace **passing/total recorded cases**.
+Missing checks, grading errors and incomplete coverage remain unknown rather
+than resolved failures; known failures remain visible. These single-trial
+observations do not establish causation or full-cohort/multi-model coverage.
+The Action contract documents the complete evidence and rendering rules.
+Oversized unchanged, unmeasured inventory may be summarized as counts; changed
+skill rows, recorded results and failure details are never dropped to fit.
+
+Only selection metadata and the Action's exact Before/After JSON projection
+paths are uploaded, with seven-day retention subject to repository policy.
+Never upload its private `projection-directory` recursively: it also holds raw
+diagnostics. The publisher independently authenticates context and the exact
+trusted selection/producing attempt; artifacts remain untrusted data, not
+independent attestations of candidate code. Raw trajectories, model output,
+grader evidence, exceptions and transcripts are not posted or uploaded.
+Displayed eval/model/check names must themselves be suitable for publication.
+Model-free checks do not prove live `workflow_run`, token acceptance, protected
+approval, host execution or billing; those need separately authorized
+qualification.
