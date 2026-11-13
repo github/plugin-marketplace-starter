@@ -337,8 +337,8 @@ do not.
 ### PR comparison comment
 
 All three calls use `github/evals-action/comparison` at
-`3fd266ba11370e38aef93876630bcb86166d1739`. The
-[pinned Action contract](https://github.com/github/evals-action/blob/3fd266ba11370e38aef93876630bcb86166d1739/comparison/README.md)
+`e926c2c79744c502fc30867264b546e83684e99c`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/e926c2c79744c502fc30867264b546e83684e99c/comparison/README.md)
 owns source-workflow/run/attempt authentication, verified merge parents,
 source switching, native verdict projection, bounded artifact intake and the
 bot-owned comment. The existing root Action's event policy is unchanged.
