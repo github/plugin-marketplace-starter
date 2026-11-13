@@ -197,26 +197,22 @@ validation, catalog consistency checks, and remote-pin checks on every pull
 request.
 
 **Paid evals:** first complete the
-[Docker and scoped authentication setup](docs/checks-and-evals.md#native-docker-evals).
+[execution and scoped authentication setup](docs/checks-and-evals.md#execution-and-authentication).
 Local examples use a dedicated Copilot Requests token with public-repository
 access for the synthetic fixtures, not a broad GitHub CLI login credential.
 Then `npm run eval` runs real Copilot sessions and costs AI credits.
 [Evals](.github/workflows/evals.yml) runs only when manually started; pull
 requests never trigger paid evals.
 
-Repository evals **default to Vally's native Docker backend** in
-[.vally.yaml](.vally.yaml), including `npm run eval` and the manually dispatched
-eval workflow. `npm run eval -- --suite full` selects every retained case,
-including the independent reviewer agent. These runs still spend AI credits
-and require Docker, Compose, network access, and container-compatible
-authentication. Missing Docker or image preparation fails the run; it does not
-silently fall back to host execution. Vally builds and caches its version-matched
-default image locally.
-See [Native Docker evals and isolation limits](docs/checks-and-evals.md#native-docker-evals)
-before running. The pinned Evals plugin's Run entrypoint cannot read the new
-project backend default and currently rejects this configuration; use the native
-Vally CLI rather than assuming plugin Run is container-isolated. Paid CI remains
-manual-only.
+Repository evals use **Vally's default local backend**, without an advanced
+project backend setting. This keeps [.vally.yaml](.vally.yaml) within the GitHub
+Copilot Evals tools' supported project configuration. Docker and Compose are not
+required by this default. Execution uses the host, not a container sandbox;
+review eval setup, tools, network access and credential exposure before approval.
+`npm run eval -- --suite full` selects every retained case, including the
+independent reviewer agent, and still spends AI credits. See
+[execution and authentication](docs/checks-and-evals.md#execution-and-authentication)
+for the compatibility and isolation limits. Paid CI remains manual-only.
 
 **Standard models:** `npm run eval:models` uses the native
 [model experiment](evals/standard-models.experiment.yaml) to test every retained
