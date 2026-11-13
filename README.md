@@ -21,7 +21,7 @@ Included local maintenance plugins and optional remote plugins:
 | [plugin-authoring](plugins/plugin-authoring/) | Scaffold, try locally, and prepare contributions to this plugin marketplace. |
 | [marketplace-maintainer](plugins/marketplace-maintainer/) | Review contributed plugins, maintain remote pins, and prepare marketplace releases. |
 | [pr-description](plugins/pr-description/) | Draft structured pull request descriptions from supplied change notes or diffs without inventing unshipped work. |
-| [GitHub Copilot Evals (Preview)](https://github.com/github/evals/blob/copilot-evals-v0.24.0/README.md) (`eval`, optional remote) | Create, run, review, and compare evals for your Copilot customizations. |
+| [GitHub Copilot Evals (Preview)](https://github.com/github/evals/blob/copilot-evals-v0.24.6/README.md) (`eval`, optional remote) | Create, run, review, and compare evals for your Copilot customizations. |
 
 ## Background
 
@@ -102,7 +102,7 @@ For optional GitHub Copilot Evals, install it explicitly:
 copilot plugin install eval@plugin-marketplace-starter
 ```
 
-See its [upstream setup guidance](https://github.com/github/evals/blob/copilot-evals-v0.24.0/README.md#install),
+See its [upstream setup guidance](https://github.com/github/evals/blob/copilot-evals-v0.24.6/README.md#install),
 including experimental mode for Copilot CLI commands and Canvas. For remote-entry
 checks and the local-directory install limitation, see
 [Remote pin testing](plugins/marketplace-maintainer/skills/update-remote-pins/references/remote-pins.md#testing-a-remote-entry).
@@ -231,7 +231,7 @@ This template and its local plugins use the [MIT License](LICENSE). Keep its
 below it.
 
 Remote plugins retain their upstream licenses. GitHub Copilot Evals is source
-available under the [GitHub Limited Use Source License](https://github.com/github/evals/blob/34ddb5803aeaee8330ab70c19ad1a3f37fb77ded/LICENSE).
+available under the [GitHub Limited Use Source License](https://github.com/github/evals/blob/5c3d5213f88149fe1e5476ef029277fe56fd42e4/LICENSE).
 It isn't MIT-licensed or open source.
 
 ## Maintainers
