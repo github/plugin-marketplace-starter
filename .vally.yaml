@@ -21,11 +21,11 @@ environments:
     # Vally runs setup in each trial workspace; Copilot discovers these skills natively.
     commands:
       - git clone --filter=blob:none --no-checkout --depth 1 --branch
-        copilot-evals-v0.24.6 --sparse https://github.com/github/evals.git
+        copilot-evals-v0.24.14 --sparse https://github.com/github/evals.git
         .vally-eval-source
       - git -C .vally-eval-source sparse-checkout set packages/plugin/skills
       - git -C .vally-eval-source checkout --detach
-        5c3d5213f88149fe1e5476ef029277fe56fd42e4
+        bfae69e479308aaf1320dc2b2bac4315659a006a
       - >-
         node -e "const fs = require('node:fs');
         fs.cpSync('.vally-eval-source/packages/plugin/skills', '.github/skills',
