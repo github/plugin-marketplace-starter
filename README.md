@@ -143,6 +143,8 @@ Then add the plugin's skills, agents, or other parts to its folder. The
 lists what a plugin can contain. Put any evals for it in `evals/<name>/`.
 Eval files that several plugins share live in `evals/_shared/`, which can't
 clash with a plugin because plugin names start with a lowercase letter or digit.
+For shared eval context and PR comparison layout, follow
+[customizing evals and marketplace context](docs/checks-and-evals.md#customizing-evals-and-marketplace-context).
 
 For changes since a known released base, bump the plugin's version in
 `plugin.json` and `marketplace.json` together and add a `CHANGELOG.md` entry.
@@ -178,8 +180,9 @@ The `release-plugins` skill can retire a plugin for you. By hand, delete
 `plugins/<name>/` and `evals/<name>/`, then remove the plugin's entry from
 `marketplace.json` and its row and install command from this README. If it's
 one of the two plugins in `.github/copilot/settings.json`, remove its key there
-too. If surviving cohort evals under `evals/` list the retired plugin's skills
-in `agent_environment.skills` or `disallowed`, remove those entries as well.
+too. Remove its skill paths from `.vally.yaml`'s shared marketplace environment
+and any surviving eval's explicit `agent_environment.skills` or `disallowed`
+entries.
 
 You can keep only remote entries by removing both bundled local plugins and
 their eval folders. No empty `plugins/` or `evals/` directory is needed.
@@ -195,6 +198,14 @@ npm run lint
 [Validate](.github/workflows/validate.yml) also runs script tests, schema
 validation, catalog consistency checks, and remote-pin checks on every pull
 request.
+
+Use Copilot to help author evals, choose native commands, and interpret results.
+The npm eval aliases call Vally directly: `eval` runs cases, `eval:models` runs
+the model experiment, `eval:serve` serves its native results dashboard, and
+`eval:compare` invokes its comparison judge.
+See [native saved-results viewing and comparison](docs/checks-and-evals.md#saved-results)
+for paths and costs; serving saved results does not call a model, but comparing
+them does.
 
 **Paid evals:** first complete the
 [Docker and scoped authentication setup](docs/checks-and-evals.md#native-docker-evals).

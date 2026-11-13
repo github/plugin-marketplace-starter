@@ -81,6 +81,25 @@ follow the skill's
 which uses its bundled Node helper before invoking Copilot. Installing doesn't
 call a model or prove how a plugin behaves in a model session.
 
+### Customizing evals and marketplace context
+
+The checks and PR selector discover catalog entries rather than assuming the
+bundled plugin names. Local skill comparisons use
+`plugins/<plugin>/skills/<skill>/SKILL.md` and
+`evals/<plugin>/skills/<skill>/eval.yaml`; both source versions must exist.
+Other eval names can be discovered by native Vally, but are not automatically
+paired by this PR integration. Agents and newly added/deleted skills are not
+Before/After pairs under this policy.
+
+The native shared context is explicit, not generated from the catalog. When
+adding/removing local skills, update `environments.marketplace.skills` in
+`.vally.yaml` and affected `disallowed` lists. Remote context uses the reviewed
+pinned staging commands there; update them when changing the remote context.
+The comment inventory reads standard `skills/<name>/SKILL.md` folders from exact
+pinned GitHub trees, without installing plugins. A remote-pin-only change does
+not trigger the local-skill comparison workflow. This is not arbitrary plugin
+layout support or automatic activation of hooks, agents or MCP tools.
+
 ## Paid evals
 
 **These runs start real Copilot sessions and spend AI credits.**
@@ -314,17 +333,40 @@ location, update the command's `--output-dir` too.
 ### Saved results
 
 For these direct Vally runs, results follow `paths.results` in
-[.vally.yaml](../.vally.yaml), currently `evals/results/`. The report command
-uses the same configured directory unless you supply an explicit results path.
+[.vally.yaml](../.vally.yaml), currently `evals/results/`. Native run directories
+contain `results.jsonl` and the saved trajectory artifacts. Copilot can help
+inspect a selected run or choose the appropriate native command.
 
-Summarize the newest saved run (verdicts, scores, input/output/total tokens,
-and duration) or compare a baseline run against a candidate run without calling
-a model:
+View reports in Vally's built-in dashboard without calling a model:
 
 ```sh
-npm run eval:report
-npm run eval:compare -- --baseline evals/_shared/fixtures/pr-description/baseline-results.jsonl --candidate evals/_shared/fixtures/pr-description/candidate-results.jsonl
+npm run eval:serve
 ```
+
+This is just `vally serve evals/results`, using the native
+[`serve`](https://microsoft.github.io/vally/reference/cli/serve/) command.
+Open `http://127.0.0.1:3200`; keep the default loopback binding because saved
+trajectories and grader evidence can contain sensitive data. The pinned
+`@microsoft/vally-cli` 0.21.0 includes `@microsoft/vally-server` as a dependency:
+`npm ci` installs it, with no separate server package required.
+If you change the results directory, update the alias or run
+`vally serve <directory>` directly. Experiments use their explicit output
+directory, as described above.
+
+For native judged comparison, supply real baseline and treatment run directories
+or JSONL files:
+
+```sh
+npm run eval:compare -- --baseline path/to/baseline-run --treatment path/to/treatment-run
+```
+
+This is `vally compare`, not a custom result parser. It pairs saved trajectories
+and calls a comparison judge using their rubrics, so **it spends AI credits**.
+You can instead supply a native experiment output directory, or use
+`--judge-model` and `--output` as documented in
+[`compare`](https://microsoft.github.io/vally/reference/cli/compare/).
+Viewing results and PR comment publication do not automatically invoke this
+judge. No local Markdown report implementation is maintained here.
 
 [Evals](../.github/workflows/evals.yml) runs the smoke suite only when you
 explicitly start it with **Run workflow** in GitHub Actions
@@ -365,8 +407,8 @@ explicitly not run. Local skill folders and exact pinned remote GitHub trees
 supply the display inventory without installing plugins. Loading neighboring
 skill context does not evaluate those skills or enable full plugin hooks/MCP.
 Skills, evals, fixtures, graders, catalog, models and native configuration remain
-repository-owned. The model-free local saved-file report commands above are
-unchanged.
+repository-owned. Local results use Vally's native dashboard and comparison
+commands above.
 
 The protected job runs native Vally **0.21.0** sequentially with the saved model,
 one trial/worker and zero retries. Only the target skill switches between

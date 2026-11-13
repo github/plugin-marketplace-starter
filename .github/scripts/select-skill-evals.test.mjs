@@ -14,10 +14,10 @@ test("marketplace inventory reads local skills and exact pinned remote trees wit
   writeFileSync(join(root, "plugins/local/skills/draft/SKILL.md"), "synthetic");
   mkdirSync(join(root, "evals/local/skills/draft"), { recursive: true });
   writeFileSync(join(root, "evals/local/skills/draft/eval.yaml"), "synthetic");
-  writeFileSync(join(root, "marketplace.json"), JSON.stringify({ plugins: [
-    { name: "local", source: "./plugins/local" },
-    { name: "remote", source: { source: "github", repo: "example/plugin", sha: "c".repeat(40), path: "package" } },
-  ] }));
+  const local = { name: "local", source: "./plugins/local" };
+  const remote = { name: "remote", source: { source: "github", repo: "example/plugin", sha: "c".repeat(40), path: "package" } };
+  const catalog = (plugins) => writeFileSync(join(root, "marketplace.json"), JSON.stringify({ plugins }));
+  catalog([local, remote]);
   const readTree = (repo, commit) => {
     assert.equal(repo, "example/plugin");
     assert.equal(commit, "c".repeat(40));
@@ -30,10 +30,21 @@ test("marketplace inventory reads local skills and exact pinned remote trees wit
     { key: "local/draft", hasEval: true }, { key: "remote/run", hasEval: false },
   ]);
   assert.throws(() => inventorySkills(root, () => ({ truncated: true, tree: [] })), /Incomplete/);
+  mkdirSync(join(root, "plugins/custom/skills/triage"), { recursive: true });
+  writeFileSync(join(root, "plugins/custom/skills/triage/SKILL.md"), "synthetic customization");
+  catalog([local, { name: "custom", source: "./plugins/custom" }, remote]);
+  assert.deepEqual(inventorySkills(root, readTree).map((skill) => skill.key),
+    ["custom/triage", "local/draft", "remote/run"]);
+  mkdirSync(join(root, "evals/custom/skills/triage"), { recursive: true });
+  const customEval = join(root, "evals/custom/skills/triage/eval.yaml");
+  writeFileSync(customEval, "synthetic");
+  assert.equal(inventorySkills(root, readTree).find((skill) => skill.key === "custom/triage").hasEval, true);
+  rmSync(customEval);
+  assert.equal(inventorySkills(root, readTree).find((skill) => skill.key === "custom/triage").hasEval, false);
+  catalog([local]);
+  assert.deepEqual(inventorySkills(root, readTree), [{ key: "local/draft", hasEval: true }]);
   rmSync(join(root, "plugins"), { recursive: true });
-  writeFileSync(join(root, "marketplace.json"), JSON.stringify({ plugins: [
-    { name: "remote", source: { source: "github", repo: "example/plugin", sha: "c".repeat(40), path: "package" } },
-  ] }));
+  catalog([remote]);
   assert.deepEqual(inventorySkills(root, readTree), [{ key: "remote/run", hasEval: false }]);
 });
 
@@ -65,8 +76,13 @@ test("selection requires approval protection and existing paired skills with rep
   file(`${target}/r\u00e9sum\u00e9.md`, "base non-ASCII path");
   file("plugins/example/skills/neighbor/SKILL.md", "base neighbor");
   file("plugins/example/skills/deleted/SKILL.md", "deleted");
+  file("plugins/custom/skills/triage/SKILL.md", "base custom skill");
+  file("plugins/custom/skills/no-eval/SKILL.md", "base skill with eval");
+  file("evals/custom/skills/no-eval/eval.yaml", "removed measurement");
   file("evals/example/skills/changed/eval.yaml", "fixed measurement");
-  file("marketplace.json", JSON.stringify({ plugins: [{ name: "example", source: "./plugins/example" }] }));
+  file("marketplace.json", JSON.stringify({ plugins: [
+    { name: "example", source: "./plugins/example" }, { name: "custom", source: "./plugins/custom" },
+  ] }));
   file(".github/scripts/select-skill-evals.mjs", "throw new Error('Candidate selector must not run');");
   git("add", "."); git("commit", "-m", "Base fixture");
   git("checkout", "-b", "candidate");
@@ -74,6 +90,10 @@ test("selection requires approval protection and existing paired skills with rep
   file(`${target}/r\u00e9sum\u00e9.md`, "head non-ASCII path");
   file("plugins/example/skills/neighbor/SKILL.md", "head neighbor");
   file("plugins/example/skills/added/SKILL.md", "added");
+  file("plugins/custom/skills/triage/SKILL.md", "head custom skill");
+  file("evals/custom/skills/triage/eval.yaml", "new custom measurement");
+  file("plugins/custom/skills/no-eval/SKILL.md", "head skill without eval");
+  rmSync(resolve(root, "evals/custom/skills/no-eval/eval.yaml"));
   rmSync(resolve(root, "plugins/example/skills/deleted"), { recursive: true });
   git("add", "."); git("commit", "-m", "Candidate fixture");
   const head = git("rev-parse", "HEAD");
@@ -91,10 +111,12 @@ test("selection requires approval protection and existing paired skills with rep
   assert.throws(() => selectSkillEvals(root, context, {}), /required maintainer reviewers/);
   assert.throws(() => selectSkillEvals(root, { ...context, head: "f".repeat(40) }, protection), /exact parents/);
   const selection = selectSkillEvals(root, context, protection);
-  assert.deepEqual(selection.changed, ["example/added", "example/changed", "example/deleted", "example/neighbor"]);
-  assert.equal(selection.include.length, 1);
-  assert.deepEqual(selection.include[0], {
-    key: "example/changed", id: selection.include[0].id, directory: target,
+  assert.deepEqual(selection.changed,
+    ["custom/no-eval", "custom/triage", "example/added", "example/changed", "example/deleted", "example/neighbor"]);
+  assert.deepEqual(selection.include.map((entry) => entry.key), ["custom/triage", "example/changed"]);
+  const selected = selection.include.find((entry) => entry.key === "example/changed");
+  assert.deepEqual(selected, {
+    key: "example/changed", id: selected.id, directory: target,
     evalPath: "evals/example/skills/changed/eval.yaml", base, head,
   });
   assert.match(selection.include[0].id, /^skill-[a-f0-9]{12}$/);
@@ -120,6 +142,7 @@ test("selection requires approval protection and existing paired skills with rep
   assert.match(result.stdout, /No before\/after pair for example\/added/);
   assert.match(result.stdout, /No before\/after pair for example\/deleted/);
   assert.match(result.stdout, /No before\/after pair for example\/neighbor/);
+  assert.match(result.stdout, /No before\/after pair for custom\/no-eval/);
   assert.deepEqual(JSON.parse(readFileSync(selectionFile, "utf8")), selection);
-  assert.match(readFileSync(outputFile, "utf8"), /\ncount=1\nattempt=1\n/);
+  assert.match(readFileSync(outputFile, "utf8"), /\ncount=2\nattempt=1\n/);
 });

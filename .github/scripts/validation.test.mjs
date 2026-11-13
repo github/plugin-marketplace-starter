@@ -371,7 +371,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
   assert.match(validate, /node --test \.github\/scripts\/\*\.test\.mjs/);
   const evals = readFileSync(resolve(root, ".github/workflows/evals.yml"), "utf8");
   assert.match(evals, /^on:\n  workflow_dispatch:\npermissions:/m);
-  assert.doesNotMatch(evals, /pull_request:|ENABLE_EVALS|^\s+if:|eval:report/m);
+  assert.doesNotMatch(evals, /pull_request:|ENABLE_EVALS|^\s+if:|eval:(?:serve|compare)/m);
   assert.match(evals, /^\s+environment:\s*evals$/m);
   assert.match(evals, /copilot-requests: write/);
   assert.match(evals, /npm run eval -- --suite smoke --require-pass/);
@@ -388,8 +388,8 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     lint: "node .github/scripts/lint.mjs",
     eval: "vally eval --workers 1 --max-retries 1",
     "eval:models": "vally experiment run evals/standard-models.experiment.yaml --output-dir evals/results/standard-models --require-pass",
-    "eval:report": "node .github/scripts/eval-report.mjs",
-    "eval:compare": "node .github/scripts/eval-report.mjs",
+    "eval:serve": "vally serve evals/results",
+    "eval:compare": "vally compare",
   });
 });
 
