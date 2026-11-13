@@ -127,11 +127,14 @@ no CLI, eval or project backend is specified. This is an intentional compatible
 default, not a Docker failure fallback. Explicit eval selections, suites and the
 standard-model experiment inherit it.
 
-The GitHub Copilot Evals plugin 0.24.6 full-engine project reader accepts
-`environments`, `params`, `metadata`, `paths` and `suites`, but rejects the
-advanced project `defaults` key. Removing that key restores the supported
-configuration shape. Tools still require a compatible runner, authentication
-and run approval; source/schema checks do not prove a live paid execution.
+This marketplace pins the GitHub Copilot Evals plugin **0.24.0**. Its
+[full-engine project reader at the pinned commit](https://github.com/github/evals/blob/34ddb5803aeaee8330ab70c19ad1a3f37fb77ded/packages/plugin/dist/mcp/server.mjs),
+and the separately checked locally installed **0.24.6** reader, accept
+`environments`, `params`, `metadata`, `paths` and `suites`, but reject the
+advanced project `defaults` key. The regression check covers this shared root-key
+shape, not an installed-version or end-to-end execution test. No plugin upgrade
+is included. Tools still require a compatible runner, authentication and run
+approval; these source/schema checks do not prove a live paid execution.
 
 Docker, Compose, image preparation and container network settings are not
 prerequisites. The evaluator, task setup, tools and graders run on the host.

@@ -30,8 +30,8 @@ function assertDocumentedEval(projectRoot, path) {
   }
 }
 
-test("the project stays within the Evals reader contract and inherits native local execution", async () => {
-  // Root fields accepted by the Evals plugin 0.24.6 full-engine project reader.
+test("project root fields match the checked Evals readers and inherit native local execution", async () => {
+  // Shared root-key contract: marketplace-pinned Evals 0.24.0 and local 0.24.6.
   const projectKeys = new Set(["environments", "params", "metadata", "paths", "suites"]);
   const configuration = parse(readFileSync(resolve(root, ".vally.yaml"), "utf8"));
   for (const key of Object.keys(configuration)) {
