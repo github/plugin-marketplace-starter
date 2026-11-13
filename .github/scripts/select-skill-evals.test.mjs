@@ -104,6 +104,7 @@ test("selection requires approval protection and existing paired skills with rep
   git("merge", "--no-ff", "candidate", "-m", "Merge fixture");
   const context = {
     base, head, merge: git("rev-parse", "HEAD"), trusted: "d".repeat(40),
+    runHead: head,
     repository: "fixture/repo", run: "2", attempt: "1", sourceRun: "1", sourceAttempt: "1",
     sourceWorkflow: ".github/workflows/skill-evals.yml",
   };
