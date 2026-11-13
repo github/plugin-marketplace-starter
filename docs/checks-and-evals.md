@@ -337,8 +337,8 @@ do not.
 ### PR comparison comment
 
 All three calls use `github/evals-action/comparison` at
-`60106995a5105bc3fd67f0aa4cbf0ad9b0972cf6`. The
-[pinned Action contract](https://github.com/github/evals-action/blob/60106995a5105bc3fd67f0aa4cbf0ad9b0972cf6/comparison/README.md)
+`54467485835d2c4c79893906e836f94ce80d7507`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/54467485835d2c4c79893906e836f94ce80d7507/comparison/README.md)
 owns source-workflow/run/attempt authentication, verified merge parents,
 source switching, native verdict projection, bounded artifact intake and the
 bot-owned comment. The existing root Action's event policy is unchanged.
@@ -393,6 +393,11 @@ Repository policy stays visible in the workflow: same-repository PRs only,
 read-only selection, the protected `evals` environment, job permissions,
 timeouts, retention and concurrency. Owners must configure required reviewers
 and permit CI-token billing. Missing/unprotected environments fail preflight.
+Remote inventory reads use the selection job's repository-scoped
+`GITHUB_TOKEN`, not a broad account credential. Public outside sources remain
+supported; unrelated private repositories are not accessible with that token.
+Wider credentials would require a separately reviewed target-authorization
+policy, not simply replacing this step's token.
 The paid job has read-only repository/PR/Actions access and
 `copilot-requests: write`, but no PR-write access. The fresh publisher has
 PR-write access but no billing permission and performs no checkout or candidate

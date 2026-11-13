@@ -416,7 +416,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
       .filter((step) => step.uses?.startsWith("github/evals-action/"));
     assert.deepEqual(calls.map((step) => step.with.command), ["context", "run", "report"]);
     for (const step of calls) {
-      assert.equal(step.uses, "github/evals-action/comparison@60106995a5105bc3fd67f0aa4cbf0ad9b0972cf6");
+      assert.equal(step.uses, "github/evals-action/comparison@54467485835d2c4c79893906e836f94ce80d7507");
       assert.equal(step.with["source-workflow"], ".github/workflows/skill-evals.yml");
     }
     const context = calls[0];
@@ -434,6 +434,8 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     const selection = select.steps.find((step) => step.id === "select");
     assert.equal(selection["working-directory"], "candidate");
     assert.equal(selection.env.CONTEXT_FILE, "${{ steps.context.outputs.context-path }}");
+    assert.equal(selection.env.GH_TOKEN, "${{ github.token }}",
+      "PR-controlled inventory must use this job's repository-scoped token, not a broader credential");
     assert.match(selection.run, /node "\$GITHUB_WORKSPACE\/trusted\/\.github\/scripts\/select-skill-evals\.mjs"/);
     assert.match(selection.run, /"\$CONTEXT_FILE" "\$RUNNER_TEMP\/evals-environment\.json" "\$RUNNER_TEMP\/selection\.json"/);
     const job = publisher.jobs.evals;
