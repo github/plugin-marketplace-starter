@@ -330,15 +330,18 @@ for plugin skill changes. The
 uses the standard
 [unprivileged PR / trusted `workflow_run` pattern](https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/).
 It calls the pinned Evals Action `comparison` subaction for authentication,
-paired native execution and publication. Repository-specific selection and
+paired native execution and publication. Its `evals` job owns the protected
+approval gate and paid Before/After execution; its separate `publish` job owns
+comment-write access. The PR notification workflow owns neither.
+Repository-specific selection and
 approval policy stay here; the generic runner, projection and comment machinery
 do not.
 
 ### PR comparison comment
 
 All three calls use `github/evals-action/comparison` at
-`5be803cb5cc6fa05ca8b9269665e1af457949087`. The
-[pinned Action contract](https://github.com/github/evals-action/blob/5be803cb5cc6fa05ca8b9269665e1af457949087/comparison/README.md)
+`750ff67f1e0a98cfa6a042e89efa99cd7825146b`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/750ff67f1e0a98cfa6a042e89efa99cd7825146b/comparison/README.md)
 owns source-workflow/run/attempt authentication, verified merge parents,
 source switching, native verdict projection, bounded artifact intake and the
 bot-owned comment. The existing root Action's event policy is unchanged.

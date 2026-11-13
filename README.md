@@ -211,17 +211,17 @@ them does.
 Local examples use a dedicated Copilot Requests token with public-repository
 access for the synthetic fixtures, not a broad GitHub CLI login credential.
 Then `npm run eval` runs real Copilot sessions and costs AI credits.
-[Evals](.github/workflows/evals.yml) runs only when manually started; pull
-requests that change a plugin skill use the separate
-[before/after workflow](.github/workflows/skill-evals.yml), with maintainer approval
-required in the protected `evals` environment. Fork PRs do not run paid evals.
-The workflow updates one PR comment with per-case grader counts, failure
-details, and an all-skills coverage table. Unmeasured skills are marked not run;
-the comment does not imply a full-marketplace or multi-model run.
-Paid execution and publication use a separate
-[trusted `workflow_run` workflow](.github/workflows/skill-eval-comment.yml):
-the pinned Evals Action comparison adapter runs native Vally behind approval,
-then a different job gets comment-write access. The
+[Evals](.github/workflows/evals.yml) runs only when manually started. Pull
+requests that change a plugin skill send a
+[read-only PR notification](.github/workflows/skill-evals.yml); that workflow has
+no approval gate or paid execution.
+The [trusted `workflow_run` workflow](.github/workflows/skill-eval-comment.yml)
+owns both: its `evals` job requires maintainer approval through the protected
+`evals` environment and runs native Before/After using the pinned Evals Action.
+Its separate `publish` job gets comment-write access, not billing permission,
+and updates one PR comment with per-case grader counts, failure details and an
+all-skills coverage table. Fork PRs do not run paid evals. Unmeasured skills are
+marked not run; the comment does not imply a full-marketplace or multi-model run. The
 [comparison Action integration and trust limits](docs/checks-and-evals.md#pr-comparison-comment)
 explain what stays in this repository and the upstream deployment dependency.
 
