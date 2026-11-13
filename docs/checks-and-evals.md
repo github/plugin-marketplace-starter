@@ -127,8 +127,8 @@ no CLI, eval or project backend is specified. This is an intentional compatible
 default, not a Docker failure fallback. Explicit eval selections, suites and the
 standard-model experiment inherit it.
 
-This marketplace pins the GitHub Copilot Evals plugin **0.24.6** (`copilot-evals-v0.24.6`). Its
-[full-engine project reader at the pinned commit](https://github.com/github/evals/blob/5c3d5213f88149fe1e5476ef029277fe56fd42e4/packages/plugin/dist/mcp/server.mjs)
+This marketplace pins the GitHub Copilot Evals plugin **0.24.14** (`copilot-evals-v0.24.14`). Its
+[full-engine project reader at the pinned commit](https://github.com/github/evals/blob/bfae69e479308aaf1320dc2b2bac4315659a006a/packages/plugin/dist/mcp/server.mjs)
 accepts `environments`, `params`, `metadata`, `paths` and `suites`, and rejects
 the advanced project `defaults` key. The regression check covers this root-key
 shape, not an installed-version or end-to-end execution test. Tools still
