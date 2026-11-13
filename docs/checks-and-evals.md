@@ -337,8 +337,8 @@ do not.
 ### PR comparison comment
 
 All three calls use `github/evals-action/comparison` at
-`339bc231110c53b47017c8301b351dc438a1c2c7`. The
-[pinned Action contract](https://github.com/github/evals-action/blob/339bc231110c53b47017c8301b351dc438a1c2c7/comparison/README.md)
+`5be803cb5cc6fa05ca8b9269665e1af457949087`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/5be803cb5cc6fa05ca8b9269665e1af457949087/comparison/README.md)
 owns source-workflow/run/attempt authentication, verified merge parents,
 source switching, native verdict projection, bounded artifact intake and the
 bot-owned comment. The existing root Action's event policy is unchanged.
@@ -358,7 +358,8 @@ Uncatalogued, new, deleted and unpaired skills are explicitly not run.
 Local skill folders and exact pinned remote GitHub trees
 supply the display inventory without installing plugins. Each entry's name and
 pinned-source fields are validated before its tree read; incomplete remote
-trees fail rather than producing partial inventory. Loading neighboring
+trees fail rather than producing partial inventory. Malformed JSON reports its
+input kind without echoing its contents. Loading neighboring
 skill context does not evaluate those skills or enable full plugin hooks/MCP.
 Skills, evals, fixtures, graders, catalog, models and native configuration remain
 repository-owned. Local results use Vally's native dashboard and comparison
@@ -381,8 +382,10 @@ drift even if native grading passed. Regular-file symlinks include resolved
 bytes and permissions; directory/special-file symlink targets fail explicitly.
 Initialized or nonempty submodules fail explicitly; empty uninitialized
 gitlinks are allowed.
-Active custom Git filters on tracked files fail explicitly before source
-restoration; normal text/EOL normalization remains supported.
+Declared Git filter attributes on tracked files are unsupported, including
+negative declarations and drivers literally named `unset` or `unspecified`.
+This conservative check fails before source restoration; normal text/EOL
+normalization remains supported.
 The Action's Node 24 runtime acquires native tools outside the
 candidate checkout with install scripts disabled and a job-private generated
 integrity lock. Both arms share one acquired dependency graph; recorded

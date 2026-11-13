@@ -65,6 +65,9 @@ test("inventory rejects malformed catalog fields before fetching authenticated r
   const nameError = "Unsupported catalog plugin name.";
   const pinError = "Remote skill inventory requires a pinned GitHub source.";
   const pathError = "Unsupported remote plugin path.";
+  writeFileSync(join(root, "marketplace.json"), '{"synthetic-private-input":');
+  assert.throws(() => inventorySkills(root, () => assert.fail("Malformed catalog must not reach the tree reader")),
+    { message: "Invalid marketplace catalog JSON." });
   for (const [plugin, message] of [
     [{ ...remote, name: "bad/plugin" }, nameError],
     [{ ...remote, name: null }, nameError],
@@ -194,6 +197,26 @@ test("selection requires approval protection and existing paired skills with rep
   assert.match(result.stdout, /No before\/after pair for uncatalogued\/changed: a catalogued skill/);
   assert.deepEqual(JSON.parse(readFileSync(selectionFile, "utf8")), selection);
   assert.match(readFileSync(outputFile, "utf8"), /\ncount=2\nattempt=1\n/);
+
+  for (const [role, label] of [["context", "comparison context"], ["environment", "evals environment"]]) {
+    const invalidDirectory = mkdtempSync(join(directory, "invalid-json-"));
+    const invalidContext = resolve(invalidDirectory, "context.json");
+    const invalidOutputs = resolve(invalidDirectory, "outputs");
+    writeFileSync(invalidContext, role === "context" ? '{"synthetic-private-input":' : JSON.stringify(context));
+    writeFileSync(resolve(invalidDirectory, "evals-environment.json"),
+      role === "environment" ? '{"synthetic-private-input":' : JSON.stringify(protection));
+    const rejected = spawnSync("bash", ["-c", command], {
+      cwd: root, encoding: "utf8", timeout: 10000,
+      env: { ...env, GITHUB_OUTPUT: invalidOutputs, CONTEXT_FILE: invalidContext,
+        GITHUB_WORKSPACE: directory.replaceAll("\\", "/"), RUNNER_TEMP: invalidDirectory.replaceAll("\\", "/") },
+    });
+    assert.ifError(rejected.error);
+    assert.equal(rejected.status, 1, rejected.stderr);
+    assert.match(rejected.stderr, new RegExp(`^Invalid ${label} JSON\\.\\s*$`));
+    assert.doesNotMatch(rejected.stdout + rejected.stderr, /synthetic-private-input|::(?:warning|error|notice)::/);
+    assert.equal(existsSync(resolve(invalidDirectory, "selection.json")), false);
+    assert.equal(existsSync(invalidOutputs), false);
+  }
 
   for (const [plugin, skill] of [["bad plugin", "safe"], ["example", "bad%0Aname"]]) {
     const invalidBase = git("rev-parse", "HEAD");

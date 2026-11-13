@@ -8,21 +8,24 @@ import { githubApi } from "./check-remote-pins.mjs";
 // Unlike $, the end assertion also rejects a final line break.
 const name = /^[a-z0-9][a-z0-9._-]*(?![\s\S])/;
 const sha = /^[a-f0-9]{40}(?![\s\S])/;
-const parse = (contents) => {
-  try { return JSON.parse(contents); } catch { throw new Error("Invalid skill selection JSON."); }
+const parse = (contents, subject) => {
+  try { return JSON.parse(contents); } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    throw new Error(`Invalid ${subject} JSON.`);
+  }
 };
-const json = (path) => parse(readFileSync(path, "utf8"));
+const json = (path, subject) => parse(readFileSync(path, "utf8"), subject);
 
 function pinnedTree(repo, commit) {
   const response = githubApi(`repos/${repo}/git/trees/${commit}?recursive=1`, (command, args, options) =>
     spawnSync(command, args, { ...options, timeout: 30000, maxBuffer: 8 * 1024 * 1024 }));
   if (response.status !== 200) throw new Error(`Pinned skill inventory returned GitHub HTTP ${response.status}.`);
-  return parse(response.body);
+  return parse(response.body, "pinned remote inventory");
 }
 
 export function inventorySkills(root, readTree = pinnedTree) {
   const skills = [];
-  for (const plugin of json(resolve(root, "marketplace.json")).plugins) {
+  for (const plugin of json(resolve(root, "marketplace.json"), "marketplace catalog").plugins) {
     if (typeof plugin.name !== "string" || !name.test(plugin.name)) throw new Error("Unsupported catalog plugin name.");
     let names;
     if (typeof plugin.source === "string") {
@@ -102,7 +105,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try {
     const [contextFile, environmentFile, outputFile] = process.argv.slice(2);
     if (!contextFile || !environmentFile || !outputFile) throw new Error("Expected context, environment and selection file paths.");
-    const selection = selectSkillEvals(process.cwd(), json(contextFile), json(environmentFile));
+    const selection = selectSkillEvals(process.cwd(),
+      json(contextFile, "comparison context"), json(environmentFile, "evals environment"));
     for (const key of selection.changed.filter((key) => !selection.include.some((entry) => entry.key === key))) {
       console.log(`::warning::No before/after pair for ${key}: a catalogued skill, both source versions and its repo eval are required. No eval was run.`);
     }
