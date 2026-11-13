@@ -30,7 +30,7 @@ jobs:
           node-version: 24
       - name: Authenticate the source request and select the current PR merge revision
         id: context
-        uses: github/evals-action/comparison@323678c48d0f576da8fbcaf3e4bbe8d95e439641
+        uses: github/evals-action/comparison@3c8cdb79a1e55b149950627a21e8723817d0e772
         with:
           command: context
           source-workflow: .github/workflows/skill-evals.yml
@@ -87,7 +87,7 @@ jobs:
           persist-credentials: false
       - name: Compare selected skill with native Vally
         id: comparison
-        uses: github/evals-action/comparison@323678c48d0f576da8fbcaf3e4bbe8d95e439641
+        uses: github/evals-action/comparison@3c8cdb79a1e55b149950627a21e8723817d0e772
         with:
           command: run
           source-workflow: .github/workflows/skill-evals.yml
@@ -127,7 +127,7 @@ jobs:
           merge-multiple: true
           path: ${{ runner.temp }}/skill-comparison
       - name: Validate source provenance and publish with trusted code
-        uses: github/evals-action/comparison@323678c48d0f576da8fbcaf3e4bbe8d95e439641
+        uses: github/evals-action/comparison@3c8cdb79a1e55b149950627a21e8723817d0e772
         with:
           command: report
           source-workflow: .github/workflows/skill-evals.yml
