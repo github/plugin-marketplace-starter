@@ -103,17 +103,16 @@ layout support or automatic activation of hooks, agents or MCP tools.
 ## Paid evals
 
 **These runs start real Copilot sessions and spend AI credits.**
-Complete the [Docker and scoped authentication setup](#native-docker-evals)
-before running any example. An existing host login or ambient token is not
-container authentication isolation.
+Review the [execution and scoped authentication setup](#execution-and-authentication)
+before running any example. The local backend is not a container sandbox.
 
-Docker execution readiness means every selected case finishes task execution
+Execution readiness means every selected case finishes task execution
 and grading without execution or grading errors. A completed behavioral
 **FAIL** is still a valid graded result, not an infrastructure error; preserve
 it for follow-up rather than changing skills, graders, or thresholds to force
 a pass. Commands using `--require-pass`, including the manual workflow,
 also require passing behavioral verdicts and can therefore exit unsuccessfully
-even when Docker execution and grading completed correctly.
+even when execution and grading completed correctly.
 
 Skill evals use Vally's built-in `skill-invocation` grader: `required` for every
 positive and boundary case, and `disallowed` for negative cases. Invocation
@@ -122,9 +121,8 @@ searches, path mentions, and completed answers do not count as invocation.
 Custom program graders independently check the resulting files, output, and
 side effects.
 
-Repository evals use the Docker backend selected in
-[.vally.yaml](../.vally.yaml). The appliance supplies its own executor runtime;
-do not forward a host `COPILOT_CLI_PATH` into a Linux container. The independent
+Repository evals use Vally's default local backend, with no project-level
+backend override in [.vally.yaml](../.vally.yaml). The independent
 `plugin-reviewer` eval stages its actual read-only custom agent and requires
 delegation through the runtime's task tool. It is included in both normal
 discovery and the full suite, not replaced by a companion skill.
@@ -141,48 +139,31 @@ install-check recipes remain covered by model-free tests. Running a real
 installation check still requires the user's exact cleanup confirmation and
 host permissions; a headless denial is a blocker, not permission to bypass them.
 
-### Native Docker evals
+### Execution and authentication
 
-**These are real Copilot runs and still spend AI credits.** Use Vally 0.21.0's
-native [`docker` backend](https://microsoft.github.io/vally/guides/running-evals-in-docker/)
-through the repository's `defaults.backend` configuration. It applies to all
-seven saved evals, including explicit `--eval-spec` runs, `--suite full`, and
-the manual Actions workflow. The current graders are deterministic, so the
-project also defaults grading to `grade-network: none`. Missing Docker, an
-inaccessible daemon, or failed appliance preparation is an error, not permission
-to use the local backend.
+The starter leaves the backend unset. Native Vally 0.21.0 selects `local` when
+no CLI, eval or project backend is specified. This is an intentional compatible
+default, not a Docker failure fallback. Explicit eval selections, suites and the
+standard-model experiment inherit it.
 
-The pinned Evals plugin's full-engine project reader rejects the
-`defaults.backend` field before Run can execute. Thus plugin Run is currently
-unsupported for this repository configuration, **not** an alternate Docker
-launcher or a local fallback. Its Setup writer only covers paths and suites;
-this advanced native setting is maintained in `.vally.yaml`. Upstream plugin
-support is needed before its Run entrypoint can honor this Docker default.
+This marketplace pins the GitHub Copilot Evals plugin **0.24.0**. Its
+[full-engine project reader at the pinned commit](https://github.com/github/evals/blob/34ddb5803aeaee8330ab70c19ad1a3f37fb77ded/packages/plugin/dist/mcp/server.mjs),
+and the separately checked locally installed **0.24.6** reader, accept
+`environments`, `params`, `metadata`, `paths` and `suites`, but reject the
+advanced project `defaults` key. The regression check covers this shared root-key
+shape, not an installed-version or end-to-end execution test. No plugin upgrade
+is included. Tools still require a compatible runner, authentication and run
+approval; these source/schema checks do not prove a live paid execution.
 
-After `npm ci`, make sure `docker` is on `PATH`, your account can access a
-running **Linux** Docker daemon, and `docker compose version` succeeds. The
-first uncached run needs network access and enough disk space to build Vally's
-default appliance. Vally builds it from the installed core package and caches
-it as `vally-task:<content-hash>`. Its image/core versions must match exactly;
-let Vally select/build the image after upgrades rather than reusing an older
-registry image. No repository Dockerfile or manual image rebuild is needed.
-Host npm connectivity does not prove registry connectivity inside Docker's
-build environment. Resolve build-network or certificate-trust failures before
-running; do not disable TLS verification.
+Docker, Compose, image preparation and container network settings are not
+prerequisites. The evaluator, task setup, tools and graders run on the host.
+Disposable workspaces and a narrowly scoped credential do not isolate host
+files, other processes, network access or the credential from evaluated code.
+Review all declared effects before starting a run.
 
-On restricted-registry networks, Vally 0.21.0's default builder does not inherit
-host `.npmrc` files or expose an npm-registry build override. A separately
-reviewed, version-matched custom image can be selected explicitly with
-`--backend docker --backend-args task-image=<immutable-image-id>` and the
-intended role-network arguments described below. A successful run with that
-image verifies native task/grade execution, **not** the unmodified default-image
-bootstrap. Never tag a modified recipe with Vally's canonical default cache tag.
-
-The container uses an isolated Copilot home and cannot reuse the host's
-interactive Copilot login. Vally automatically forwards the recognized model
-authentication variables (`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`)
-to the task when using `copilot-sdk`. Use only the credential you intend to
-expose. For local evals, use a dedicated
+After `npm ci`, the manual CI workflow selects the repository-pinned Copilot
+launcher using `COPILOT_CLI_PATH`. Local runs use the configured native runner.
+Use only the authentication you intend to expose. For local evals, use a dedicated
 [fine-grained token with the Copilot Requests account permission](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli#authenticating-with-environment-variables):
 choose your personal account as resource owner, **Public repositories** access,
 and only **Copilot Requests** under account permissions. The synthetic fixtures
@@ -247,11 +228,14 @@ Both examples clear all recognized tokens before selecting the dedicated token.
 Bash confines changes to a subshell; PowerShell restores the original values
 even if input or the eval fails. Do not enable shell tracing or print these
 variables. Model-free recipe checks do not prove token access or actual model
-authentication. The retained Docker validation used a separately approved broad
-`gh` credential; it is not evidence that these narrower credentials were tested.
+authentication. The [historical Docker run summary](https://github.com/github/plugin-marketplace-starter/pull/17)
+records a separately approved broad `gh` credential and retained local result
+paths, not a published raw-results artifact. Its reported outcomes are not
+independently inspectable raw evidence or validation of these narrower
+credentials or this local-default compatibility update. Removing the default
+does not modify those saved files.
 
-This uses the eval's declared model and one trial per case. The native image
-supplies its own executor runtime, distinct from the host's pinned Copilot CLI.
+This uses the eval's declared model and one trial per case.
 
 To select the two `try-plugin-locally` cases instead, replace only the
 `npm run eval` line **inside the same Bash subshell or PowerShell `try` block**
@@ -267,39 +251,6 @@ smoke` selects the smoke cases and `npm run eval -- --suite full --max-retries
 positive delegations and negative no-delegation case. Review its complete
 case/model plan and approve its additional AI-credit exposure before starting.
 
-Native precedence is CLI backend, then eval backend, then project backend.
-An explicit `--backend` replaces the project backend argument layer. When
-using an independently reviewed custom image, repeat the intended role policy,
-for example `--backend docker --backend-args task-image=<immutable-image-id>
---backend-args grade-network=none`; do not assume project arguments survive the
-explicit override. No existing eval overrides the Docker project default.
-
-Know the boundary before approving a run:
-
-- The host still runs Vally orchestration and trusted build/setup tooling.
-  Task execution and grading use separate containers and workspaces, even
-  when they share the cached image. Hidden grading files are not staged into
-  the task; grading receives captured task evidence. Graders within one trial
-  share their grade environment and must treat agent-authored files as untrusted.
-- Task and grade roles run as non-root with capabilities dropped and
-  `no-new-privileges`. Vally also uses root-running initialization/evidence
-  helpers with limited capabilities; Docker is not protection against every
-  kernel escape or a substitute for reviewing trusted code.
-- Vally's built-in role-network defaults are Docker's normal network, **not offline**.
-  The task needs network for Copilot and the shared marketplace environment's
-  pinned remote-skill fetch. `task-network=none` is only suitable for a
-  self-contained model-free probe. The project sets `grade-network=none`
-  because the current repository graders are deterministic; LLM or network-dependent
-  graders need their own reviewed networking and credentials.
-- The task can read and use its forwarded model credential and reach allowed
-  network services. Custom `task-env` and `grade-env` forwards are role-specific;
-  never forward judge secrets to the task. Review eval setup commands, network
-  effects, and credentials separately from the container boundary.
-- Vally exports task workspaces and releases trial resources. Check warnings
-  for preserved host paths or `docker-volume://` recovery locations if export
-  or cleanup fails. An interrupted host or daemon can leave resources behind;
-  do not remove other runs' containers or volumes.
-
 ### Standard model roster
 
 [The native experiment](../evals/standard-models.experiment.yaml) is the single
@@ -309,16 +260,15 @@ IDs and set `baseline.model` to one of them. Vally requires at least two variant
 for a single model, use `npm run eval -- --model <model-id>` instead.
 
 After `npm ci`, preview the selected evals, variants and configuration hashes
-without running setup, Docker or a model:
+without running setup or a model:
 
 ```sh
 npm run eval:models -- --dry-run
 ```
 
 `npm run eval:models` executes the planned variants and spends AI credits for
-each case under each model. Use the same Docker prerequisites and scoped
-authentication above; the experiment inherits the project Docker backend and
-offline grading default, without forwarding a host `COPILOT_CLI_PATH`.
+each case under each model. Use the same scoped authentication above; the
+experiment inherits the supported local-backend configuration.
 The two-model roster is not a guarantee of account access or a quality claim.
 The baseline identifies the experiment's control, not a preferred winner; the
 command does not invoke an extra comparison judge. Only the model varies,
@@ -386,8 +336,8 @@ do not.
 ### PR comparison comment
 
 All three calls use `github/evals-action/comparison` at
-`3c8cdb79a1e55b149950627a21e8723817d0e772`. The
-[pinned Action contract](https://github.com/github/evals-action/blob/3c8cdb79a1e55b149950627a21e8723817d0e772/comparison/README.md)
+`77cd381c637591a7f779657a900c810d9974246a`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/77cd381c637591a7f779657a900c810d9974246a/comparison/README.md)
 owns source-workflow/run/attempt authentication, verified merge parents,
 source switching, native verdict projection, bounded artifact intake and the
 bot-owned comment. The existing root Action's event policy is unchanged.
@@ -419,10 +369,10 @@ candidate checkout with install scripts disabled and a job-private generated
 integrity lock. Both arms share one acquired dependency graph; recorded
 CLI/lock/dependency digests are in the job summary. Unlike the previous trusted
 committed-lock bootstrap, transitive resolution can differ **across jobs**.
-Candidate manifests are not bootstrap inputs. Native backend configuration,
-including this repository's Docker defaults, is honored; container bootstrap,
-the Copilot Evals plugin's separate Run entrypoint and runtime parity retain the
-[earlier documented limits](#native-docker-evals).
+Candidate manifests are not bootstrap inputs. Native backend configuration is
+honored; this repository leaves it unset for compatible local execution.
+Host exposure, the Copilot Evals tools' configuration support and live-execution
+limits are documented under [execution and authentication](#execution-and-authentication).
 
 Repository policy stays visible in the workflow: same-repository PRs only,
 read-only selection, the protected `evals` environment, job permissions,
@@ -443,8 +393,9 @@ Paid concurrency uses authenticated PR/head/skill outputs. Same-head duplicates
 can cancel; a newer head does not immediately cancel an old in-flight arm.
 The Action rechecks current PR/head after approval and before each paid arm,
 blocking the next stale arm and stale publication, not undoing requests already
-billed. Publishers serialize by verified PR without cancellation; producing
-run/attempt order prevents older comments overwriting newer results.
+billed. Publishers serialize by verified PR without cancellation, with up to
+100 pending jobs using GitHub's `queue: max`; excess jobs can still be canceled.
+Producing run/attempt order prevents older comments overwriting newer results.
 **Partial paid retries are unsupported: use Re-run all jobs.** Publisher-only
 retries reuse the original selection producing attempt without repeating models.
 
@@ -465,5 +416,5 @@ independent attestations of candidate code. Raw trajectories, model output,
 grader evidence, exceptions and transcripts are not posted or uploaded.
 Displayed eval/model/check names must themselves be suitable for publication.
 Model-free checks do not prove live `workflow_run`, token acceptance, protected
-approval, Docker execution or billing; those need separately authorized
+approval, host execution or billing; those need separately authorized
 qualification.

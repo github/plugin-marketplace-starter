@@ -26,9 +26,12 @@ test("marketplace inventory reads local skills and exact pinned remote trees wit
       { type: "blob", path: "other/skills/unrelated/SKILL.md" },
     ] };
   };
-  assert.deepEqual(inventorySkills(root, readTree), [
-    { key: "local/draft", hasEval: true }, { key: "remote/run", hasEval: false },
-  ]);
+  for (const source of ["./plugins/local", "plugins/local"]) {
+    catalog([{ ...local, source }, remote]);
+    assert.deepEqual(inventorySkills(root, readTree), [
+      { key: "local/draft", hasEval: true }, { key: "remote/run", hasEval: false },
+    ]);
+  }
   assert.throws(() => inventorySkills(root, () => ({ truncated: true, tree: [] })), /Incomplete/);
   mkdirSync(join(root, "plugins/custom/skills/triage"), { recursive: true });
   writeFileSync(join(root, "plugins/custom/skills/triage/SKILL.md"), "synthetic customization");
@@ -43,6 +46,10 @@ test("marketplace inventory reads local skills and exact pinned remote trees wit
   assert.equal(inventorySkills(root, readTree).find((skill) => skill.key === "custom/triage").hasEval, false);
   catalog([local]);
   assert.deepEqual(inventorySkills(root, readTree), [{ key: "local/draft", hasEval: true }]);
+  for (const source of ["../plugins/local", "./plugins/local/..", "plugins/other"]) {
+    catalog([{ ...local, source }]);
+    assert.throws(() => inventorySkills(root, readTree), /self-contained local plugin path/);
+  }
   rmSync(join(root, "plugins"), { recursive: true });
   catalog([remote]);
   assert.deepEqual(inventorySkills(root, readTree), [{ key: "remote/run", hasEval: false }]);
@@ -81,7 +88,7 @@ test("selection requires approval protection and existing paired skills with rep
   file("evals/custom/skills/no-eval/eval.yaml", "removed measurement");
   file("evals/example/skills/changed/eval.yaml", "fixed measurement");
   file("marketplace.json", JSON.stringify({ plugins: [
-    { name: "example", source: "./plugins/example" }, { name: "custom", source: "./plugins/custom" },
+    { name: "example", source: "plugins/example" }, { name: "custom", source: "./plugins/custom" },
   ] }));
   file(".github/scripts/select-skill-evals.mjs", "throw new Error('Candidate selector must not run');");
   git("add", "."); git("commit", "-m", "Base fixture");

@@ -416,7 +416,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
       .filter((step) => step.uses?.startsWith("github/evals-action/"));
     assert.deepEqual(calls.map((step) => step.with.command), ["context", "run", "report"]);
     for (const step of calls) {
-      assert.equal(step.uses, "github/evals-action/comparison@3c8cdb79a1e55b149950627a21e8723817d0e772");
+      assert.equal(step.uses, "github/evals-action/comparison@77cd381c637591a7f779657a900c810d9974246a");
       assert.equal(step.with["source-workflow"], ".github/workflows/skill-evals.yml");
     }
     const context = calls[0];
@@ -442,6 +442,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     assert.equal(job.concurrency.group,
       "skill-eval-run-${{ github.repository }}-${{ fromJSON(needs.select.outputs.context).pullNumber }}-${{ fromJSON(needs.select.outputs.context).head }}-${{ matrix.id }}");
     assert.equal(job.environment, "evals");
+    assert.equal(job.env.VALLY_TELEMETRY_OPTOUT, "1");
     assert.equal(job.strategy["fail-fast"], false);
     assert.equal(job.name, "${{ matrix.key }}");
     assert.equal(job.strategy.matrix, "${{ fromJSON(needs.select.outputs.matrix) }}");
@@ -462,6 +463,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
     for (const step of Object.values(workflow.jobs)) assert.equal(step.permissions?.["pull-requests"], undefined);
     const comment = publisher.jobs.publish;
     assert.equal(comment.concurrency["cancel-in-progress"], false);
+    assert.equal(comment.concurrency.queue, "max");
     assert.equal(comment.concurrency.group,
       "skill-eval-comment-${{ github.repository }}-${{ fromJSON(needs.select.outputs.context).pullNumber }}");
     assert.deepEqual(comment.permissions, { contents: "read", actions: "read", "pull-requests": "write" });

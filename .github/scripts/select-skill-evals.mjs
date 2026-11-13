@@ -25,7 +25,9 @@ export function inventorySkills(root, readTree = pinnedTree) {
     if (!name.test(plugin.name)) throw new Error("Unsupported catalog plugin name.");
     let names;
     if (typeof plugin.source === "string") {
-      if (plugin.source !== `./plugins/${plugin.name}`) throw new Error("Expected a self-contained local plugin path.");
+      if (plugin.source !== `./plugins/${plugin.name}` && plugin.source !== `plugins/${plugin.name}`) {
+        throw new Error("Expected a self-contained local plugin path.");
+      }
       const directory = resolve(root, plugin.source, "skills");
       names = existsSync(directory) ? readdirSync(directory).filter((skill) =>
         name.test(skill) && existsSync(resolve(directory, skill, "SKILL.md"))) : [];
