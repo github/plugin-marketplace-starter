@@ -336,8 +336,8 @@ do not.
 ### PR comparison comment
 
 All three calls use `github/evals-action/comparison` at
-`77cd381c637591a7f779657a900c810d9974246a`. The
-[pinned Action contract](https://github.com/github/evals-action/blob/77cd381c637591a7f779657a900c810d9974246a/comparison/README.md)
+`6665de1bcd3800d6deb6b71e2ebe4730023e1626`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/6665de1bcd3800d6deb6b71e2ebe4730023e1626/comparison/README.md)
 owns source-workflow/run/attempt authentication, verified merge parents,
 source switching, native verdict projection, bounded artifact intake and the
 bot-owned comment. The existing root Action's event policy is unchanged.
@@ -390,13 +390,21 @@ editors could add; a workflow-token permission is not an environment secret or
 an organization-wide billing ceiling. No settings/authentication policy changes
 or `pull_request_target` are introduced.
 
+The default publisher uses the shared `github-actions[bot]` identity, not
+workflow-exclusive attestation. Another permitted PR-write workflow can forge
+that bot's comparison marker and ordering metadata and suppress genuine reports.
+This MVP retains the default token without requiring publisher-exclusive App
+credentials; that trust limitation remains accepted, not fixed.
+
 Paid concurrency uses authenticated PR/head/skill outputs. Same-head duplicates
 can cancel; a newer head does not immediately cancel an old in-flight arm.
 The Action rechecks current PR/head after approval and before each paid arm,
 blocking the next stale arm and stale publication, not undoing requests already
 billed. Publishers serialize by verified PR without cancellation, with up to
 100 pending jobs using GitHub's `queue: max`; excess jobs can still be canceled.
-Producing run/attempt order prevents older comments overwriting newer results.
+Producing run/attempt order is namespaced by the authenticated `workflowRef`
+and prevents older legitimate publications overwriting newer results; it does
+not make the shared bot identity exclusive.
 **Partial paid retries are unsupported: use Re-run all jobs.** Publisher-only
 retries reuse the original selection producing attempt without repeating models.
 The authenticated context also fixes the selected base and test-merge commit.

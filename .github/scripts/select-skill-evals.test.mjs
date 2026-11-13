@@ -117,11 +117,13 @@ test("selection requires approval protection and existing paired skills with rep
     runHead: head,
     repository: "fixture/repo", run: "2", attempt: "1", sourceRun: "1", sourceAttempt: "1",
     sourceWorkflow: ".github/workflows/skill-evals.yml",
+    workflowRef: "fixture/repo/.github/workflows/skill-eval-comment.yml@refs/heads/main",
   };
   const protection = { protection_rules: [{ type: "required_reviewers", reviewers: [{ type: "Team" }] }] };
   assert.throws(() => selectSkillEvals(root, context, {}), /required maintainer reviewers/);
   assert.throws(() => selectSkillEvals(root, { ...context, head: "f".repeat(40) }, protection), /exact parents/);
   const selection = selectSkillEvals(root, context, protection);
+  assert.equal(selection.workflowRef, context.workflowRef);
   assert.deepEqual(selection.changed,
     ["custom/no-eval", "custom/triage", "example/added", "example/changed", "example/deleted", "example/neighbor", "uncatalogued/changed"]);
   assert.deepEqual(selection.include.map((entry) => entry.key), ["custom/triage", "example/changed"]);
