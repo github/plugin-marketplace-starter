@@ -336,8 +336,8 @@ do not.
 ### PR comparison comment
 
 All three calls use `github/evals-action/comparison` at
-`6665de1bcd3800d6deb6b71e2ebe4730023e1626`. The
-[pinned Action contract](https://github.com/github/evals-action/blob/6665de1bcd3800d6deb6b71e2ebe4730023e1626/comparison/README.md)
+`99b488db49b22c312e004dda502dc261464512bb`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/99b488db49b22c312e004dda502dc261464512bb/comparison/README.md)
 owns source-workflow/run/attempt authentication, verified merge parents,
 source switching, native verdict projection, bounded artifact intake and the
 bot-owned comment. The existing root Action's event policy is unchanged.
@@ -365,7 +365,10 @@ The protected job runs native Vally **0.21.0** sequentially with the saved model
 one trial/worker and zero retries. Only the target skill switches between
 base/head sources; measurements and neighbors stay at the selected merge.
 Before failure does not prevent After, and either failed/incomplete arm keeps
-the job failed. The Action's Node 24 runtime acquires native tools outside the
+the job failed. The Action checks actual checkout bytes, types, permissions
+and symlink targets outside the selected skill before After. Initialized or
+nonempty submodules fail explicitly; empty uninitialized gitlinks are allowed.
+The Action's Node 24 runtime acquires native tools outside the
 candidate checkout with install scripts disabled and a job-private generated
 integrity lock. Both arms share one acquired dependency graph; recorded
 CLI/lock/dependency digests are in the job summary. Unlike the previous trusted
@@ -420,6 +423,8 @@ Missing checks, grading errors and incomplete coverage remain unknown rather
 than resolved failures; known failures remain visible. These single-trial
 observations do not establish causation or full-cohort/multi-model coverage.
 The Action contract documents the complete evidence and rendering rules.
+Oversized unchanged, unmeasured inventory may be summarized as counts; changed
+skill rows, recorded results and failure details are never dropped to fit.
 
 Only selection metadata and the Action's exact Before/After JSON projection
 paths are uploaded, with seven-day retention subject to repository policy.
