@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -160,4 +160,32 @@ test("selection requires approval protection and existing paired skills with rep
   assert.match(result.stdout, /No before\/after pair for uncatalogued\/changed: a catalogued skill/);
   assert.deepEqual(JSON.parse(readFileSync(selectionFile, "utf8")), selection);
   assert.match(readFileSync(outputFile, "utf8"), /\ncount=2\nattempt=1\n/);
+
+  for (const [plugin, skill] of [["bad plugin", "safe"], ["example", "bad%0Aname"]]) {
+    const invalidBase = git("rev-parse", "HEAD");
+    git("checkout", "candidate");
+    file(`plugins/${plugin}/skills/${skill}/SKILL.md`, "synthetic invalid directory");
+    git("add", "."); git("commit", "-m", "Invalid directory fixture");
+    const invalidHead = git("rev-parse", "HEAD");
+    git("checkout", "main");
+    git("merge", "--no-ff", "candidate", "-m", "Invalid directory merge fixture");
+    const invalidDirectory = mkdtempSync(join(directory, "invalid-"));
+    const invalidContext = resolve(invalidDirectory, "context.json");
+    const invalidOutputs = resolve(invalidDirectory, "outputs");
+    writeFileSync(invalidContext, JSON.stringify({
+      ...context, base: invalidBase, head: invalidHead, merge: git("rev-parse", "HEAD"),
+    }));
+    copyFileSync(environmentFile, resolve(invalidDirectory, "evals-environment.json"));
+    const rejected = spawnSync("bash", ["-c", command], {
+      cwd: root, encoding: "utf8", timeout: 10000,
+      env: { ...env, GITHUB_OUTPUT: invalidOutputs, CONTEXT_FILE: invalidContext,
+        GITHUB_WORKSPACE: directory.replaceAll("\\", "/"), RUNNER_TEMP: invalidDirectory.replaceAll("\\", "/") },
+    });
+    assert.ifError(rejected.error);
+    assert.equal(rejected.status, 1, rejected.stderr);
+    assert.match(rejected.stderr, /^Unsupported plugin or skill path in PR changes\.\s*$/);
+    assert.doesNotMatch(rejected.stdout + rejected.stderr, /::(?:warning|error|notice)::|bad plugin|bad%0Aname/);
+    assert.equal(existsSync(resolve(invalidDirectory, "selection.json")), false);
+    assert.equal(existsSync(invalidOutputs), false);
+  }
 });

@@ -336,8 +336,8 @@ do not.
 ### PR comparison comment
 
 All three calls use `github/evals-action/comparison` at
-`99b488db49b22c312e004dda502dc261464512bb`. The
-[pinned Action contract](https://github.com/github/evals-action/blob/99b488db49b22c312e004dda502dc261464512bb/comparison/README.md)
+`6011d304a88589aefe590238f80c3da4b140d43e`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/6011d304a88589aefe590238f80c3da4b140d43e/comparison/README.md)
 owns source-workflow/run/attempt authentication, verified merge parents,
 source switching, native verdict projection, bounded artifact intake and the
 bot-owned comment. The existing root Action's event policy is unchanged.
@@ -364,10 +364,13 @@ commands above.
 The protected job runs native Vally **0.21.0** sequentially with the saved model,
 one trial/worker and zero retries. Only the target skill switches between
 base/head sources; measurements and neighbors stay at the selected merge.
-Before failure does not prevent After, and either failed/incomplete arm keeps
-the job failed. The Action checks actual checkout bytes, types, permissions
-and symlink targets outside the selected skill before After. Initialized or
-nonempty submodules fail explicitly; empty uninitialized gitlinks are allowed.
+A native Before verdict failure does not suppress After; integrity and
+provenance failures still fail closed. Either failed/incomplete arm keeps
+the job failed. The Action fingerprints actual checkout bytes, types,
+permissions and symlink targets outside the selected skill before execution.
+It checks that baseline before After and after each native arm, rejecting
+drift even if native grading passed. Initialized or nonempty submodules fail
+explicitly; empty uninitialized gitlinks are allowed.
 The Action's Node 24 runtime acquires native tools outside the
 candidate checkout with install scripts disabled and a job-private generated
 integrity lock. Both arms share one acquired dependency graph; recorded
