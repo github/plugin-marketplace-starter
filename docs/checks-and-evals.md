@@ -337,8 +337,8 @@ do not.
 ### PR comparison comment
 
 All three calls use `github/evals-action/comparison` at
-`e926c2c79744c502fc30867264b546e83684e99c`. The
-[pinned Action contract](https://github.com/github/evals-action/blob/e926c2c79744c502fc30867264b546e83684e99c/comparison/README.md)
+`339bc231110c53b47017c8301b351dc438a1c2c7`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/339bc231110c53b47017c8301b351dc438a1c2c7/comparison/README.md)
 owns source-workflow/run/attempt authentication, verified merge parents,
 source switching, native verdict projection, bounded artifact intake and the
 bot-owned comment. The existing root Action's event policy is unchanged.
@@ -381,6 +381,8 @@ drift even if native grading passed. Regular-file symlinks include resolved
 bytes and permissions; directory/special-file symlink targets fail explicitly.
 Initialized or nonempty submodules fail explicitly; empty uninitialized
 gitlinks are allowed.
+Active custom Git filters on tracked files fail explicitly before source
+restoration; normal text/EOL normalization remains supported.
 The Action's Node 24 runtime acquires native tools outside the
 candidate checkout with install scripts disabled and a job-private generated
 integrity lock. Both arms share one acquired dependency graph; recorded

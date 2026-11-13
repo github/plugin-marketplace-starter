@@ -416,7 +416,7 @@ test("validation stays model-free and the smoke workflow remains manual-only", (
       .filter((step) => step.uses?.startsWith("github/evals-action/"));
     assert.deepEqual(calls.map((step) => step.with.command), ["context", "run", "report"]);
     for (const step of calls) {
-      assert.equal(step.uses, "github/evals-action/comparison@e926c2c79744c502fc30867264b546e83684e99c");
+      assert.equal(step.uses, "github/evals-action/comparison@339bc231110c53b47017c8301b351dc438a1c2c7");
       assert.equal(step.with["source-workflow"], ".github/workflows/skill-evals.yml");
     }
     const context = calls[0];
