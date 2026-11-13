@@ -70,6 +70,8 @@ export function selectSkillEvals(root, context, environment, readTree = pinnedTr
     const match = /^plugins\/([^/]+)\/skills\/([^/]+)\//.exec(file);
     return match ? [`${match[1]}/${match[2]}`] : [];
   }))].sort();
+  const skills = inventorySkills(root, readTree);
+  const catalogued = new Set(skills.map((skill) => skill.key));
   const include = [];
   for (const key of keys) {
     if (key.split("/").length !== 2 || !key.split("/").every((part) => name.test(part))) {
@@ -84,12 +86,12 @@ export function selectSkillEvals(root, context, environment, readTree = pinnedTr
       if (result.status !== 0 && result.status !== 128) throw new Error("Could not inspect the skill source tree.");
       return result.status === 0;
     };
-    if (present(context.base) && present(context.head) && existsSync(resolve(root, evalPath))) {
+    if (catalogued.has(key) && present(context.base) && present(context.head) && existsSync(resolve(root, evalPath))) {
       include.push({ key, id: `skill-${createHash("sha256").update(key).digest("hex").slice(0, 12)}`,
         directory, evalPath, base: context.base, head: context.head });
     }
   }
-  return { ...context, include, changed: keys, skills: inventorySkills(root, readTree) };
+  return { ...context, include, changed: keys, skills };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
@@ -98,7 +100,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     if (!contextFile || !environmentFile || !outputFile) throw new Error("Expected context, environment and selection file paths.");
     const selection = selectSkillEvals(process.cwd(), json(contextFile), json(environmentFile));
     for (const key of selection.changed.filter((key) => !selection.include.some((entry) => entry.key === key))) {
-      console.log(`::warning::No before/after pair for ${key}: both skill versions and its repo eval are required. No eval was run.`);
+      console.log(`::warning::No before/after pair for ${key}: a catalogued skill, both source versions and its repo eval are required. No eval was run.`);
     }
     writeFileSync(outputFile, `${JSON.stringify(selection)}\n`);
     appendFileSync(process.env.GITHUB_OUTPUT,

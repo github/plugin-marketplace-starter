@@ -351,9 +351,10 @@ trusted selector must reach the default branch before automatic activation.
 The [repository selector](../.github/scripts/select-skill-evals.mjs) verifies the
 merge checkout, required environment reviewers and changed skill paths without
 executing candidate scripts. Before uses the current merge's first parent, not
-possibly stale PR base metadata. Eligible pairs require both skill versions and
-`evals/<plugin>/skills/<skill>/eval.yaml`. New, deleted and unpaired skills are
-explicitly not run. Local skill folders and exact pinned remote GitHub trees
+possibly stale PR base metadata. Eligible pairs require a skill in the catalog
+inventory, both source versions and `evals/<plugin>/skills/<skill>/eval.yaml`.
+Uncatalogued, new, deleted and unpaired skills are explicitly not run.
+Local skill folders and exact pinned remote GitHub trees
 supply the display inventory without installing plugins. Loading neighboring
 skill context does not evaluate those skills or enable full plugin hooks/MCP.
 Skills, evals, fixtures, graders, catalog, models and native configuration remain
@@ -398,6 +399,11 @@ billed. Publishers serialize by verified PR without cancellation, with up to
 Producing run/attempt order prevents older comments overwriting newer results.
 **Partial paid retries are unsupported: use Re-run all jobs.** Publisher-only
 retries reuse the original selection producing attempt without repeating models.
+The authenticated context also fixes the selected base and test-merge commit.
+A base-branch update that refreshes that merge can block the next arm or
+publication even when the PR head is unchanged. Recovery requires **Re-run all
+jobs**, renewed approval of the refreshed selection and repeating both paid
+arms; a publisher-only retry cannot repair that changed context.
 
 The approved comment retains per-changed-skill case/model tables showing
 Before → After **passing/total graders**, visible After failures, collapsed

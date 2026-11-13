@@ -85,6 +85,8 @@ test("selection requires approval protection and existing paired skills with rep
   file("plugins/example/skills/deleted/SKILL.md", "deleted");
   file("plugins/custom/skills/triage/SKILL.md", "base custom skill");
   file("plugins/custom/skills/no-eval/SKILL.md", "base skill with eval");
+  file("plugins/uncatalogued/skills/changed/SKILL.md", "base uncatalogued skill");
+  file("evals/uncatalogued/skills/changed/eval.yaml", "unselected measurement");
   file("evals/custom/skills/no-eval/eval.yaml", "removed measurement");
   file("evals/example/skills/changed/eval.yaml", "fixed measurement");
   file("marketplace.json", JSON.stringify({ plugins: [
@@ -100,6 +102,7 @@ test("selection requires approval protection and existing paired skills with rep
   file("plugins/custom/skills/triage/SKILL.md", "head custom skill");
   file("evals/custom/skills/triage/eval.yaml", "new custom measurement");
   file("plugins/custom/skills/no-eval/SKILL.md", "head skill without eval");
+  file("plugins/uncatalogued/skills/changed/SKILL.md", "head uncatalogued skill");
   rmSync(resolve(root, "evals/custom/skills/no-eval/eval.yaml"));
   rmSync(resolve(root, "plugins/example/skills/deleted"), { recursive: true });
   git("add", "."); git("commit", "-m", "Candidate fixture");
@@ -120,8 +123,9 @@ test("selection requires approval protection and existing paired skills with rep
   assert.throws(() => selectSkillEvals(root, { ...context, head: "f".repeat(40) }, protection), /exact parents/);
   const selection = selectSkillEvals(root, context, protection);
   assert.deepEqual(selection.changed,
-    ["custom/no-eval", "custom/triage", "example/added", "example/changed", "example/deleted", "example/neighbor"]);
+    ["custom/no-eval", "custom/triage", "example/added", "example/changed", "example/deleted", "example/neighbor", "uncatalogued/changed"]);
   assert.deepEqual(selection.include.map((entry) => entry.key), ["custom/triage", "example/changed"]);
+  assert.ok(selection.include.every((entry) => selection.skills.some((skill) => skill.key === entry.key)));
   const selected = selection.include.find((entry) => entry.key === "example/changed");
   assert.deepEqual(selected, {
     key: "example/changed", id: selected.id, directory: target,
@@ -151,6 +155,7 @@ test("selection requires approval protection and existing paired skills with rep
   assert.match(result.stdout, /No before\/after pair for example\/deleted/);
   assert.match(result.stdout, /No before\/after pair for example\/neighbor/);
   assert.match(result.stdout, /No before\/after pair for custom\/no-eval/);
+  assert.match(result.stdout, /No before\/after pair for uncatalogued\/changed: a catalogued skill/);
   assert.deepEqual(JSON.parse(readFileSync(selectionFile, "utf8")), selection);
   assert.match(readFileSync(outputFile, "utf8"), /\ncount=2\nattempt=1\n/);
 });
