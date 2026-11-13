@@ -209,10 +209,12 @@ Both examples clear all recognized tokens before selecting the dedicated token.
 Bash confines changes to a subshell; PowerShell restores the original values
 even if input or the eval fails. Do not enable shell tracing or print these
 variables. Model-free recipe checks do not prove token access or actual model
-authentication. Earlier Docker validation used a separately approved broad
-`gh` credential; it is historical evidence, not validation of these narrower
-credentials or this local-default compatibility update. Its saved results are
-not changed by removing the default.
+authentication. The [historical Docker run summary](https://github.com/github/plugin-marketplace-starter/pull/17)
+records a separately approved broad `gh` credential and retained local result
+paths, not a published raw-results artifact. Its reported outcomes are not
+independently inspectable raw evidence or validation of these narrower
+credentials or this local-default compatibility update. Removing the default
+does not modify those saved files.
 
 This uses the eval's declared model and one trial per case.
 
