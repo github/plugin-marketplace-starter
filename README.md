@@ -44,7 +44,6 @@ For marketplace development and evals, use this shared setup.
 - **GitHub Copilot CLI 1.0.85+**.
 - **Vally ([`@microsoft/vally-cli`](https://www.npmjs.com/package/@microsoft/vally-cli)) 0.21.0**, pinned in `package.json`.
 - **Git 2.28.0+**.
-- For paid repository evals, **Docker with Compose and a running Linux daemon**.
 
 ## Make it yours
 
