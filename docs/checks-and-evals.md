@@ -337,8 +337,8 @@ do not.
 ### PR comparison comment
 
 All three calls use `github/evals-action/comparison` at
-`54467485835d2c4c79893906e836f94ce80d7507`. The
-[pinned Action contract](https://github.com/github/evals-action/blob/54467485835d2c4c79893906e836f94ce80d7507/comparison/README.md)
+`2a30ab7c4c5e057baab6ac6dc4c496e502a9d947`. The
+[pinned Action contract](https://github.com/github/evals-action/blob/2a30ab7c4c5e057baab6ac6dc4c496e502a9d947/comparison/README.md)
 owns source-workflow/run/attempt authentication, verified merge parents,
 source switching, native verdict projection, bounded artifact intake and the
 bot-owned comment. The existing root Action's event policy is unchanged.
@@ -356,7 +356,9 @@ possibly stale PR base metadata. Eligible pairs require a skill in the catalog
 inventory, both source versions and `evals/<plugin>/skills/<skill>/eval.yaml`.
 Uncatalogued, new, deleted and unpaired skills are explicitly not run.
 Local skill folders and exact pinned remote GitHub trees
-supply the display inventory without installing plugins. Loading neighboring
+supply the display inventory without installing plugins. Each entry's name and
+pinned-source fields are validated before its tree read; incomplete remote
+trees fail rather than producing partial inventory. Loading neighboring
 skill context does not evaluate those skills or enable full plugin hooks/MCP.
 Skills, evals, fixtures, graders, catalog, models and native configuration remain
 repository-owned. Local results use Vally's native dashboard and comparison

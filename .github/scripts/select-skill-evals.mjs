@@ -5,8 +5,9 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { githubApi } from "./check-remote-pins.mjs";
 
-const name = /^[a-z0-9][a-z0-9._-]*$/;
-const sha = /^[a-f0-9]{40}$/;
+// Unlike $, the end assertion also rejects a final line break.
+const name = /^[a-z0-9][a-z0-9._-]*(?![\s\S])/;
+const sha = /^[a-f0-9]{40}(?![\s\S])/;
 const parse = (contents) => {
   try { return JSON.parse(contents); } catch { throw new Error("Invalid skill selection JSON."); }
 };
@@ -22,7 +23,7 @@ function pinnedTree(repo, commit) {
 export function inventorySkills(root, readTree = pinnedTree) {
   const skills = [];
   for (const plugin of json(resolve(root, "marketplace.json")).plugins) {
-    if (!name.test(plugin.name)) throw new Error("Unsupported catalog plugin name.");
+    if (typeof plugin.name !== "string" || !name.test(plugin.name)) throw new Error("Unsupported catalog plugin name.");
     let names;
     if (typeof plugin.source === "string") {
       if (plugin.source !== `./plugins/${plugin.name}` && plugin.source !== `plugins/${plugin.name}`) {
@@ -33,11 +34,14 @@ export function inventorySkills(root, readTree = pinnedTree) {
         name.test(skill) && existsSync(resolve(directory, skill, "SKILL.md"))) : [];
     } else {
       const source = plugin.source;
-      if (source?.source !== "github" || !/^[\w.-]+\/[\w.-]+$/.test(source.repo) || !sha.test(source.sha)) {
+      if (source?.source !== "github" || typeof source.repo !== "string" || !/^[\w.-]+\/[\w.-]+(?![\s\S])/.test(source.repo) ||
+          typeof source.sha !== "string" || !sha.test(source.sha)) {
         throw new Error("Remote skill inventory requires a pinned GitHub source.");
       }
+      if (source.path !== undefined && (typeof source.path !== "string" || source.path.split("/").includes(".."))) {
+        throw new Error("Unsupported remote plugin path.");
+      }
       const prefix = source.path ? `${source.path}/` : "";
-      if (prefix.split("/").includes("..")) throw new Error("Unsupported remote plugin path.");
       const tree = readTree(source.repo, source.sha);
       if (tree.truncated || !Array.isArray(tree.tree)) throw new Error("Incomplete pinned remote skill inventory.");
       names = tree.tree.flatMap((entry) => {

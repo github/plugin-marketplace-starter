@@ -32,7 +32,9 @@ test("marketplace inventory reads local skills and exact pinned remote trees wit
       { key: "local/draft", hasEval: true }, { key: "remote/run", hasEval: false },
     ]);
   }
-  assert.throws(() => inventorySkills(root, () => ({ truncated: true, tree: [] })), /Incomplete/);
+  for (const tree of [{ truncated: true, tree: [] }, { truncated: false, tree: null }]) {
+    assert.throws(() => inventorySkills(root, () => tree), /Incomplete pinned remote skill inventory/);
+  }
   mkdirSync(join(root, "plugins/custom/skills/triage"), { recursive: true });
   writeFileSync(join(root, "plugins/custom/skills/triage/SKILL.md"), "synthetic customization");
   catalog([local, { name: "custom", source: "./plugins/custom" }, remote]);
@@ -53,6 +55,38 @@ test("marketplace inventory reads local skills and exact pinned remote trees wit
   rmSync(join(root, "plugins"), { recursive: true });
   catalog([remote]);
   assert.deepEqual(inventorySkills(root, readTree), [{ key: "remote/run", hasEval: false }]);
+});
+
+test("inventory rejects malformed catalog fields before fetching authenticated remote trees", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "skill-inventory-rejection-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const source = { source: "github", repo: "example/plugin", sha: "c".repeat(40), path: "package" };
+  const remote = { name: "remote", source };
+  const nameError = "Unsupported catalog plugin name.";
+  const pinError = "Remote skill inventory requires a pinned GitHub source.";
+  const pathError = "Unsupported remote plugin path.";
+  for (const [plugin, message] of [
+    [{ ...remote, name: "bad/plugin" }, nameError],
+    [{ ...remote, name: null }, nameError],
+    [{ ...remote, name: "remote\n" }, nameError],
+    [{ ...remote, source: { ...source, source: "git" } }, pinError],
+    [{ ...remote, source: { ...source, repo: "example/plugin/extra" } }, pinError],
+    [{ ...remote, source: { ...source, repo: [source.repo] } }, pinError],
+    [{ ...remote, source: { ...source, repo: `${source.repo}\n` } }, pinError],
+    [{ ...remote, source: { ...source, sha: "main" } }, pinError],
+    [{ ...remote, source: { ...source, sha: [source.sha] } }, pinError],
+    [{ ...remote, source: { ...source, sha: `${source.sha}\n` } }, pinError],
+    [{ ...remote, source: { ...source, path: "../package" } }, pathError],
+    [{ ...remote, source: { ...source, path: [source.path] } }, pathError],
+  ]) {
+    writeFileSync(join(root, "marketplace.json"), JSON.stringify({ plugins: [plugin] }));
+    let lookups = 0;
+    assert.throws(() => inventorySkills(root, () => {
+      lookups++;
+      return { truncated: false, tree: [] };
+    }), { message }, JSON.stringify(plugin));
+    assert.equal(lookups, 0, "Invalid catalog data must not reach the authenticated tree reader");
+  }
 });
 
 test("selection requires approval protection and existing paired skills with repo evals at the verified merge", (t) => {
