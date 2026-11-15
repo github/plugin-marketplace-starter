@@ -30,29 +30,19 @@ environments:
         const catalog = JSON.parse(fs.readFileSync('.vally-eval-pin.json', 'utf8'));
         const entry = (catalog.plugins || []).find((p) => p && p.name === 'eval');
         const src = entry && entry.source;
-        const repoParts = src && typeof src.repo === 'string' ? src.repo.split('/') : [];
-        const validPart = (s) => s.length > 0 && s !== '.' && s !== '..'
-        && s.startsWith('-') === false && /[^A-Za-z0-9_.-]/.test(s) === false;
         const ok = Boolean(src) && src.source === 'github'
-        && repoParts.length === 2 && repoParts.every(validPart)
-        && typeof src.ref === 'string' && src.ref.length > 0
-        && src.ref.startsWith('-') === false && src.ref.includes('..') === false
-        && /[^A-Za-z0-9_./-]/.test(src.ref) === false
+        && src.repo === 'github/evals' && src.path === 'packages/plugin'
+        && typeof src.ref === 'string' && src.ref.startsWith('copilot-evals-v')
+        && src.ref.includes('..') === false && /[^A-Za-z0-9_.-]/.test(src.ref) === false
         && typeof src.sha === 'string' && src.sha.length === 40
         && /[^0-9a-f]/.test(src.sha) === false;
         if (ok === false) throw new Error('Invalid eval remote pin in marketplace.json');
-        const rawPath = typeof src.path === 'string' && src.path ? src.path : 'packages/plugin';
-        const pathParts = rawPath.split('/').filter(Boolean).concat('skills');
-        if (pathParts.every(validPart) === false) {
-        throw new Error('Invalid eval skills path in marketplace.json');
-        }
-        const sub = pathParts.join('/');
+        const sub = 'packages/plugin/skills';
         fs.rmSync('.vally-eval-source', { recursive: true, force: true });
         const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
-        const repoUrl = 'https://github.com/' + src.repo + '.git';
         execFileSync('git', ['clone', '--filter=blob:none', '--no-checkout', '--depth', '1',
-        '--branch', src.ref, '--sparse', repoUrl, '.vally-eval-source'],
-        { stdio: 'inherit', env: gitEnv });
+        '--branch', src.ref, '--sparse', 'https://github.com/github/evals.git',
+        '.vally-eval-source'], { stdio: 'inherit', env: gitEnv });
         execFileSync('git', ['-C', '.vally-eval-source', 'sparse-checkout', 'set', sub],
         { stdio: 'inherit', env: gitEnv });
         execFileSync('git', ['-C', '.vally-eval-source', 'checkout', '--detach', src.sha],
