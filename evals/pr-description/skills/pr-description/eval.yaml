@@ -16,12 +16,12 @@ grading_environment:
 stimuli:
   - name: pr-description-drafts-structured-pr-body
     prompt: >-
-      Draft a pull request description in chat for this change summary:
+      Use the pr-description skill to draft a pull request description in chat for this change summary:
       - Added positive integer validation for `--timeout` in `src/cli.mjs` so invalid values exit with code 2.
       - Added unit tests covering `--timeout 0` and `--timeout -5` in `test/cli.test.mjs`.
       - Verification run: `npm test` passed (14 tests).
       - Backlog note: exponential retry backoff (#42) is still open and was not part of this branch.
-      Don't inspect or edit files, run commands, or open a PR.
+      After loading the skill, reply in chat only; don't edit workspace files, run shell commands, or open a PR.
     tags:
       assets: skill:pr-description/pr-description
       control: positive
@@ -41,7 +41,7 @@ stimuli:
     prompt: >-
       Why does `slice(0, size - 1)` drop the final item on a page, and how should I
       report that off-by-one defect? Answer briefly in chat only; don't draft a pull
-      request description or edit files.
+      request description, search or inspect files, or edit the workspace.
     tags:
       assets: skill:pr-description/pr-description
       control: negative

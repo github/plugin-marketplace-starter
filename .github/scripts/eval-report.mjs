@@ -21,7 +21,28 @@ const sanitizeGraderId = (detail) => sanitizeIdentifier(
 );
 
 export function extractTrialMetrics(record) {
-  const durationMs = finiteNonNegative(record?.durationMs) ?? finiteNonNegative(record?.trajectory?.metrics?.wallTimeMs);
+  const wallTimeMs = finiteNonNegative(record?.trajectory?.metrics?.wallTimeMs);
+  const durationMs = finiteNonNegative(record?.durationMs) ?? wallTimeMs;
+  const turns = finiteNonNegative(record?.trajectory?.metrics?.turnCount);
+  const rawModel = typeof record?.model === "string" && record.model.trim()
+    ? record.model.trim()
+    : typeof record?.trajectory?.metadata?.model === "string" && record.trajectory.metadata.model.trim()
+      ? record.trajectory.metadata.model.trim()
+      : undefined;
+  const skillsSet = new Set();
+  const rawBreakdown = record?.trajectory?.metrics?.skillActivationBreakdown;
+  if (rawBreakdown && typeof rawBreakdown === "object" && !Array.isArray(rawBreakdown)) {
+    for (const [name, count] of Object.entries(rawBreakdown)) {
+      if (typeof count === "number" && count > 0 && name.trim()) {
+        skillsSet.add(name.trim());
+      }
+    }
+  }
+  for (const event of (record?.trajectory?.events ?? [])) {
+    if (event?.type === "skill_activation" && typeof event?.data?.name === "string" && event.data.name.trim()) {
+      skillsSet.add(event.data.name.trim());
+    }
+  }
   const rawUsage = record?.trajectory?.metrics?.tokenUsage;
   let tokenUsage;
   if (rawUsage && typeof rawUsage === "object" && !Array.isArray(rawUsage)) {
@@ -37,7 +58,14 @@ export function extractTrialMetrics(record) {
       };
     }
   }
-  return { durationMs, tokenUsage };
+  return {
+    durationMs,
+    wallTimeMs,
+    turns,
+    ...(rawModel !== undefined ? { model: rawModel } : {}),
+    skillsInvoked: [...skillsSet],
+    tokenUsage,
+  };
 }
 
 export function formatTokens(tokenUsage) {
@@ -70,6 +98,7 @@ export function summarizeRun(records) {
   }
 
   const caseGroups = new Map();
+  const runModels = new Set();
   const errors = [];
   let passedCount = 0;
   let failedCount = 0;
@@ -78,6 +107,10 @@ export function summarizeRun(records) {
   let scoreSum = 0;
   let totalDurationMs = 0;
   let allTrialsHaveDuration = true;
+  let totalWallTimeMs = 0;
+  let allTrialsHaveWallTime = true;
+  let totalTurns = 0;
+  let allTrialsHaveTurns = true;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalTokens = 0;
@@ -127,11 +160,24 @@ export function summarizeRun(records) {
       scoreSum += grade.score;
     }
 
-    const { durationMs, tokenUsage } = extractTrialMetrics(record);
+    const { durationMs, wallTimeMs, turns, model, skillsInvoked, tokenUsage } = extractTrialMetrics(record);
+    if (model !== undefined) {
+      runModels.add(model);
+    }
     if (durationMs !== undefined) {
       totalDurationMs += durationMs;
     } else {
       allTrialsHaveDuration = false;
+    }
+    if (wallTimeMs !== undefined) {
+      totalWallTimeMs += wallTimeMs;
+    } else {
+      allTrialsHaveWallTime = false;
+    }
+    if (turns !== undefined) {
+      totalTurns += turns;
+    } else {
+      allTrialsHaveTurns = false;
     }
     if (tokenUsage !== undefined) {
       totalTokens += tokenUsage.totalTokens;
@@ -160,6 +206,12 @@ export function summarizeRun(records) {
         scoreSum: 0,
         allHaveDuration: true,
         durationSum: 0,
+        allHaveWallTime: true,
+        wallTimeSum: 0,
+        allHaveTurns: true,
+        turnsSum: 0,
+        models: new Set(),
+        skillsInvoked: new Set(),
         allHaveTokens: true,
         allHaveInOutTokens: true,
         totalTokensSum: 0,
@@ -171,6 +223,12 @@ export function summarizeRun(records) {
     }
 
     group.trials++;
+    if (model !== undefined) {
+      group.models.add(model);
+    }
+    for (const skillName of skillsInvoked) {
+      group.skillsInvoked.add(skillName);
+    }
     if (fatal) {
       group.hasFatal = true;
       group.allPassed = false;
@@ -188,6 +246,18 @@ export function summarizeRun(records) {
       group.durationSum += durationMs;
     } else {
       group.allHaveDuration = false;
+    }
+
+    if (wallTimeMs !== undefined) {
+      group.wallTimeSum += wallTimeMs;
+    } else {
+      group.allHaveWallTime = false;
+    }
+
+    if (turns !== undefined) {
+      group.turnsSum += turns;
+    } else {
+      group.allHaveTurns = false;
     }
 
     if (tokenUsage !== undefined) {
@@ -224,6 +294,10 @@ export function summarizeRun(records) {
       passed,
       score: !group.hasFatal && group.allScored ? group.scoreSum / group.trials : undefined,
       durationMs: group.allHaveDuration ? group.durationSum : undefined,
+      wallTimeMs: group.allHaveWallTime ? group.wallTimeSum : undefined,
+      turns: group.allHaveTurns ? group.turnsSum : undefined,
+      models: [...group.models],
+      skillsInvoked: [...group.skillsInvoked],
       tokenUsage: group.allHaveTokens
         ? {
             totalTokens: group.totalTokensSum,
@@ -238,6 +312,7 @@ export function summarizeRun(records) {
 
   return {
     runId: records[0].runId,
+    models: [...runModels],
     rows,
     errors,
     passedCount,
@@ -245,6 +320,8 @@ export function summarizeRun(records) {
     errorCount,
     averageScore: scoredCount > 0 ? scoreSum / scoredCount : undefined,
     totalDurationMs: allTrialsHaveDuration ? totalDurationMs : undefined,
+    totalWallTimeMs: allTrialsHaveWallTime ? totalWallTimeMs : undefined,
+    totalTurns: allTrialsHaveTurns ? totalTurns : undefined,
     tokenUsage: allTrialsHaveTokens
       ? {
           totalTokens,
@@ -274,9 +351,15 @@ export function classifyTransition(baselineRow, candidateRow) {
   if (baselineRow.status === candidateRow.status && (baselineRow.trials ?? 1) === (candidateRow.trials ?? 1)) {
     const baseTokens = baselineRow.tokenUsage?.totalTokens;
     const candTokens = candidateRow.tokenUsage?.totalTokens;
+    const baseOutputTokens = baselineRow.tokenUsage?.outputTokens;
+    const candOutputTokens = candidateRow.tokenUsage?.outputTokens;
     if (typeof baseTokens === "number" && typeof candTokens === "number") {
       if (candTokens < baseTokens) return "Reduced tokens at parity";
       if (candTokens > baseTokens) return "Increased tokens at parity";
+      if (typeof baseOutputTokens === "number" && typeof candOutputTokens === "number") {
+        if (candOutputTokens < baseOutputTokens) return "Reduced tokens at parity";
+        if (candOutputTokens > baseOutputTokens) return "Increased tokens at parity";
+      }
     }
   }
   return "Unchanged";
@@ -296,6 +379,9 @@ export function compareSummaries(baseline, candidate) {
     const scoreDelta = typeof baseRow?.score === "number" && typeof candRow?.score === "number"
       ? candRow.score - baseRow.score
       : undefined;
+    const turnsDelta = sameTrialCount && typeof baseRow?.turns === "number" && typeof candRow?.turns === "number"
+      ? candRow.turns - baseRow.turns
+      : undefined;
     const baseTokens = baseRow?.tokenUsage?.totalTokens;
     const candTokens = candRow?.tokenUsage?.totalTokens;
     const tokenDelta = sameTrialCount && typeof baseTokens === "number" && typeof candTokens === "number"
@@ -304,8 +390,22 @@ export function compareSummaries(baseline, candidate) {
     const tokenDeltaPct = tokenDelta !== undefined && baseTokens > 0
       ? (tokenDelta / baseTokens) * 100
       : undefined;
+    const baseOutputTokens = baseRow?.tokenUsage?.outputTokens;
+    const candOutputTokens = candRow?.tokenUsage?.outputTokens;
+    const outputTokenDelta = sameTrialCount && typeof baseOutputTokens === "number" && typeof candOutputTokens === "number"
+      ? candOutputTokens - baseOutputTokens
+      : undefined;
+    const outputTokenDeltaPct = outputTokenDelta !== undefined && baseOutputTokens > 0
+      ? (outputTokenDelta / baseOutputTokens) * 100
+      : undefined;
     const durationDeltaMs = sameTrialCount && typeof baseRow?.durationMs === "number" && typeof candRow?.durationMs === "number"
       ? candRow.durationMs - baseRow.durationMs
+      : undefined;
+    const wallTimeDeltaMs = sameTrialCount && typeof baseRow?.wallTimeMs === "number" && typeof candRow?.wallTimeMs === "number"
+      ? candRow.wallTimeMs - baseRow.wallTimeMs
+      : undefined;
+    const wallTimeDeltaPct = wallTimeDeltaMs !== undefined && baseRow.wallTimeMs > 0
+      ? (wallTimeDeltaMs / baseRow.wallTimeMs) * 100
       : undefined;
 
     return {
@@ -313,9 +413,14 @@ export function compareSummaries(baseline, candidate) {
       baseline: baseRow,
       candidate: candRow,
       scoreDelta,
+      turnsDelta,
       tokenDelta,
       tokenDeltaPct,
+      outputTokenDelta,
+      outputTokenDeltaPct,
       durationDeltaMs,
+      wallTimeDeltaMs,
+      wallTimeDeltaPct,
       transition: classifyTransition(baseRow, candRow),
     };
   });
@@ -331,6 +436,14 @@ export function compareSummaries(baseline, candidate) {
   const totalTokenDeltaPct = totalTokenDelta !== undefined && baseTotalTokens > 0
     ? (totalTokenDelta / baseTotalTokens) * 100
     : undefined;
+  const baseOutputTokens = baseline.tokenUsage?.outputTokens;
+  const candOutputTokens = candidate.tokenUsage?.outputTokens;
+  const outputTokenDelta = workloadsMatch && typeof baseOutputTokens === "number" && typeof candOutputTokens === "number"
+    ? candOutputTokens - baseOutputTokens
+    : undefined;
+  const outputTokenDeltaPct = outputTokenDelta !== undefined && baseOutputTokens > 0
+    ? (outputTokenDelta / baseOutputTokens) * 100
+    : undefined;
 
   return {
     baseline,
@@ -342,8 +455,16 @@ export function compareSummaries(baseline, candidate) {
       averageScore: typeof baseline.averageScore === "number" && typeof candidate.averageScore === "number"
         ? candidate.averageScore - baseline.averageScore
         : undefined,
+      totalTurns: workloadsMatch && typeof baseline.totalTurns === "number" && typeof candidate.totalTurns === "number"
+        ? candidate.totalTurns - baseline.totalTurns
+        : undefined,
       totalTokens: totalTokenDelta,
       totalTokensPct: totalTokenDeltaPct,
+      outputTokens: outputTokenDelta,
+      outputTokensPct: outputTokenDeltaPct,
+      totalWallTimeMs: workloadsMatch && typeof baseline.totalWallTimeMs === "number" && typeof candidate.totalWallTimeMs === "number"
+        ? candidate.totalWallTimeMs - baseline.totalWallTimeMs
+        : undefined,
       totalDurationMs: workloadsMatch && typeof baseline.totalDurationMs === "number" && typeof candidate.totalDurationMs === "number"
         ? candidate.totalDurationMs - baseline.totalDurationMs
         : undefined,
@@ -374,27 +495,37 @@ function formatTokenDelta(delta, pct) {
   return `${sign}${delta.toLocaleString("en-US")}${pctText}`;
 }
 
-function formatDurationDelta(deltaMs) {
+function formatDurationDelta(deltaMs, pct) {
   if (typeof deltaMs !== "number" || !Number.isFinite(deltaMs)) return "—";
   if (deltaMs === 0) return "0.0s";
   const sign = deltaMs > 0 ? "+" : "-";
-  return `${sign}${formatDuration(Math.abs(deltaMs))}`;
+  const pctText = typeof pct === "number" && Number.isFinite(pct)
+    ? ` (${pct > 0 ? "+" : ""}${pct.toFixed(1)}%)`
+    : "";
+  return `${sign}${formatDuration(Math.abs(deltaMs))}${pctText}`;
 }
 
 export function renderReport(summary, path, { baselineSummary, baselinePath } = {}) {
+  const modelHeader = summary.models?.length
+    ? ` | Model: \`${escapeCell(summary.models.join(", "))}\``
+    : "";
   const lines = [
     "## Behavioral eval report",
     "",
-    `Saved run: \`${escapeCell(path)}\``,
+    `Saved run: \`${escapeCell(path)}\`${modelHeader}`,
     "",
-    "| Passed | Failed | Avg Score | Total Tokens | Total Duration |",
-    "| --- | --- | --- | --- | --- |",
-    `| ${summary.passedCount} | ${summary.failedCount + summary.errorCount} | ${formatScore(summary.averageScore)} | ${formatTokens(summary.tokenUsage)} | ${formatDuration(summary.totalDurationMs)} |`,
+    "| Passed | Failed | Avg Score | Total Turns | Total Tokens | Agent Wall Time | Total Duration |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    `| ${summary.passedCount} | ${summary.failedCount + summary.errorCount} | ${formatScore(summary.averageScore)} | ${summary.totalTurns ?? "—"} | ${formatTokens(summary.tokenUsage)} | ${formatDuration(summary.totalWallTimeMs)} | ${formatDuration(summary.totalDurationMs)} |`,
     "",
-    "| Case | Verdict | Score | Tokens | Duration |",
-    "| --- | --- | --- | --- | --- |",
-    ...summary.rows.map((row) =>
-      `| ${escapeCell(row.name)} | ${row.status} | ${formatScore(row.score)} | ${formatTokens(row.tokenUsage)} | ${formatDuration(row.durationMs)} |`),
+    "| Case | Verdict | Score | Skills Invoked | Turns | Tokens | Agent Wall Time | Duration |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...summary.rows.map((row) => {
+      const skillsText = row.skillsInvoked?.length
+        ? row.skillsInvoked.map((skill) => escapeCell(skill)).join(", ")
+        : "none";
+      return `| ${escapeCell(row.name)} | ${row.status} | ${formatScore(row.score)} | ${skillsText} | ${row.turns ?? "—"} | ${formatTokens(row.tokenUsage)} | ${formatDuration(row.wallTimeMs)} | ${formatDuration(row.durationMs)} |`;
+    }),
     "",
   ];
 
@@ -416,15 +547,20 @@ export function renderReport(summary, path, { baselineSummary, baselinePath } = 
       `| Passed | ${baselineSummary.passedCount} | ${summary.passedCount} | ${formatSignedInt(comparison.deltas.passed)} |`,
       `| Failed | ${baselineSummary.failedCount + baselineSummary.errorCount} | ${summary.failedCount + summary.errorCount} | ${formatSignedInt(comparison.deltas.failed)} |`,
       `| Avg Score | ${formatScore(baselineSummary.averageScore)} | ${formatScore(summary.averageScore)} | ${formatScoreDelta(comparison.deltas.averageScore)} |`,
+      `| Total Turns | ${baselineSummary.totalTurns ?? "—"} | ${summary.totalTurns ?? "—"} | ${formatSignedInt(comparison.deltas.totalTurns)} |`,
       `| Total Tokens | ${formatTokens(baselineSummary.tokenUsage)} | ${formatTokens(summary.tokenUsage)} | ${formatTokenDelta(comparison.deltas.totalTokens, comparison.deltas.totalTokensPct)} |`,
+      ...(typeof baselineSummary.tokenUsage?.outputTokens === "number" && typeof summary.tokenUsage?.outputTokens === "number"
+        ? [`| Output Tokens | ${baselineSummary.tokenUsage.outputTokens.toLocaleString("en-US")} | ${summary.tokenUsage.outputTokens.toLocaleString("en-US")} | ${formatTokenDelta(comparison.deltas.outputTokens, comparison.deltas.outputTokensPct)} |`]
+        : []),
+      `| Agent Wall Time | ${formatDuration(baselineSummary.totalWallTimeMs)} | ${formatDuration(summary.totalWallTimeMs)} | ${formatDurationDelta(comparison.deltas.totalWallTimeMs)} |`,
       `| Total Duration | ${formatDuration(baselineSummary.totalDurationMs)} | ${formatDuration(summary.totalDurationMs)} | ${formatDurationDelta(comparison.deltas.totalDurationMs)} |`,
       "",
-      "| Case | Baseline | Candidate | Score Delta | Token Delta | Transition |",
-      "| --- | --- | --- | --- | --- | --- |",
+      "| Case | Baseline | Candidate | Score Delta | Turn Delta | Token Delta | Wall Time Delta | Transition |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- |",
       ...comparison.cases.map((item) => {
         const baseCell = item.baseline ? `${item.baseline.status} (${formatScore(item.baseline.score)})` : "—";
         const candCell = item.candidate ? `${item.candidate.status} (${formatScore(item.candidate.score)})` : "—";
-        return `| ${escapeCell(item.key)} | ${baseCell} | ${candCell} | ${formatScoreDelta(item.scoreDelta)} | ${formatTokenDelta(item.tokenDelta, item.tokenDeltaPct)} | ${item.transition} |`;
+        return `| ${escapeCell(item.key)} | ${baseCell} | ${candCell} | ${formatScoreDelta(item.scoreDelta)} | ${formatSignedInt(item.turnsDelta)} | ${formatTokenDelta(item.tokenDelta, item.tokenDeltaPct)} | ${formatDurationDelta(item.wallTimeDeltaMs, item.wallTimeDeltaPct)} | ${item.transition} |`;
       }),
       "",
       "> **Note:** Single-run score, token, and duration deltas are observed signals for review rather than multi-trial statistical proof.",
@@ -477,9 +613,11 @@ export async function loadResults(path, root = process.cwd()) {
 export const usage = `Usage: node .github/scripts/eval-report.mjs [options]
 
 Reads Vally results.jsonl files and prints a Markdown report with per-case and
-aggregate verdicts, scores, token usage (input, output, total), and duration.
+aggregate verdicts, scores, model, skills invoked, turns, token usage (input,
+output, total), agent wall time, and total duration.
 When --baseline is supplied, also prints a Baseline vs. Candidate comparison
-table highlighting fixed failures, regressions, and token deltas.
+table highlighting fixed failures, regressions, turn deltas, total/output token
+deltas, and agent wall time deltas.
 
 Options:
   --results, --candidate, --run-dir <path>

@@ -266,16 +266,183 @@ For these direct Vally runs, results follow `paths.results` in
 [.vally.yaml](../.vally.yaml), currently `evals/results/`. The report command
 uses the same configured directory unless you supply an explicit results path.
 
-Summarize the newest saved run (verdicts, scores, input/output/total tokens,
-and duration) or compare a baseline run against a candidate run without calling
-a model:
+Summarize the newest saved run (verdicts, scores, model, skills invoked, turns,
+input/output/total tokens, agent wall time, and total duration) or compare a
+baseline run against a candidate run without calling a model:
 
 ```sh
 npm run eval:report
 npm run eval:compare -- --baseline evals/_shared/fixtures/pr-description/baseline-results.jsonl --candidate evals/_shared/fixtures/pr-description/candidate-results.jsonl
 ```
 
+The shared `pr-description` baseline (`v0`, run `63a64377`) and candidate (`v1`,
+run `ab6a6e4d`) fixtures contain recorded Vally 0.21.0 (`claude-haiku-5.5`) runs
+showing a behavioral contract fix (`87.5%` → `100.0%`) alongside an output-token
+reduction (`1,447` → `991` output tokens, `-31.5%`) and agent wall time
+reduction (`17.5s` → `16.4s` total; `11.1s` → `7.1s`, `-36.2%` on the positive
+case).
+
 [Evals](../.github/workflows/evals.yml) runs the smoke suite only when you
 explicitly start it with **Run workflow** in GitHub Actions
-(`workflow_dispatch`). Pull requests never start paid evals. Review the
-selected branch and its eval code before dispatching a run.
+(`workflow_dispatch`). Review the selected branch and its eval code before
+dispatching a run.
+
+### Automatic PR skill comparison
+
+[Skill eval comparison](../.github/workflows/skill-eval-comparison.yml) runs
+automatically on same-repository pull requests
+(`github.event.pull_request.head.repo.full_name == github.repository`, excluding
+fork PRs) whenever a skill under `plugins/<plugin>/skills/<skill>/` with a
+matching `evals/<plugin>/skills/<skill>/eval.yaml` changes:
+
+1. **Discover changed skills (`select`):** diff `plugins/<plugin>/skills/<skill>/`
+   between the PR base and head, and keep every skill whose
+   `evals/<plugin>/skills/<skill>/eval.yaml` exists in both revisions.
+2. **Run Baseline (`run-baseline`) and Candidate (`run`):** run
+   `github/evals-action` (`command: run`) once with the target skill's files
+   restored from the PR base commit (`report-id: evals-baseline`, with
+   `continue-on-error: true` so a baseline behavioral failure still uploads its
+   comparison artifact without failing the workflow when the candidate passes)
+   and once with the PR head (`report-id: evals`), keeping the eval definition,
+   graders, and neighboring marketplace skills at the PR revision.
+3. **Post sticky PR comment (`report`):** run `github/evals-action` with
+   `command: report`, `report-id: evals`, and
+   `baseline-report-id: evals-baseline` in a separate `pull-requests: write`
+   job to publish one sticky PR comment with the **Baseline vs. Candidate
+   comparison** table (Outcome, Passed/Failed, Score delta, Duration delta, and
+   Token `in/out` + `%` delta) alongside per-eval results.
+
+> **Action version note:** `baseline-report-id` (`evals-baseline`) is provided
+> by [github/evals-action#34](https://github.com/github/evals-action/pull/34)
+> (verified commit `3c551330898c1467b8ddf9ef7c7f6e6c6af489d6`). Pin
+> `github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6` until `#34`
+> is merged and published to `github/evals-action@v0`.
+
+```yaml
+name: Skill eval comparison
+on:
+  pull_request:
+    paths:
+      - plugins/*/skills/**
+
+permissions:
+  contents: read
+
+jobs:
+  select:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      skill_dirs: ${{ steps.changed.outputs.skill_dirs }}
+      eval_paths: ${{ steps.changed.outputs.eval_paths }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mapfile -t dirs < <(git diff --name-only "$BASE_SHA" HEAD -- 'plugins/*/skills/*' | awk -F/ 'NF>=4 {print $1"/"$2"/"$3"/"$4}' | sort -u)
+          skill_dirs=()
+          eval_paths=()
+          for dir in "${dirs[@]}"; do
+            eval_path="evals/${dir#plugins/}/eval.yaml"
+            if git cat-file -e "$BASE_SHA:$dir/SKILL.md" 2>/dev/null && [ -f "$dir/SKILL.md" ] && [ -f "$eval_path" ]; then
+              skill_dirs+=("$dir")
+              eval_paths+=("$eval_path")
+            fi
+          done
+          {
+            echo "skill_dirs<<EOF"
+            printf '%s\n' "${skill_dirs[@]}"
+            echo "EOF"
+            echo "eval_paths<<EOF"
+            printf '%s\n' "${eval_paths[@]}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  run-baseline:
+    needs: select
+    if: needs.select.outputs.eval_paths != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      copilot-requests: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Restore baseline skill sources
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          SKILL_DIRS: ${{ needs.select.outputs.skill_dirs }}
+        run: |
+          while IFS= read -r dir; do
+            if [ -n "$dir" ]; then
+              rm -rf -- "$dir"
+              git checkout "$BASE_SHA" -- "$dir"
+            fi
+          done <<< "$SKILL_DIRS"
+      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
+        continue-on-error: true
+        env:
+          VALLY_TELEMETRY_OPTOUT: '1'
+        with:
+          command: run
+          working-directory: .
+          eval-paths: ${{ needs.select.outputs.eval_paths }}
+          report-id: evals-baseline
+          copilot-token: ${{ github.token }}
+          max-retries: 0
+
+  run:
+    needs: select
+    if: needs.select.outputs.eval_paths != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      copilot-requests: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
+        env:
+          VALLY_TELEMETRY_OPTOUT: '1'
+        with:
+          command: run
+          working-directory: .
+          eval-paths: ${{ needs.select.outputs.eval_paths }}
+          report-id: evals
+          copilot-token: ${{ github.token }}
+          max-retries: 0
+
+  report:
+    needs: [select, run-baseline, run]
+    if: always() && needs.select.outputs.eval_paths != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: evals-${{ github.workflow_ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
+        with:
+          command: report
+          report-id: evals
+          baseline-report-id: evals-baseline
+```
+
+Teams that want a manual approval gate before paid PR comparisons run can
+optionally add a protected `environment:` (such as `environment: evals` with
+required reviewers) to `run-baseline` and `run`.
