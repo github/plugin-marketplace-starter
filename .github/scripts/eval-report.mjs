@@ -9,7 +9,12 @@ const stripTerminalControls = (text) => stripVTControlCharacters(String(text ?? 
   // eslint-disable-next-line no-control-regex
   .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]+/gu, " ")
   .trim();
-const escapeCell = (text) => stripTerminalControls(text).replaceAll("|", "\\|").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+const escapeCell = (text) => stripTerminalControls(text)
+  .replaceAll("&", "&amp;")
+  .replaceAll("|", "\\|")
+  .replaceAll("`", "&#96;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;");
 const finiteNonNegative = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 const sanitizeIdentifier = (value, fallback = "check") => {
   const cleaned = String(value ?? fallback).replace(/[^A-Za-z0-9._:-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -278,6 +283,8 @@ export function summarizeRun(records) {
         group.failures.add(sanitizeGraderId(detail));
       }
     }
+    group.gradersTotal = (group.gradersTotal ?? 0) + (grade?.details?.length ?? 0);
+    group.gradersPassed = (group.gradersPassed ?? 0) + (grade?.details ?? []).filter((d) => d.passed).length;
   }
 
   if (!trialCount) throw new Error("No cases were evaluated.");
@@ -306,6 +313,8 @@ export function summarizeRun(records) {
               : {}),
           }
         : undefined,
+      gradersPassed: group.gradersPassed ?? 0,
+      gradersTotal: group.gradersTotal ?? 0,
       failures: [...group.failures],
     };
   });
@@ -505,11 +514,190 @@ function formatDurationDelta(deltaMs, pct) {
   return `${sign}${formatDuration(Math.abs(deltaMs))}${pctText}`;
 }
 
+export function summarizeSkillVerdicts(comparison) {
+  const bySkill = new Map();
+  for (const item of comparison.cases) {
+    const skillName = item.candidate?.evalName ?? item.baseline?.evalName ?? "eval";
+    let group = bySkill.get(skillName);
+    if (!group) {
+      group = {
+        skillName,
+        cases: [],
+        fixed: 0,
+        broke: 0,
+        errored: 0,
+        changed: false,
+        basePassed: 0,
+        baseTotal: 0,
+        candPassed: 0,
+        candTotal: 0,
+        baseOutputTokens: 0,
+        candOutputTokens: 0,
+        hasOutputTokens: true,
+      };
+      bySkill.set(skillName, group);
+    }
+    group.cases.push(item);
+    if (item.baseline) {
+      group.baseTotal++;
+      if (item.baseline.passed) group.basePassed++;
+    }
+    if (item.candidate) {
+      group.candTotal++;
+      if (item.candidate.passed) group.candPassed++;
+    }
+    const baseOut = item.baseline?.tokenUsage?.outputTokens;
+    const candOut = item.candidate?.tokenUsage?.outputTokens;
+    const sameCaseTrials = Boolean(
+      item.baseline && item.candidate && (item.baseline.trials ?? 1) === (item.candidate.trials ?? 1),
+    );
+    if (sameCaseTrials && typeof baseOut === "number" && typeof candOut === "number") {
+      group.baseOutputTokens += baseOut;
+      group.candOutputTokens += candOut;
+    } else {
+      group.hasOutputTokens = false;
+    }
+    if (item.candidate?.status === "ERROR / NOT EVALUATED" || !item.candidate) {
+      group.errored++;
+      group.changed = true;
+    } else if (item.transition === "Fixed") {
+      group.fixed++;
+      group.changed = true;
+    } else if (item.transition === "Regressed") {
+      group.broke++;
+      group.changed = true;
+    } else if (
+      item.transition === "Improved score"
+      || item.transition === "Added"
+      || item.transition === "Removed"
+      || Math.abs(item.outputTokenDeltaPct ?? 0) >= 10
+    ) {
+      group.changed = true;
+    }
+  }
+
+  const severityOrder = { "🛑 No ship": 0, "⚠️ Re-run": 1, "✅ Ship": 2 };
+  return [...bySkill.values()]
+    .map((group) => {
+      const hasBehavioralFailure = group.cases.some((c) => c.candidate?.status === "BEHAVIORAL FAILURE");
+      const verdict = group.candTotal === 0 || (group.errored > 0 && !hasBehavioralFailure && group.broke === 0)
+        ? "⚠️ Re-run"
+        : group.candPassed === group.candTotal && group.broke === 0 && group.errored === 0
+          ? "✅ Ship"
+          : "🛑 No ship";
+      const reasons = [];
+      if (group.fixed > 0 && group.broke > 0) {
+        reasons.push(`${group.broke} ${group.broke === 1 ? "scenario" : "scenarios"} broke, ${group.fixed} fixed (${group.basePassed}/${group.baseTotal} → ${group.candPassed}/${group.candTotal} passing)`);
+      } else if (group.broke > 0) {
+        reasons.push(`${group.broke} ${group.broke === 1 ? "scenario" : "scenarios"} broke (${group.basePassed}/${group.baseTotal} → ${group.candPassed}/${group.candTotal} passing)`);
+      } else if (group.errored > 0) {
+        reasons.push(`${group.errored} ${group.errored === 1 ? "scenario" : "scenarios"} errored (${group.basePassed}/${group.baseTotal} → ${group.candPassed}/${group.candTotal} passing)`);
+      } else if (group.fixed > 0) {
+        reasons.push(`${group.fixed} ${group.fixed === 1 ? "scenario" : "scenarios"} fixed (${group.basePassed}/${group.baseTotal} → ${group.candPassed}/${group.candTotal} passing)`);
+      } else {
+        reasons.push(`${group.candPassed}/${group.candTotal} scenarios passing`);
+      }
+      if (group.hasOutputTokens && group.baseOutputTokens > 0) {
+        const outDelta = group.candOutputTokens - group.baseOutputTokens;
+        const outPct = (outDelta / group.baseOutputTokens) * 100;
+        if (Math.abs(outPct) >= 0.1) {
+          const sign = outPct > 0 ? "+" : "";
+          reasons.push(`${sign}${outPct.toFixed(1)}% output tokens`);
+        }
+      }
+      const summaryCounts = [];
+      if (group.broke > 0) summaryCounts.push(`${group.broke} broke`);
+      if (group.errored > 0) summaryCounts.push(`${group.errored} errored`);
+      if (group.fixed > 0) summaryCounts.push(`${group.fixed} fixed`);
+      if (summaryCounts.length === 0) summaryCounts.push(`${group.candPassed}/${group.candTotal} passing`);
+      return {
+        ...group,
+        verdict,
+        summaryLabel: `${summaryCounts.join(", ")} (${group.basePassed}/${group.baseTotal} → ${group.candPassed}/${group.candTotal} passing)`,
+        why: reasons.join(" · "),
+      };
+    })
+    .sort((a, b) => (severityOrder[a.verdict] ?? 3) - (severityOrder[b.verdict] ?? 3));
+}
+
+function describeCaseChange(item) {
+  const baseFailures = item.baseline?.failures ?? [];
+  const candFailures = item.candidate?.failures ?? [];
+  if (item.candidate?.status === "ERROR / NOT EVALUATED") {
+    return "Trial execution error; re-run workflow to verify";
+  }
+  const hasCounts = Boolean(item.baseline?.gradersTotal && item.candidate?.gradersTotal);
+  const countPrefix = hasCounts
+    ? `${item.baseline.gradersPassed}/${item.baseline.gradersTotal} → ${item.candidate.gradersPassed}/${item.candidate.gradersTotal} checks passed`
+    : undefined;
+  if (item.transition === "Fixed") {
+    const resolved = baseFailures.filter((f) => !candFailures.includes(f));
+    const prefix = countPrefix ?? "Now passes all checks";
+    return resolved.length
+      ? `${prefix} (fixed: ${resolved.map((f) => `\`${escapeCell(f)}\``).join(", ")})`
+      : prefix;
+  }
+  if (item.transition === "Regressed") {
+    const newlyBroken = candFailures.filter((f) => !baseFailures.includes(f));
+    const prefix = countPrefix ?? "Check failed";
+    return newlyBroken.length
+      ? `${prefix} (failed: ${newlyBroken.map((f) => `\`${escapeCell(f)}\``).join(", ")})`
+      : prefix;
+  }
+  if (item.candidate?.passed) {
+    return item.candidate.gradersTotal
+      ? `Unchanged (${item.candidate.gradersPassed}/${item.candidate.gradersTotal} checks passed)`
+      : "Unchanged and passing";
+  }
+  return candFailures.length
+    ? `Still failing (${candFailures.map((f) => `\`${escapeCell(f)}\``).join(", ")})`
+    : "Unchanged";
+}
+
+function renderSkillDetailsBlock(skill, defaultModel) {
+  const verdictEmoji = skill.verdict.split(" ")[0];
+  const modelLabel = defaultModel || "default";
+  return [
+    "<details>",
+    `<summary>${verdictEmoji} <strong>${escapeCell(skill.skillName)}</strong> — ${skill.summaryLabel}</summary>`,
+    "",
+    "| | Scenario | Model | Score | Output Tokens | What happened |",
+    "| --- | --- | --- | --- | ---: | --- |",
+    ...skill.cases.map((item) => {
+      const badge = item.candidate?.status === "ERROR / NOT EVALUATED"
+        ? "⚠️ Error"
+        : item.transition === "Fixed"
+          ? "📈 Fixed"
+          : item.transition === "Regressed"
+            ? "📉 Broke"
+            : item.candidate?.passed
+              ? "✅ Passed"
+              : "❌ Failed";
+      const rawCaseName = item.candidate?.name ?? item.baseline?.name ?? item.key;
+      const model = item.candidate?.models?.[0] ?? item.baseline?.models?.[0] ?? modelLabel;
+      const scoreText = `${formatScore(item.baseline?.score)} → ${item.candidate?.status === "ERROR / NOT EVALUATED" ? "—" : formatScore(item.candidate?.score)}`;
+      const baseOut = item.baseline?.tokenUsage?.outputTokens;
+      const candOut = item.candidate?.tokenUsage?.outputTokens;
+      const outText = typeof baseOut === "number" && typeof candOut === "number" && item.candidate?.status !== "ERROR / NOT EVALUATED"
+        ? `${baseOut.toLocaleString("en-US")} → ${candOut.toLocaleString("en-US")}${typeof item.outputTokenDelta === "number" ? ` (${formatTokenDelta(item.outputTokenDelta, item.outputTokenDeltaPct)})` : ""}`
+        : typeof baseOut === "number"
+          ? `${baseOut.toLocaleString("en-US")} → —`
+          : "—";
+      return `| ${badge} | <code>${escapeCell(rawCaseName)}</code> | <code>${escapeCell(model)}</code> | ${scoreText} | ${outText} | ${describeCaseChange(item)} |`;
+    }),
+    "",
+    `<sub><strong>Pass rate (before → after):</strong> <code>${escapeCell(modelLabel)}</code> ${skill.basePassed}/${skill.baseTotal} → ${skill.candPassed}/${skill.candTotal}</sub>`,
+    "",
+    "</details>",
+    "",
+  ];
+}
+
 export function renderReport(summary, path, { baselineSummary, baselinePath } = {}) {
   const modelHeader = summary.models?.length
     ? ` | Model: \`${escapeCell(summary.models.join(", "))}\``
     : "";
-  const lines = [
+  const singleRunLines = [
     "## Behavioral eval report",
     "",
     `Saved run: \`${escapeCell(path)}\`${modelHeader}`,
@@ -533,40 +721,118 @@ export function renderReport(summary, path, { baselineSummary, baselinePath } = 
     row.failures.map((grader) => `- ${escapeCell(row.name)} / ${escapeCell(sanitizeGraderId(grader))}: check failed`));
   const errorLines = summary.errors.map((error) => `- ERROR: ${escapeCell(error)}`);
   if (failureLines.length || errorLines.length) {
-    lines.push(...failureLines, ...errorLines, "");
+    singleRunLines.push(...failureLines, ...errorLines, "");
   }
 
-  if (baselineSummary) {
-    const comparison = compareSummaries(baselineSummary, summary);
+  if (!baselineSummary) {
+    return singleRunLines.join("\n");
+  }
+
+  const comparison = compareSummaries(baselineSummary, summary);
+  const skillVerdicts = summarizeSkillVerdicts(comparison);
+  const hasNoShip = skillVerdicts.some((s) => s.verdict === "🛑 No ship") || summary.failedCount > 0;
+  const hasRerun = skillVerdicts.some((s) => s.verdict === "⚠️ Re-run")
+    || summary.errorCount > 0
+    || summary.errors.length > 0
+    || baselineSummary.errors.length > 0;
+  const overallVerdict = hasNoShip ? "🛑 No ship" : hasRerun ? "⚠️ Re-run" : "✅ Ship";
+  const baseClean = (baselineSummary.failedCount + baselineSummary.errorCount) === 0 && baselineSummary.errors.length === 0;
+  const candClean = (summary.failedCount + summary.errorCount) === 0 && summary.errors.length === 0;
+  const baseOutcome = baseClean ? "passed" : "failed";
+  const candOutcome = overallVerdict === "✅ Ship"
+    ? "passed (✅ Ship)"
+    : overallVerdict === "🛑 No ship"
+      ? "failed (🛑 No ship)"
+      : `${candClean ? "passed" : "failed"} (⚠️ Re-run)`;
+  const outcomeDelta = overallVerdict === "✅ Ship"
+    ? (baseOutcome === "failed" ? "fixed" : "unchanged")
+    : overallVerdict === "🛑 No ship"
+      ? (baseOutcome === "passed" || skillVerdicts.some((s) => s.broke > 0) ? "regressed" : "🛑 No ship")
+      : "⚠️ Re-run";
+  const defaultModel = summary.models?.[0] ?? baselineSummary.models?.[0] ?? "default";
+
+  const actionableSkills = skillVerdicts.filter((s) => s.verdict !== "✅ Ship");
+  const passingChangedSkills = skillVerdicts.filter((s) => s.verdict === "✅ Ship" && (s.changed || skillVerdicts.length === 1));
+  const unchangedPassingSkills = skillVerdicts.filter((s) => s.verdict === "✅ Ship" && !s.changed && skillVerdicts.length > 1);
+
+  const lines = [
+    `## Evals: ${overallVerdict}`,
+    "",
+    "| Skill | Verdict | Why |",
+    "| --- | --- | --- |",
+    ...skillVerdicts.map((s) => {
+      const boldVerdict = s.verdict.replace(/^(✅|🛑|⚠️)\s+(.*)$/u, "$1 **$2**");
+      return `| **${escapeCell(s.skillName)}** | ${boldVerdict} | ${s.why} |`;
+    }),
+    "",
+  ];
+
+  for (const skill of actionableSkills) {
+    lines.push(...renderSkillDetailsBlock(skill, defaultModel));
+  }
+
+  if (actionableSkills.length > 0) {
+    lines.push("---", "");
+  }
+
+  for (const skill of passingChangedSkills) {
+    lines.push(...renderSkillDetailsBlock(skill, defaultModel));
+  }
+
+  if (unchangedPassingSkills.length > 0) {
+    const unchangedScenarios = unchangedPassingSkills.reduce((sum, s) => sum + s.candTotal, 0);
     lines.push(
-      "## Baseline vs. Candidate Comparison",
+      "<details>",
+      `<summary>📋 <strong>Unchanged evals &amp; run configuration</strong> — ${unchangedPassingSkills.length} passing (${unchangedScenarios}/${unchangedScenarios} scenarios)</summary>`,
       "",
-      ...(baselinePath ? [`Baseline: \`${escapeCell(baselinePath)}\` | Candidate: \`${escapeCell(path)}\``, ""] : []),
-      "| Metric | Baseline | Candidate | Delta |",
+      "| Skill | Status | Scenarios (Before → After) | Details |",
       "| --- | --- | --- | --- |",
-      `| Passed | ${baselineSummary.passedCount} | ${summary.passedCount} | ${formatSignedInt(comparison.deltas.passed)} |`,
-      `| Failed | ${baselineSummary.failedCount + baselineSummary.errorCount} | ${summary.failedCount + summary.errorCount} | ${formatSignedInt(comparison.deltas.failed)} |`,
-      `| Avg Score | ${formatScore(baselineSummary.averageScore)} | ${formatScore(summary.averageScore)} | ${formatScoreDelta(comparison.deltas.averageScore)} |`,
-      `| Total Turns | ${baselineSummary.totalTurns ?? "—"} | ${summary.totalTurns ?? "—"} | ${formatSignedInt(comparison.deltas.totalTurns)} |`,
-      `| Total Tokens | ${formatTokens(baselineSummary.tokenUsage)} | ${formatTokens(summary.tokenUsage)} | ${formatTokenDelta(comparison.deltas.totalTokens, comparison.deltas.totalTokensPct)} |`,
-      ...(typeof baselineSummary.tokenUsage?.outputTokens === "number" && typeof summary.tokenUsage?.outputTokens === "number"
-        ? [`| Output Tokens | ${baselineSummary.tokenUsage.outputTokens.toLocaleString("en-US")} | ${summary.tokenUsage.outputTokens.toLocaleString("en-US")} | ${formatTokenDelta(comparison.deltas.outputTokens, comparison.deltas.outputTokensPct)} |`]
-        : []),
-      `| Agent Wall Time | ${formatDuration(baselineSummary.totalWallTimeMs)} | ${formatDuration(summary.totalWallTimeMs)} | ${formatDurationDelta(comparison.deltas.totalWallTimeMs)} |`,
-      `| Total Duration | ${formatDuration(baselineSummary.totalDurationMs)} | ${formatDuration(summary.totalDurationMs)} | ${formatDurationDelta(comparison.deltas.totalDurationMs)} |`,
+      ...unchangedPassingSkills.map((s) =>
+        `| \`${escapeCell(s.skillName)}\` | ✅ Unchanged | ${s.basePassed}/${s.baseTotal} → ${s.candPassed}/${s.candTotal} | All scenarios passing on \`${escapeCell(defaultModel)}\` |`,
+      ),
       "",
-      "| Case | Baseline | Candidate | Score Delta | Turn Delta | Token Delta | Wall Time Delta | Transition |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- |",
-      ...comparison.cases.map((item) => {
-        const baseCell = item.baseline ? `${item.baseline.status} (${formatScore(item.baseline.score)})` : "—";
-        const candCell = item.candidate ? `${item.candidate.status} (${formatScore(item.candidate.score)})` : "—";
-        return `| ${escapeCell(item.key)} | ${baseCell} | ${candCell} | ${formatScoreDelta(item.scoreDelta)} | ${formatSignedInt(item.turnsDelta)} | ${formatTokenDelta(item.tokenDelta, item.tokenDeltaPct)} | ${formatDurationDelta(item.wallTimeDeltaMs, item.wallTimeDeltaPct)} | ${item.transition} |`;
-      }),
+      `<sub><strong>Run config:</strong> ${comparison.cases.length} scenarios across ${skillVerdicts.length} ${skillVerdicts.length === 1 ? "eval" : "evals"} · <code>${escapeCell(defaultModel)}</code></sub>`,
       "",
-      "> **Note:** Single-run score, token, and duration deltas are observed signals for review rather than multi-trial statistical proof.",
+      "</details>",
       "",
     );
   }
+
+  lines.push(
+    "<details>",
+    `<summary>📊 <strong>Telemetry, token deltas &amp; run evidence</strong> — ${skillVerdicts.length} ${skillVerdicts.length === 1 ? "skill" : "skills"} evaluated (${comparison.cases.length} ${comparison.cases.length === 1 ? "scenario" : "scenarios"})</summary>`,
+    "",
+    "## Baseline vs. Candidate Comparison",
+    "",
+    ...(baselinePath ? [`Baseline: \`${escapeCell(baselinePath)}\` | Candidate: \`${escapeCell(path)}\``, ""] : []),
+    "| Metric | Baseline | Candidate | Delta |",
+    "| --- | --- | --- | --- |",
+    `| Outcome | ${baseOutcome} | ${candOutcome} | ${outcomeDelta} |`,
+    `| Passed | ${baselineSummary.passedCount} | ${summary.passedCount} | ${formatSignedInt(comparison.deltas.passed)} |`,
+    `| Failed | ${baselineSummary.failedCount + baselineSummary.errorCount} | ${summary.failedCount + summary.errorCount} | ${formatSignedInt(comparison.deltas.failed)} |`,
+    `| Avg Score | ${formatScore(baselineSummary.averageScore)} | ${formatScore(summary.averageScore)} | ${formatScoreDelta(comparison.deltas.averageScore)} |`,
+    `| Total Turns | ${baselineSummary.totalTurns ?? "—"} | ${summary.totalTurns ?? "—"} | ${formatSignedInt(comparison.deltas.totalTurns)} |`,
+    `| Total Tokens | ${formatTokens(baselineSummary.tokenUsage)} | ${formatTokens(summary.tokenUsage)} | ${formatTokenDelta(comparison.deltas.totalTokens, comparison.deltas.totalTokensPct)} |`,
+    ...(typeof baselineSummary.tokenUsage?.outputTokens === "number" && typeof summary.tokenUsage?.outputTokens === "number"
+      ? [`| Output Tokens | ${baselineSummary.tokenUsage.outputTokens.toLocaleString("en-US")} | ${summary.tokenUsage.outputTokens.toLocaleString("en-US")} | ${formatTokenDelta(comparison.deltas.outputTokens, comparison.deltas.outputTokensPct)} |`]
+      : []),
+    `| Agent Wall Time | ${formatDuration(baselineSummary.totalWallTimeMs)} | ${formatDuration(summary.totalWallTimeMs)} | ${formatDurationDelta(comparison.deltas.totalWallTimeMs)} |`,
+    `| Total Duration | ${formatDuration(baselineSummary.totalDurationMs)} | ${formatDuration(summary.totalDurationMs)} | ${formatDurationDelta(comparison.deltas.totalDurationMs)} |`,
+    "",
+    "| Case | Baseline | Candidate | Score Delta | Turn Delta | Token Delta | Wall Time Delta | Transition |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...comparison.cases.map((item) => {
+      const baseCell = item.baseline ? `${item.baseline.status} (${formatScore(item.baseline.score)})` : "—";
+      const candCell = item.candidate ? `${item.candidate.status} (${formatScore(item.candidate.score)})` : "—";
+      return `| ${escapeCell(item.key)} | ${baseCell} | ${candCell} | ${formatScoreDelta(item.scoreDelta)} | ${formatSignedInt(item.turnsDelta)} | ${formatTokenDelta(item.tokenDelta, item.tokenDeltaPct)} | ${formatDurationDelta(item.wallTimeDeltaMs, item.wallTimeDeltaPct)} | ${item.transition} |`;
+    }),
+    "",
+    "> **Note:** Single-run score, token, and duration deltas are observed signals for review rather than multi-trial statistical proof.",
+    "",
+    ...singleRunLines,
+    "</details>",
+    "",
+  );
 
   return lines.join("\n");
 }
