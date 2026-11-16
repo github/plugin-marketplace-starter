@@ -2,16 +2,16 @@
 
 | Skill | Verdict | Why |
 | --- | --- | --- |
-| **pr-description** | ✅ **Ship** | 1 scenario fixed (`1/2` → `2/2` passing · `-31.5%` output tokens) |
+| **pr-description** | ✅ **Ship** | 1 scenario fixed (`1/2` → `2/2` passing) · `-31.5%` output tokens |
 | **release-plugins** | 🛑 **No ship** | 1 scenario broke, 1 fixed (`4/5` → `4/5` passing) |
 | try-plugin-locally *(not changed)* | ⚠️ **Re-run** | 1 scenario broke, but this PR does not change this skill |
 
 <details>
 <summary>✅ <strong>pr-description</strong> — 1 fixed (1/2 → 2/2 passing)</summary>
 
-| | Scenario | Model | What happened | Evidence |
-| --- | --- | --- | --- | --- |
-| 📈 Fixed | `drafts-structured-pr-body` | `claude-haiku-5.5` | 3/4 → 4/4 checks passed: now includes `## Risks / Rollback` and excludes `#42` from `## Changes` (`-56.2%` output tokens). | [artifact](https://github.com/github/plugin-marketplace-starter/actions/runs/43829816109/artifacts/14208216970) |
+| | Scenario | Model | Score | Output Tokens | What happened | Evidence |
+| --- | --- | --- | --- | ---: | --- | --- |
+| 📈 Fixed | `drafts-structured-pr-body` | `claude-haiku-5.5` | 87.5% → 100.0% | 918 → 402 (-56.2%) | 3/4 → 4/4 checks passed (fixed `program` check: includes `## Risks / Rollback`, excludes `#42` from `## Changes`) | [artifact](https://github.com/github/plugin-marketplace-starter/actions/runs/43829816109/artifacts/14208216970) |
 
 <sub><strong>Pass rate (before → after):</strong> <code>claude-haiku-5.5</code> 1/2 → 2/2</sub>
 
@@ -20,10 +20,10 @@
 <details>
 <summary>🛑 <strong>release-plugins</strong> — 1 broke, 1 fixed (4/5 → 4/5 passing)</summary>
 
-| | Scenario | Model | What happened | Evidence |
-| --- | --- | --- | --- | --- |
-| 📉 Broke | `preserves-unreleased-initial-version` | `claude-haiku-5.5` | The skill was not used when it should have been (`skill-invocation`). | [artifact](#) |
-| 📈 Fixed | `asks-for-unknown-release-base` | `claude-haiku-5.5` | Now asks for the missing release base (`output-matches`). | [artifact](#) |
+| | Scenario | Model | Score | Output Tokens | What happened | Evidence |
+| --- | --- | --- | --- | ---: | --- | --- |
+| 📉 Broke | `preserves-unreleased-initial-version` | `claude-haiku-5.5` | 100.0% → 75.0% | 410 → 390 (-4.9%) | Check failed: `skill-invocation` (skill was not invoked) | [artifact](#) |
+| 📈 Fixed | `asks-for-unknown-release-base` | `claude-haiku-5.5` | 50.0% → 100.0% | 620 → 310 (-50.0%) | 2/4 → 4/4 checks passed (`output-matches` fixed) | [artifact](#) |
 
 <sub><strong>Pass rate (before → after):</strong> <code>claude-haiku-5.5</code> 4/5 → 4/5</sub>
 
@@ -32,9 +32,9 @@
 <details>
 <summary>⚠️ <strong>try-plugin-locally</strong> <em>(not changed in PR)</em> — 1 broke (2/2 → 1/2 passing)</summary>
 
-| | Scenario | Model | What happened | Evidence |
-| --- | --- | --- | --- | --- |
-| 📉 Broke | `prepares-current-checkout-session` | `claude-haiku-5.5` | The command left out the plugin's local path (`program`). | [artifact](#) |
+| | Scenario | Model | Score | Output Tokens | What happened | Evidence |
+| --- | --- | --- | --- | ---: | --- | --- |
+| 📉 Broke | `prepares-current-checkout-session` | `claude-haiku-5.5` | 100.0% → 75.0% | 512 → 488 (-4.7%) | Check failed: `program` (command omitted local plugin path) | [artifact](#) |
 
 <sub><strong>Pass rate (before → after):</strong> <code>claude-haiku-5.5</code> 2/2 → 1/2 · This PR does not modify <code>try-plugin-locally</code>; re-run to rule out single-trial variance.</sub>
 
