@@ -525,6 +525,7 @@ export function summarizeSkillVerdicts(comparison) {
       group = {
         skillName,
         cases: [],
+        models: new Set(),
         fixed: 0,
         broke: 0,
         errored: 0,
@@ -540,6 +541,9 @@ export function summarizeSkillVerdicts(comparison) {
       bySkill.set(skillName, group);
     }
     group.cases.push(item);
+    for (const model of [...(item.candidate?.models ?? []), ...(item.baseline?.models ?? [])]) {
+      if (model) group.models.add(model);
+    }
     if (item.baseline) {
       group.baseTotal++;
       if (item.baseline.passed) group.basePassed++;
@@ -611,6 +615,7 @@ export function summarizeSkillVerdicts(comparison) {
       if (summaryCounts.length === 0) summaryCounts.push(`${group.candPassed}/${group.candTotal} passing`);
       return {
         ...group,
+        models: [...group.models],
         verdict,
         summaryLabel: `${summaryCounts.join(", ")} (${group.basePassed}/${group.baseTotal} → ${group.candPassed}/${group.candTotal} passing)`,
         why: reasons.join(" · "),
@@ -668,7 +673,7 @@ function describeCaseChange(item) {
 
 function renderSkillDetailsBlock(skill, defaultModel) {
   const verdictEmoji = skill.verdict.split(" ")[0];
-  const modelLabel = defaultModel || "default";
+  const skillModelLabel = skill.models?.length ? skill.models.join(", ") : (defaultModel || "default");
   return [
     "<details>",
     `<summary>${verdictEmoji} <strong>${escapeCell(skill.skillName)}</strong> — ${skill.summaryLabel}</summary>`,
@@ -690,19 +695,23 @@ function renderSkillDetailsBlock(skill, defaultModel) {
                   ? "✅ Passed"
                   : "❌ Failed";
       const rawCaseName = item.candidate?.name ?? item.baseline?.name ?? item.key;
-      const model = item.candidate?.models?.[0] ?? item.baseline?.models?.[0] ?? modelLabel;
+      const caseModels = item.candidate?.models?.length ? item.candidate.models : item.baseline?.models;
+      const model = caseModels?.length ? caseModels.join(", ") : skillModelLabel;
       const scoreText = `${formatScore(item.baseline?.score)} → ${!item.candidate || item.candidate.status === "ERROR / NOT EVALUATED" ? "—" : formatScore(item.candidate.score)}`;
       const baseOut = item.baseline?.tokenUsage?.outputTokens;
       const candOut = item.candidate?.tokenUsage?.outputTokens;
-      const outText = typeof baseOut === "number" && typeof candOut === "number" && item.candidate?.status !== "ERROR / NOT EVALUATED"
-        ? `${baseOut.toLocaleString("en-US")} → ${candOut.toLocaleString("en-US")} (${formatTokenDelta(item.outputTokenDelta, item.outputTokenDeltaPct)})`
-        : typeof baseOut === "number"
-          ? `${baseOut.toLocaleString("en-US")} → —`
-          : "—";
+      const candHasOut = typeof candOut === "number" && item.candidate && item.candidate.status !== "ERROR / NOT EVALUATED";
+      const outText = typeof baseOut === "number" && candHasOut
+        ? `${baseOut.toLocaleString("en-US")} → ${candOut.toLocaleString("en-US")}${typeof item.outputTokenDelta === "number" ? ` (${formatTokenDelta(item.outputTokenDelta, item.outputTokenDeltaPct)})` : ""}`
+        : candHasOut
+          ? `— → ${candOut.toLocaleString("en-US")}`
+          : typeof baseOut === "number"
+            ? `${baseOut.toLocaleString("en-US")} → —`
+            : "—";
       return `| ${badge} | \`${escapeCell(rawCaseName)}\` | \`${escapeCell(model)}\` | ${scoreText} | ${outText} | ${describeCaseChange(item)} |`;
     }),
     "",
-    `<sub><strong>Pass rate (before → after):</strong> <code>${escapeCell(modelLabel)}</code> ${skill.basePassed}/${skill.baseTotal} → ${skill.candPassed}/${skill.candTotal}</sub>`,
+    `<sub><strong>Pass rate (before → after):</strong> <code>${escapeCell(skillModelLabel)}</code> ${skill.basePassed}/${skill.baseTotal} → ${skill.candPassed}/${skill.candTotal}</sub>`,
     "",
     "</details>",
     "",
@@ -803,9 +812,10 @@ export function renderReport(summary, path, { baselineSummary, baselinePath } = 
       "",
       "| Skill | Status | Scenarios (Before → After) | Details |",
       "| --- | --- | --- | --- |",
-      ...unchangedPassingSkills.map((s) =>
-        `| \`${escapeCell(s.skillName)}\` | ✅ Unchanged | ${s.basePassed}/${s.baseTotal} → ${s.candPassed}/${s.candTotal} | All scenarios passing on \`${escapeCell(defaultModel)}\` |`,
-      ),
+      ...unchangedPassingSkills.map((s) => {
+        const skillModel = s.models?.length ? s.models.join(", ") : defaultModel;
+        return `| \`${escapeCell(s.skillName)}\` | ✅ Unchanged | ${s.basePassed}/${s.baseTotal} → ${s.candPassed}/${s.candTotal} | All scenarios passing on \`${escapeCell(skillModel)}\` |`;
+      }),
       "",
       `<sub><strong>Run config:</strong> ${comparison.cases.length} scenarios across ${skillVerdicts.length} ${skillVerdicts.length === 1 ? "eval" : "evals"} · <code>${escapeCell(defaultModel)}</code></sub>`,
       "",
