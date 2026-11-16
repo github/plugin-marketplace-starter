@@ -16,6 +16,7 @@ import {
   loadResults,
   renderReport,
   summarizeRun,
+  summarizeSkillVerdicts,
 } from "./eval-report.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -255,6 +256,10 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
     baselineSummary: baseline,
     baselinePath: "baseline/results.jsonl",
   });
+  assert.match(markdown, /## Evals: ✅ Ship/);
+  assert.match(markdown, /\| \*\*pr-description\*\* \| ✅ \*\*Ship\*\* \| 1 scenario fixed \(1\/2 → 2\/2 passing\) · -64\.0% output tokens \|/);
+  assert.match(markdown, /<summary>✅ <strong>pr-description<\/strong> — 1 fixed \(1\/2 → 2\/2 passing\)<\/summary>/);
+  assert.match(markdown, /<summary>📊 <strong>Telemetry, token deltas &amp; run evidence<\/strong>/);
   assert.match(markdown, /## Baseline vs\. Candidate Comparison/);
   assert.match(markdown, /\| Total Turns \| 3 \| 3 \| 0 \|/);
   assert.match(markdown, /\| Total Tokens \| 6,960 \(in: 5,570, out: 1,390\) \| 3,300 \(in: 2,800, out: 500\) \| -3,660 \(-52\.6%\) \|/);
@@ -263,6 +268,43 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
   assert.match(markdown, /\| pr-description \/ pr-description-drafts-structured-pr-body \| BEHAVIORAL FAILURE \(50\.0%\) \| PASS \(100\.0%\) \| \+50\.0% \| 0 \| -2,410 \(-54\.8%\) \| -2\.4s \(-46\.2%\) \| Fixed \|/);
   assert.match(markdown, /\| pr-description \/ pr-description-ignores-bug-and-review-question \| PASS \(100\.0%\) \| PASS \(100\.0%\) \| 0\.0% \| 0 \| -1,250 \(-48\.8%\) \| -1\.3s \(-41\.9%\) \| Reduced tokens at parity \|/);
   assert.match(markdown, /Single-run score, token, and duration deltas are observed signals for review/);
+
+  // Multi-skill mixed verdict ordering: No ship and Re-run above ---, Ship and Unchanged/Telemetry below ---
+  const multiSkillBase = summarizeRun([
+    makeTrial({ runId: "ms-base", evalName: "pr-description", stimulus: "drafts-body", passed: false, gradeScore: 0.5, outputTokens: 900, inputTokens: 2000, totalTokens: 2900, details: [{ name: "program", passed: false, score: 0 }, { name: "completed", passed: true, score: 1 }] }),
+    makeTrial({ runId: "ms-base", evalName: "release-plugins", stimulus: "preserves-version", passed: true, gradeScore: 1, outputTokens: 400, inputTokens: 2000, totalTokens: 2400, details: [{ name: "skill-invocation", passed: true, score: 1 }] }),
+    makeTrial({ runId: "ms-base", evalName: "try-plugin-locally", stimulus: "prepares-session", passed: true, gradeScore: 1, outputTokens: 500, inputTokens: 2000, totalTokens: 2500 }),
+    makeTrial({ runId: "ms-base", evalName: "update-remote-pins", stimulus: "updates-pins", passed: true, gradeScore: 1, outputTokens: 300, inputTokens: 1500, totalTokens: 1800 }),
+    makeFooter("ms-base"),
+  ]);
+  const multiSkillCand = summarizeRun([
+    makeTrial({ runId: "ms-cand", evalName: "pr-description", stimulus: "drafts-body", passed: true, gradeScore: 1, outputTokens: 400, inputTokens: 2000, totalTokens: 2400, details: [{ name: "program", passed: true, score: 1 }, { name: "completed", passed: true, score: 1 }] }),
+    makeTrial({ runId: "ms-cand", evalName: "release-plugins", stimulus: "preserves-version", passed: false, gradeScore: 0, outputTokens: 390, inputTokens: 2000, totalTokens: 2390, details: [{ name: "skill-invocation", passed: false, score: 0 }] }),
+    makeTrial({ runId: "ms-cand", evalName: "try-plugin-locally", stimulus: "prepares-session", status: "error", passed: false, gradeScore: 0, outputTokens: 0, inputTokens: 0, totalTokens: 0 }),
+    makeTrial({ runId: "ms-cand", evalName: "update-remote-pins", stimulus: "updates-pins", passed: true, gradeScore: 1, outputTokens: 300, inputTokens: 1500, totalTokens: 1800 }),
+    makeFooter("ms-cand", true),
+  ]);
+  const multiSkillComparison = compareSummaries(multiSkillBase, multiSkillCand);
+  const verdicts = summarizeSkillVerdicts(multiSkillComparison);
+  assert.deepEqual(verdicts.map((v) => [v.skillName, v.verdict]), [
+    ["release-plugins", "🛑 No ship"],
+    ["try-plugin-locally", "⚠️ Re-run"],
+    ["pr-description", "✅ Ship"],
+    ["update-remote-pins", "✅ Ship"],
+  ]);
+  const multiSkillMarkdown = renderReport(multiSkillCand, "cand/results.jsonl", {
+    baselineSummary: multiSkillBase,
+    baselinePath: "base/results.jsonl",
+  });
+  assert.match(multiSkillMarkdown, /## Evals: 🛑 No ship/);
+  const hrIndex = multiSkillMarkdown.indexOf("\n---\n");
+  assert.ok(hrIndex > 0, "expected --- separator between actionable and passing sections");
+  assert.ok(multiSkillMarkdown.indexOf("<summary>🛑 <strong>release-plugins</strong>") < hrIndex);
+  assert.ok(multiSkillMarkdown.indexOf("<summary>⚠️ <strong>try-plugin-locally</strong>") < hrIndex);
+  assert.ok(multiSkillMarkdown.indexOf("<summary>✅ <strong>pr-description</strong>") > hrIndex);
+  assert.ok(multiSkillMarkdown.indexOf("<summary>📋 <strong>Unchanged evals &amp; run configuration</strong>") > hrIndex);
+  assert.ok(multiSkillMarkdown.indexOf("<summary>📊 <strong>Telemetry, token deltas &amp; run evidence</strong>") > hrIndex);
+  assert.match(multiSkillMarkdown, /\| Outcome \| failed \| failed \(🛑 No ship\) \|/);
 });
 
 prDescriptionTest("eval-report CLI compares the shared pr-description baseline and candidate fixtures without writing GITHUB_STEP_SUMMARY", async (t) => {

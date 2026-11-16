@@ -308,9 +308,12 @@ matching `evals/<plugin>/skills/<skill>/eval.yaml` changes:
 3. **Post sticky PR comment (`report`):** run `github/evals-action` with
    `command: report`, `report-id: evals`, and
    `baseline-report-id: evals-baseline` in a separate `pull-requests: write`
-   job to publish one sticky PR comment with the **Baseline vs. Candidate
-   comparison** table (Outcome, Passed/Failed, Score delta, Duration delta, and
-   Token `in/out` + `%` delta) alongside per-eval results.
+   job to publish one sticky PR comment with a top-level **Ship / No-ship /
+   Re-run** verdict summary table, collapsible per-skill `<details>` sections
+   (ordering actionable `🛑 No ship` and `⚠️ Re-run` sections above `---`), and
+   collapsible **Baseline vs. Candidate** telemetry (`Outcome`, `Passed/Failed`,
+   `Score delta`, `Turns delta`, `Duration delta`, and `Token in/out + %`
+   delta).
 
 > **Action version note:** `baseline-report-id` (`evals-baseline`) is provided
 > by [github/evals-action#34](https://github.com/github/evals-action/pull/34)
