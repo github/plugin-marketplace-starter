@@ -86,7 +86,7 @@ jobs:
               git checkout "$BASE_SHA" -- "$dir"
             fi
           done <<< "$SKILL_DIRS"
-      - uses: github/evals-action@e864dd8c874c3f3f121962e5d737b3b22b6437a1
+      - uses: github/evals-action@5f484895664d7bbf307f858b08969b83e974b1ab
         continue-on-error: true
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
@@ -110,7 +110,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: github/evals-action@e864dd8c874c3f3f121962e5d737b3b22b6437a1
+      - uses: github/evals-action@5f484895664d7bbf307f858b08969b83e974b1ab
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
         with:
@@ -134,7 +134,7 @@ jobs:
       group: evals-${{ github.workflow_ref }}
       cancel-in-progress: false
     steps:
-      - uses: github/evals-action@e864dd8c874c3f3f121962e5d737b3b22b6437a1
+      - uses: github/evals-action@5f484895664d7bbf307f858b08969b83e974b1ab
         with:
           command: report
           report-id: evals
