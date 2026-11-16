@@ -309,17 +309,17 @@ matching `evals/<plugin>/skills/<skill>/eval.yaml` changes:
    `command: report`, `report-id: evals`, and
    `baseline-report-id: evals-baseline` in a separate `pull-requests: write`
    job to publish one sticky PR comment with a top-level **Ship / No-ship /
-   Re-run** verdict summary table, collapsible per-skill `<details>` sections
-   (ordering actionable `🛑 No ship` and `⚠️ Re-run` sections above `---`), and
-   collapsible **Baseline vs. Candidate** telemetry (`Outcome`, `Passed/Failed`,
-   `Score delta`, `Turns delta`, `Duration delta`, and `Token in/out + %`
-   delta).
+   Re-run** verdict summary table and a collapsible **Telemetry, token deltas &
+   run evidence** `<details>` section (`Outcome`, `Passed/Failed`, `Score
+   delta`, `Turns delta`, `Duration delta`, and `Token in/out + %` delta).
 
 > **Action version note:** `baseline-report-id` (`evals-baseline`) is provided
 > by [github/evals-action#34](https://github.com/github/evals-action/pull/34)
-> (verified commit `3c551330898c1467b8ddf9ef7c7f6e6c6af489d6`). Pin
-> `github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6` until `#34`
-> is merged and published to `github/evals-action@v0`.
+> (`3c551330898c1467b8ddf9ef7c7f6e6c6af489d6`), and the top-level **Ship /
+> No-ship** verdict table layout is added in
+> [github/evals-action#35](https://github.com/github/evals-action/pull/35). Pin
+> `github/evals-action` to that commit until published to
+> `github/evals-action@v0`.
 
 ```yaml
 name: Skill eval comparison

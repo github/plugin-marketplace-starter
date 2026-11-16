@@ -12,7 +12,7 @@ const stripTerminalControls = (text) => stripVTControlCharacters(String(text ?? 
 const escapeCell = (text) => stripTerminalControls(text)
   .replaceAll("&", "&amp;")
   .replaceAll("|", "\\|")
-  .replaceAll("`", "\\`")
+  .replaceAll("`", "&#96;")
   .replaceAll("<", "&lt;")
   .replaceAll(">", "&gt;");
 const finiteNonNegative = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
@@ -566,7 +566,12 @@ export function summarizeSkillVerdicts(comparison) {
     } else if (item.transition === "Regressed") {
       group.broke++;
       group.changed = true;
-    } else if (item.transition !== "Unchanged") {
+    } else if (
+      item.transition === "Improved score"
+      || item.transition === "Added"
+      || item.transition === "Removed"
+      || Math.abs(item.outputTokenDeltaPct ?? 0) >= 10
+    ) {
       group.changed = true;
     }
   }
@@ -674,11 +679,11 @@ function renderSkillDetailsBlock(skill, defaultModel) {
       const baseOut = item.baseline?.tokenUsage?.outputTokens;
       const candOut = item.candidate?.tokenUsage?.outputTokens;
       const outText = typeof baseOut === "number" && typeof candOut === "number" && item.candidate?.status !== "ERROR / NOT EVALUATED"
-        ? `${baseOut.toLocaleString("en-US")} → ${candOut.toLocaleString("en-US")} (${formatTokenDelta(item.outputTokenDelta, item.outputTokenDeltaPct)})`
+        ? `${baseOut.toLocaleString("en-US")} → ${candOut.toLocaleString("en-US")}${typeof item.outputTokenDelta === "number" ? ` (${formatTokenDelta(item.outputTokenDelta, item.outputTokenDeltaPct)})` : ""}`
         : typeof baseOut === "number"
           ? `${baseOut.toLocaleString("en-US")} → —`
           : "—";
-      return `| ${badge} | \`${escapeCell(rawCaseName)}\` | \`${escapeCell(model)}\` | ${scoreText} | ${outText} | ${describeCaseChange(item)} |`;
+      return `| ${badge} | <code>${escapeCell(rawCaseName)}</code> | <code>${escapeCell(model)}</code> | ${scoreText} | ${outText} | ${describeCaseChange(item)} |`;
     }),
     "",
     `<sub><strong>Pass rate (before → after):</strong> <code>${escapeCell(modelLabel)}</code> ${skill.basePassed}/${skill.baseTotal} → ${skill.candPassed}/${skill.candTotal}</sub>`,
