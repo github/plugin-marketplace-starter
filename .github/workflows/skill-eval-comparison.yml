@@ -32,7 +32,7 @@ jobs:
             dirs=("plugins/pr-description/skills/pr-description")
           else
             mapfile -t dirs < <(
-              git diff --name-only "$BASE_SHA" HEAD -- 'plugins/*/skills/*' 'evals/*/skills/*' \
+              git diff --name-only "$BASE_SHA" HEAD -- 'plugins/*/skills/*' \
                 | awk -F/ 'NF>=4 {print "plugins/"$2"/"$3"/"$4}' \
                 | sort -u
             )
@@ -80,8 +80,6 @@ jobs:
             skill_name="${dir##*/}"
             fixture_path="evals/_shared/fixtures/${skill_name}/SKILL.verbose-fixture.md"
             if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -f "$fixture_path" ]; then
-              cp "$fixture_path" "$dir/SKILL.md"
-            elif [ -n "$BASE_SHA" ] && git diff --quiet "$BASE_SHA" HEAD -- "$dir" && [ -f "$fixture_path" ] && ! git diff --quiet "$BASE_SHA" HEAD -- "$fixture_path"; then
               cp "$fixture_path" "$dir/SKILL.md"
             elif [ -n "$BASE_SHA" ]; then
               rm -rf -- "$dir"
