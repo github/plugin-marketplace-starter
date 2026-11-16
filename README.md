@@ -209,8 +209,11 @@ to compare two saved Vally runs (verdicts, score deltas, total and output token
 deltas, duration deltas, and per-case transitions) without calling a model. For
 pull requests in your own marketplace, see
 [automatic PR skill comparison](docs/checks-and-evals.md#automatic-pr-skill-comparison)
-to configure `github/evals-action@v0` (`report-id: evals-baseline` and
-`baseline-report-id: evals-baseline`) so any changed skill under
+to configure `github/evals-action` (`report-id: evals-baseline` and
+`baseline-report-id: evals-baseline`, introduced in
+[github/evals-action#34](https://github.com/github/evals-action/pull/34) at
+commit `fcc3794a85b0e248241991add59e2eb9c87fcd1d` and included in `@v0` once
+released) so any changed skill under
 `plugins/<plugin>/skills/<skill>/` with a matching
 `evals/<plugin>/skills/<skill>/eval.yaml` automatically runs Baseline vs.
 Candidate and updates one sticky PR comparison comment.

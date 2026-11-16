@@ -241,6 +241,13 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
       { status: "PASS", score: 1, tokenUsage: { inputTokens: 1000, outputTokens: 400, totalTokens: 1400 } },
       { status: "PASS", score: 1, tokenUsage: { inputTokens: 1200, outputTokens: 250, totalTokens: 1450 } },
     ),
+    "Increased tokens at parity",
+  );
+  assert.equal(
+    classifyTransition(
+      { status: "PASS", score: 1, tokenUsage: { inputTokens: 1000, outputTokens: 400, totalTokens: 1400 } },
+      { status: "PASS", score: 1, tokenUsage: { inputTokens: 1150, outputTokens: 250, totalTokens: 1400 } },
+    ),
     "Reduced tokens at parity",
   );
 

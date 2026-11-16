@@ -296,16 +296,24 @@ changes:
    between the PR base and head, and keep every skill whose
    `evals/<plugin>/skills/<skill>/eval.yaml` exists in both revisions.
 2. **Run Baseline (`run-baseline`) and Candidate (`run`):** run
-   `github/evals-action@v0` (`command: run`) once with the target skill's files
-   restored from the PR base commit (`report-id: evals-baseline`) and once with
-   the PR head (`report-id: evals`), keeping the eval definition, graders, and
-   neighboring marketplace skills at the PR revision.
-3. **Post sticky PR comment (`report`):** run `github/evals-action@v0` with
+   `github/evals-action` (`command: run`) once with the target skill's files
+   restored from the PR base commit (`report-id: evals-baseline`, with
+   `continue-on-error: true` so a baseline behavioral failure still uploads its
+   comparison artifact without failing the workflow when the candidate passes)
+   and once with the PR head (`report-id: evals`), keeping the eval definition,
+   graders, and neighboring marketplace skills at the PR revision.
+3. **Post sticky PR comment (`report`):** run `github/evals-action` with
    `command: report`, `report-id: evals`, and
    `baseline-report-id: evals-baseline` in a separate `pull-requests: write`
    job to publish one sticky PR comment with the **Baseline vs. Candidate
    comparison** table (Outcome, Passed/Failed, Score delta, Duration delta, and
    Token `in/out` + `%` delta) alongside per-eval results.
+
+> **Action version note:** `baseline-report-id` (`evals-baseline`) is provided
+> by [github/evals-action#34](https://github.com/github/evals-action/pull/34)
+> (verified commit `fcc3794a85b0e248241991add59e2eb9c87fcd1d`). Pin
+> `github/evals-action@fcc3794a85b0e248241991add59e2eb9c87fcd1d` until `#34`
+> is merged and published to `github/evals-action@v0`.
 
 ```yaml
 name: Skill eval comparison
@@ -367,7 +375,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - run: npm ci --no-audit --no-fund
       - name: Restore baseline skill sources
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -379,10 +386,10 @@ jobs:
               git checkout "$BASE_SHA" -- "$dir"
             fi
           done <<< "$SKILL_DIRS"
-      - uses: github/evals-action@v0
+      - uses: github/evals-action@fcc3794a85b0e248241991add59e2eb9c87fcd1d # github/evals-action#34 (use @v0 once released)
+        continue-on-error: true
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
-          COPILOT_CLI_PATH: ${{ github.workspace }}/node_modules/@github/copilot/npm-loader.js
         with:
           command: run
           working-directory: .
@@ -404,11 +411,9 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - run: npm ci --no-audit --no-fund
-      - uses: github/evals-action@v0
+      - uses: github/evals-action@fcc3794a85b0e248241991add59e2eb9c87fcd1d # github/evals-action#34 (use @v0 once released)
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
-          COPILOT_CLI_PATH: ${{ github.workspace }}/node_modules/@github/copilot/npm-loader.js
         with:
           command: run
           working-directory: .
@@ -430,7 +435,7 @@ jobs:
       group: evals-${{ github.workflow_ref }}
       cancel-in-progress: false
     steps:
-      - uses: github/evals-action@v0
+      - uses: github/evals-action@fcc3794a85b0e248241991add59e2eb9c87fcd1d # github/evals-action#34 (use @v0 once released)
         with:
           command: report
           report-id: evals

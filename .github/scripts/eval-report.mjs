@@ -354,11 +354,12 @@ export function classifyTransition(baselineRow, candidateRow) {
     const baseOutputTokens = baselineRow.tokenUsage?.outputTokens;
     const candOutputTokens = candidateRow.tokenUsage?.outputTokens;
     if (typeof baseTokens === "number" && typeof candTokens === "number") {
-      if (candTokens < baseTokens
-        || (typeof baseOutputTokens === "number" && typeof candOutputTokens === "number" && candOutputTokens < baseOutputTokens)) {
-        return "Reduced tokens at parity";
-      }
+      if (candTokens < baseTokens) return "Reduced tokens at parity";
       if (candTokens > baseTokens) return "Increased tokens at parity";
+      if (typeof baseOutputTokens === "number" && typeof candOutputTokens === "number") {
+        if (candOutputTokens < baseOutputTokens) return "Reduced tokens at parity";
+        if (candOutputTokens > baseOutputTokens) return "Increased tokens at parity";
+      }
     }
   }
   return "Unchanged";
