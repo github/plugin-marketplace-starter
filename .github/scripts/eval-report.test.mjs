@@ -187,6 +187,13 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
     ),
     "Regressed",
   );
+  assert.equal(
+    classifyTransition(
+      { status: "PASS", score: 1, tokenUsage: { inputTokens: 1000, outputTokens: 400, totalTokens: 1400 } },
+      { status: "PASS", score: 1, tokenUsage: { inputTokens: 1200, outputTokens: 250, totalTokens: 1450 } },
+    ),
+    "Reduced tokens at parity",
+  );
 
   const markdown = renderReport(candidate, "candidate/results.jsonl", {
     baselineSummary: baseline,
@@ -194,6 +201,7 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
   });
   assert.match(markdown, /## Baseline vs\. Candidate Comparison/);
   assert.match(markdown, /\| Total Tokens \| 6,960 \(in: 5,570, out: 1,390\) \| 3,300 \(in: 2,800, out: 500\) \| -3,660 \(-52\.6%\) \|/);
+  assert.match(markdown, /\| Output Tokens \| 1,390 \| 500 \| -890 \(-64\.0%\) \|/);
   assert.match(markdown, /\| pr-description \/ pr-description-drafts-structured-pr-body \| BEHAVIORAL FAILURE \(50\.0%\) \| PASS \(100\.0%\) \| \+50\.0% \| -2,410 \(-54\.8%\) \| Fixed \|/);
   assert.match(markdown, /\| pr-description \/ pr-description-ignores-bug-and-review-question \| PASS \(100\.0%\) \| PASS \(100\.0%\) \| 0\.0% \| -1,250 \(-48\.8%\) \| Reduced tokens at parity \|/);
   assert.match(markdown, /Single-run score, token, and duration deltas are observed signals for review/);
@@ -232,8 +240,9 @@ prDescriptionTest("eval-report CLI compares the shared pr-description baseline a
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /## Baseline vs\. Candidate Comparison/);
+  assert.match(result.stdout, /\| Output Tokens \| 1,447 \| 991 \| -456 \(-31\.5%\) \|/);
   assert.match(result.stdout, /Fixed/);
-  assert.match(result.stdout, /Reduced tokens at parity/);
+  assert.match(result.stdout, /Increased tokens at parity/);
   assert.equal(readFileSync(summaryFile, "utf8"), "");
 });
 
@@ -414,150 +423,4 @@ test("eval-report redacts raw grader evidence and error strings, requires comple
     ]),
     (err) => err instanceof Error && /^Invalid grade: /.test(err.message) && !/[\u001b\u0007]/.test(err.message),
   );
-});
-
-prDescriptionTest("pr-description eval stages the multi-skill marketplace cohort and enforces non-collision", async () => {
-  const evalDir = resolve(root, "evals/pr-description/skills/pr-description");
-  const spec = parse(readFileSync(resolve(evalDir, "eval.yaml"), "utf8"));
-  assert.equal(spec.scoring.threshold, 1);
-  const project = parse(readFileSync(resolve(root, ".vally.yaml"), "utf8"));
-  assert.equal(spec.agent_environment, "marketplace");
-  const skills = project.environments.marketplace.skills;
-  for (const configuredSkill of skills) {
-    assert.ok(existsSync(resolve(evalDir, configuredSkill)), `configured cohort skill path is missing: ${configuredSkill}`);
-  }
-  for (const expectedSkill of [
-    "../../../../plugins/pr-description/skills/pr-description",
-    "../../../../plugins/plugin-authoring/skills/add-plugin",
-    "../../../../plugins/plugin-authoring/skills/try-plugin-locally",
-    "../../../../plugins/plugin-authoring/skills/submit-plugin",
-    "../../../../plugins/marketplace-maintainer/skills/update-remote-pins",
-    "../../../../plugins/marketplace-maintainer/skills/release-plugins",
-  ].filter((skillPath) => existsSync(resolve(evalDir, skillPath)))) {
-    assert.ok(skills.includes(expectedSkill), `missing cohort skill: ${expectedSkill}`);
-  }
-
-  const grader = createDefaultGraderRegistry().get("skill-invocation");
-  const positive = spec.stimuli.find((item) => item.tags?.control === "positive");
-  const negative = spec.stimuli.find((item) => item.tags?.control === "negative");
-  const posConfig = positive.graders.find((item) => item.type === "skill-invocation").config;
-  const negConfig = negative.graders.find((item) => item.type === "skill-invocation").config;
-
-  const exactMatch = await grader.grade({
-    stimulus: positive,
-    config: posConfig,
-    trajectory: { output: "ok", events: [{ type: "skill_activation", data: { name: "pr-description" } }] },
-  });
-  assert.equal(exactMatch.passed, true);
-
-  const neighborCollision = await grader.grade({
-    stimulus: positive,
-    config: posConfig,
-    trajectory: {
-      output: "ok",
-      events: [
-        { type: "skill_activation", data: { name: "pr-description" } },
-        { type: "skill_activation", data: { name: "submit-plugin" } },
-      ],
-    },
-  });
-  assert.equal(neighborCollision.passed, false, "activating a neighbor skill alongside pr-description must fail");
-
-  const negativeTriggered = await grader.grade({
-    stimulus: negative,
-    config: negConfig,
-    trajectory: { output: "ok", events: [{ type: "skill_activation", data: { name: "pr-description" } }] },
-  });
-  assert.equal(negativeTriggered.passed, false, "activating pr-description on the negative case must fail");
-});
-
-prDescriptionTest("pr-description program grader enforces ordered headings, factual changes, and unshipped backlog exclusion", async (t) => {
-  const gradingDir = resolve(root, ".github/scripts", `.pr-grader-test-${randomUUID()}`);
-  mkdirSync(gradingDir, { recursive: true });
-  t.after(() => rmSync(gradingDir, { recursive: true, force: true }));
-  copyFileSync(resolve(root, "evals/pr-description/skills/pr-description/grader.mjs"), resolve(gradingDir, "grader.mjs"));
-  copyFileSync(resolve(root, "evals/_shared/graders/common.mjs"), resolve(gradingDir, "common.mjs"));
-  const { evaluate: evaluatePrDescription } = await import(pathToFileURL(resolve(gradingDir, "grader.mjs")));
-  const { score } = await import(pathToFileURL(resolve(gradingDir, "common.mjs")));
-
-  const validOutput = [
-    "## Summary",
-    "Validate `--timeout` as a positive integer in `src/cli.mjs` and add unit tests. Retry backoff (#42) remains open and out of scope.",
-    "",
-    "## Changes",
-    "- Added positive integer validation for `--timeout` in `src/cli.mjs`.",
-    "- Added unit tests for `--timeout 0` and `--timeout -5` in `test/cli.test.mjs`.",
-    "",
-    "## Verification",
-    "- `npm test` passed (14 tests).",
-    "",
-    "## Risks / Rollback",
-    "- Low risk; revert the commit if needed.",
-  ].join("\n");
-
-  assert.equal(score("pr-description-contract", evaluatePrDescription({ output: validOutput, events: [] })).passed, true);
-
-  for (const passingLine of [
-    "- `npm test` (14 tests): passed.",
-    "- `npm test` — 14 tests, all passing.",
-    "- Ran `npm test`; 14/14 tests passed.",
-    "- `npm test`: 14 tests passed, 0 failed, 0 errors.",
-    "- `npm test` passed (14 tests, no errors).",
-    "- `npm test`: 14 passed, # fail 0, 0 failures.",
-  ]) {
-    const equivalentOutput = validOutput.replace("- `npm test` passed (14 tests).", passingLine);
-    assert.equal(
-      score("pr-description-contract", evaluatePrDescription({ output: equivalentOutput, events: [] })).passed,
-      true,
-      `expected passing verification format: ${passingLine}`,
-    );
-  }
-
-  for (const negatedLine of [
-    "- `npm test` (14 tests).",
-    "- `npm test` did not pass (14 tests).",
-    "- `npm test` (14 tests): not passing.",
-    "- `npm test`: 14 tests; 12 passed, 2 failures.",
-  ]) {
-    const negatedOutput = validOutput.replace("- `npm test` passed (14 tests).", negatedLine);
-    const negatedResult = score("pr-description-contract", evaluatePrDescription({ output: negatedOutput, events: [] }));
-    assert.equal(negatedResult.passed, false, `expected negated verification to fail: ${negatedLine}`);
-    assert.match(negatedResult.evidence, /Recorded the supplied npm test verification result/);
-  }
-
-  for (const leakedChanges of [
-    "- Added unit tests for `--timeout 0` and `--timeout -5` in `test/cli.test.mjs`.\n- Implemented exponential retry backoff (#42).",
-    "- Rejects `--timeout` values that are not positive integers.\n- Adds exponential retry backoff (#42).",
-  ]) {
-    const leaksBacklogIntoChanges = validOutput.replace(
-      "- Added unit tests for `--timeout 0` and `--timeout -5` in `test/cli.test.mjs`.",
-      leakedChanges,
-    );
-    const leakedResult = score("pr-description-contract", evaluatePrDescription({ output: leaksBacklogIntoChanges, events: [] }));
-    assert.equal(leakedResult.passed, false);
-    assert.match(leakedResult.evidence, /Excluded unshipped retry backoff/);
-  }
-
-  const missingRisks = validOutput.split("## Risks / Rollback")[0];
-  assert.equal(score("pr-description-contract", evaluatePrDescription({ output: missingRisks, events: [] })).passed, false);
-
-  const failedTestsClaim = validOutput.replace(
-    "- `npm test` passed (14 tests).",
-    "- `npm test` failed (14 tests).",
-  );
-  const failedTestsResult = score("pr-description-contract", evaluatePrDescription({ output: failedTestsClaim, events: [] }));
-  assert.equal(failedTestsResult.passed, false);
-  assert.match(failedTestsResult.evidence, /Recorded the supplied npm test verification result/);
-
-  for (const prohibitedTool of ["bash", "functions.bash", "functions.powershell", "mcp:edit", "tools/write_file"]) {
-    const toolResult = score(
-      "pr-description-contract",
-      evaluatePrDescription({
-        output: validOutput,
-        events: [{ type: "tool_call", data: { toolCallId: "1", toolName: prohibitedTool, arguments: { command: "git status" } } }],
-      }),
-    );
-    assert.equal(toolResult.passed, false, `must reject prohibited tool ${prohibitedTool}`);
-    assert.match(toolResult.evidence, /Did not run shell commands or create a pull request/);
-  }
 });

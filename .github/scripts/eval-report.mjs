@@ -274,8 +274,13 @@ export function classifyTransition(baselineRow, candidateRow) {
   if (baselineRow.status === candidateRow.status && (baselineRow.trials ?? 1) === (candidateRow.trials ?? 1)) {
     const baseTokens = baselineRow.tokenUsage?.totalTokens;
     const candTokens = candidateRow.tokenUsage?.totalTokens;
+    const baseOutputTokens = baselineRow.tokenUsage?.outputTokens;
+    const candOutputTokens = candidateRow.tokenUsage?.outputTokens;
     if (typeof baseTokens === "number" && typeof candTokens === "number") {
-      if (candTokens < baseTokens) return "Reduced tokens at parity";
+      if (candTokens < baseTokens
+        || (typeof baseOutputTokens === "number" && typeof candOutputTokens === "number" && candOutputTokens < baseOutputTokens)) {
+        return "Reduced tokens at parity";
+      }
       if (candTokens > baseTokens) return "Increased tokens at parity";
     }
   }
@@ -304,6 +309,14 @@ export function compareSummaries(baseline, candidate) {
     const tokenDeltaPct = tokenDelta !== undefined && baseTokens > 0
       ? (tokenDelta / baseTokens) * 100
       : undefined;
+    const baseOutputTokens = baseRow?.tokenUsage?.outputTokens;
+    const candOutputTokens = candRow?.tokenUsage?.outputTokens;
+    const outputTokenDelta = sameTrialCount && typeof baseOutputTokens === "number" && typeof candOutputTokens === "number"
+      ? candOutputTokens - baseOutputTokens
+      : undefined;
+    const outputTokenDeltaPct = outputTokenDelta !== undefined && baseOutputTokens > 0
+      ? (outputTokenDelta / baseOutputTokens) * 100
+      : undefined;
     const durationDeltaMs = sameTrialCount && typeof baseRow?.durationMs === "number" && typeof candRow?.durationMs === "number"
       ? candRow.durationMs - baseRow.durationMs
       : undefined;
@@ -315,6 +328,8 @@ export function compareSummaries(baseline, candidate) {
       scoreDelta,
       tokenDelta,
       tokenDeltaPct,
+      outputTokenDelta,
+      outputTokenDeltaPct,
       durationDeltaMs,
       transition: classifyTransition(baseRow, candRow),
     };
@@ -331,6 +346,14 @@ export function compareSummaries(baseline, candidate) {
   const totalTokenDeltaPct = totalTokenDelta !== undefined && baseTotalTokens > 0
     ? (totalTokenDelta / baseTotalTokens) * 100
     : undefined;
+  const baseOutputTokens = baseline.tokenUsage?.outputTokens;
+  const candOutputTokens = candidate.tokenUsage?.outputTokens;
+  const outputTokenDelta = workloadsMatch && typeof baseOutputTokens === "number" && typeof candOutputTokens === "number"
+    ? candOutputTokens - baseOutputTokens
+    : undefined;
+  const outputTokenDeltaPct = outputTokenDelta !== undefined && baseOutputTokens > 0
+    ? (outputTokenDelta / baseOutputTokens) * 100
+    : undefined;
 
   return {
     baseline,
@@ -344,6 +367,8 @@ export function compareSummaries(baseline, candidate) {
         : undefined,
       totalTokens: totalTokenDelta,
       totalTokensPct: totalTokenDeltaPct,
+      outputTokens: outputTokenDelta,
+      outputTokensPct: outputTokenDeltaPct,
       totalDurationMs: workloadsMatch && typeof baseline.totalDurationMs === "number" && typeof candidate.totalDurationMs === "number"
         ? candidate.totalDurationMs - baseline.totalDurationMs
         : undefined,
@@ -417,6 +442,9 @@ export function renderReport(summary, path, { baselineSummary, baselinePath } = 
       `| Failed | ${baselineSummary.failedCount + baselineSummary.errorCount} | ${summary.failedCount + summary.errorCount} | ${formatSignedInt(comparison.deltas.failed)} |`,
       `| Avg Score | ${formatScore(baselineSummary.averageScore)} | ${formatScore(summary.averageScore)} | ${formatScoreDelta(comparison.deltas.averageScore)} |`,
       `| Total Tokens | ${formatTokens(baselineSummary.tokenUsage)} | ${formatTokens(summary.tokenUsage)} | ${formatTokenDelta(comparison.deltas.totalTokens, comparison.deltas.totalTokensPct)} |`,
+      ...(typeof baselineSummary.tokenUsage?.outputTokens === "number" && typeof summary.tokenUsage?.outputTokens === "number"
+        ? [`| Output Tokens | ${baselineSummary.tokenUsage.outputTokens.toLocaleString("en-US")} | ${summary.tokenUsage.outputTokens.toLocaleString("en-US")} | ${formatTokenDelta(comparison.deltas.outputTokens, comparison.deltas.outputTokensPct)} |`]
+        : []),
       `| Total Duration | ${formatDuration(baselineSummary.totalDurationMs)} | ${formatDuration(summary.totalDurationMs)} | ${formatDurationDelta(comparison.deltas.totalDurationMs)} |`,
       "",
       "| Case | Baseline | Candidate | Score Delta | Token Delta | Transition |",

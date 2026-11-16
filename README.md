@@ -201,7 +201,19 @@ Local examples use a dedicated Copilot Requests token with public-repository
 access for the synthetic fixtures, not a broad GitHub CLI login credential.
 Then `npm run eval` runs real Copilot sessions and costs AI credits.
 [Evals](.github/workflows/evals.yml) runs only when manually started; pull
-requests never trigger paid evals.
+requests never trigger paid evals by default.
+
+**Baseline vs. Candidate skill comparison:** locally, run
+`npm run eval:compare -- --baseline <base-results.jsonl> --candidate <cand-results.jsonl>`
+to compare two saved Vally runs (verdicts, score deltas, total and output token
+deltas, duration deltas, and per-case transitions) without calling a model. For
+pull requests in your own marketplace, see
+[automatic PR skill comparison](docs/checks-and-evals.md#automatic-pr-skill-comparison)
+to configure `github/evals-action@v0` (`report-id: evals-baseline` and
+`baseline-report-id: evals-baseline`) so any changed skill under
+`plugins/<plugin>/skills/<skill>/` with a matching
+`evals/<plugin>/skills/<skill>/eval.yaml` automatically runs Baseline vs.
+Candidate and updates one sticky PR comparison comment.
 
 Repository evals use **Vally's default local backend**, without an advanced
 project backend setting. This keeps [.vally.yaml](.vally.yaml) within the GitHub
