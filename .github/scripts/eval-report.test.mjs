@@ -26,10 +26,14 @@ const makeTrial = ({
   runId = "run-1",
   evalName = "pr-description",
   stimulus = "case-1",
+  model = "claude-haiku-5.5",
   status = "success",
   passed = true,
   gradeScore = passed ? 1 : 0,
   durationMs = 2400,
+  wallTimeMs = durationMs,
+  turnCount = 1,
+  skillActivationBreakdown = {},
   inputTokens = 1100,
   outputTokens = 320,
   totalTokens = inputTokens + outputTokens,
@@ -40,14 +44,20 @@ const makeTrial = ({
   runId,
   evalName,
   stimulus,
+  model,
   status,
   durationMs,
   gradeResult: { passed, score: gradeScore, details },
   trajectory: {
     output: "Done.",
     events,
+    metadata: {
+      model,
+    },
     metrics: {
-      wallTimeMs: durationMs,
+      wallTimeMs,
+      turnCount,
+      skillActivationBreakdown,
       tokenUsage: {
         inputTokens,
         outputTokens,
@@ -93,20 +103,46 @@ test("eval-report follows native project results configuration and retains expli
 });
 
 test("extractTrialMetrics and summarizeRun extract per-trial and aggregate tokens and duration", () => {
-  const trial1 = makeTrial({ stimulus: "case-a", durationMs: 1500, inputTokens: 800, outputTokens: 200, totalTokens: 1000 });
-  const trial2 = makeTrial({ stimulus: "case-b", durationMs: 2500, inputTokens: 1200, outputTokens: 300, totalTokens: 1500, passed: false, gradeScore: 0.5 });
+  const trial1 = makeTrial({
+    stimulus: "case-a",
+    durationMs: 1500,
+    wallTimeMs: 1100,
+    turnCount: 2,
+    skillActivationBreakdown: { "pr-description": 1 },
+    inputTokens: 800,
+    outputTokens: 200,
+    totalTokens: 1000,
+  });
+  const trial2 = makeTrial({
+    stimulus: "case-b",
+    durationMs: 2500,
+    wallTimeMs: 1900,
+    turnCount: 1,
+    inputTokens: 1200,
+    outputTokens: 300,
+    totalTokens: 1500,
+    passed: false,
+    gradeScore: 0.5,
+  });
 
   assert.deepEqual(extractTrialMetrics(trial1), {
     durationMs: 1500,
+    wallTimeMs: 1100,
+    turns: 2,
+    model: "claude-haiku-5.5",
+    skillsInvoked: ["pr-description"],
     tokenUsage: { inputTokens: 800, outputTokens: 200, totalTokens: 1000 },
   });
 
   const summary = summarizeRun([trial1, trial2, makeFooter()]);
+  assert.deepEqual(summary.models, ["claude-haiku-5.5"]);
   assert.equal(summary.passedCount, 1);
   assert.equal(summary.failedCount, 1);
   assert.equal(summary.errorCount, 0);
   assert.equal(summary.averageScore, 0.75);
   assert.equal(summary.totalDurationMs, 4000);
+  assert.equal(summary.totalWallTimeMs, 3000);
+  assert.equal(summary.totalTurns, 3);
   assert.deepEqual(summary.tokenUsage, {
     inputTokens: 2000,
     outputTokens: 500,
@@ -117,10 +153,11 @@ test("extractTrialMetrics and summarizeRun extract per-trial and aggregate token
   assert.equal(formatDuration(450), "450ms");
 
   const markdown = renderReport(summary, "vally-results/run-1/results.jsonl");
-  assert.match(markdown, /\| Passed \| Failed \| Avg Score \| Total Tokens \| Total Duration \|/);
-  assert.match(markdown, /\| 1 \| 1 \| 75\.0% \| 2,500 \(in: 2,000, out: 500\) \| 4\.0s \|/);
-  assert.match(markdown, /\| case-a \| PASS \| 100\.0% \| 1,000 \(in: 800, out: 200\) \| 1\.5s \|/);
-  assert.match(markdown, /\| case-b \| BEHAVIORAL FAILURE \| 50\.0% \| 1,500 \(in: 1,200, out: 300\) \| 2\.5s \|/);
+  assert.match(markdown, /Saved run: `vally-results\/run-1\/results\.jsonl` \| Model: `claude-haiku-5\.5`/);
+  assert.match(markdown, /\| Passed \| Failed \| Avg Score \| Total Turns \| Total Tokens \| Agent Wall Time \| Total Duration \|/);
+  assert.match(markdown, /\| 1 \| 1 \| 75\.0% \| 3 \| 2,500 \(in: 2,000, out: 500\) \| 3\.0s \| 4\.0s \|/);
+  assert.match(markdown, /\| case-a \| PASS \| 100\.0% \| pr-description \| 2 \| 1,000 \(in: 800, out: 200\) \| 1\.1s \| 1\.5s \|/);
+  assert.match(markdown, /\| case-b \| BEHAVIORAL FAILURE \| 50\.0% \| none \| 1 \| 1,500 \(in: 1,200, out: 300\) \| 1\.9s \| 2\.5s \|/);
 });
 
 test("compareSummaries and renderReport surface fixed failures, regressions, and token diet reductions at parity", () => {
@@ -131,6 +168,9 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
       passed: false,
       gradeScore: 0.5,
       durationMs: 6840,
+      wallTimeMs: 5200,
+      turnCount: 2,
+      skillActivationBreakdown: { "pr-description": 1 },
       inputTokens: 3420,
       outputTokens: 980,
       totalTokens: 4400,
@@ -141,6 +181,8 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
       passed: true,
       gradeScore: 1,
       durationMs: 4120,
+      wallTimeMs: 3100,
+      turnCount: 1,
       inputTokens: 2150,
       outputTokens: 410,
       totalTokens: 2560,
@@ -155,6 +197,9 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
       passed: true,
       gradeScore: 1,
       durationMs: 3910,
+      wallTimeMs: 2800,
+      turnCount: 2,
+      skillActivationBreakdown: { "pr-description": 1 },
       inputTokens: 1680,
       outputTokens: 310,
       totalTokens: 1990,
@@ -165,6 +210,8 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
       passed: true,
       gradeScore: 1,
       durationMs: 2450,
+      wallTimeMs: 1800,
+      turnCount: 1,
       inputTokens: 1120,
       outputTokens: 190,
       totalTokens: 1310,
@@ -176,7 +223,9 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
   assert.equal(comparison.deltas.passed, 1);
   assert.equal(comparison.deltas.failed, -1);
   assert.equal(comparison.deltas.averageScore, 0.25);
+  assert.equal(comparison.deltas.totalTurns, 0);
   assert.equal(comparison.deltas.totalTokens, -3660);
+  assert.equal(comparison.deltas.totalWallTimeMs, -3700);
   assert.equal(comparison.cases[0].transition, "Fixed");
   assert.equal(comparison.cases[1].transition, "Reduced tokens at parity");
 
@@ -200,10 +249,12 @@ test("compareSummaries and renderReport surface fixed failures, regressions, and
     baselinePath: "baseline/results.jsonl",
   });
   assert.match(markdown, /## Baseline vs\. Candidate Comparison/);
+  assert.match(markdown, /\| Total Turns \| 3 \| 3 \| 0 \|/);
   assert.match(markdown, /\| Total Tokens \| 6,960 \(in: 5,570, out: 1,390\) \| 3,300 \(in: 2,800, out: 500\) \| -3,660 \(-52\.6%\) \|/);
   assert.match(markdown, /\| Output Tokens \| 1,390 \| 500 \| -890 \(-64\.0%\) \|/);
-  assert.match(markdown, /\| pr-description \/ pr-description-drafts-structured-pr-body \| BEHAVIORAL FAILURE \(50\.0%\) \| PASS \(100\.0%\) \| \+50\.0% \| -2,410 \(-54\.8%\) \| Fixed \|/);
-  assert.match(markdown, /\| pr-description \/ pr-description-ignores-bug-and-review-question \| PASS \(100\.0%\) \| PASS \(100\.0%\) \| 0\.0% \| -1,250 \(-48\.8%\) \| Reduced tokens at parity \|/);
+  assert.match(markdown, /\| Agent Wall Time \| 8\.3s \| 4\.6s \| -3\.7s \|/);
+  assert.match(markdown, /\| pr-description \/ pr-description-drafts-structured-pr-body \| BEHAVIORAL FAILURE \(50\.0%\) \| PASS \(100\.0%\) \| \+50\.0% \| 0 \| -2,410 \(-54\.8%\) \| -2\.4s \(-46\.2%\) \| Fixed \|/);
+  assert.match(markdown, /\| pr-description \/ pr-description-ignores-bug-and-review-question \| PASS \(100\.0%\) \| PASS \(100\.0%\) \| 0\.0% \| 0 \| -1,250 \(-48\.8%\) \| -1\.3s \(-41\.9%\) \| Reduced tokens at parity \|/);
   assert.match(markdown, /Single-run score, token, and duration deltas are observed signals for review/);
 });
 
@@ -239,8 +290,13 @@ prDescriptionTest("eval-report CLI compares the shared pr-description baseline a
   );
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Model: `claude-haiku-5\.5`/);
+  assert.match(result.stdout, /\| pr-description-drafts-structured-pr-body \| PASS \| 100\.0% \| pr-description \| 2 \|/);
+  assert.match(result.stdout, /\| pr-description-ignores-bug-and-review-question \| PASS \| 100\.0% \| none \| 1 \|/);
   assert.match(result.stdout, /## Baseline vs\. Candidate Comparison/);
   assert.match(result.stdout, /\| Output Tokens \| 1,447 \| 991 \| -456 \(-31\.5%\) \|/);
+  assert.match(result.stdout, /\| Agent Wall Time \| 17\.5s \| 16\.4s \| -1\.1s \|/);
+  assert.match(result.stdout, /-4\.0s \(-36\.2%\)/);
   assert.match(result.stdout, /Fixed/);
   assert.match(result.stdout, /Increased tokens at parity/);
   assert.equal(readFileSync(summaryFile, "utf8"), "");
@@ -300,6 +356,8 @@ test("eval-report redacts raw grader evidence and error strings, requires comple
     makeFooter("partial-run"),
   ]);
   assert.equal(partialSummary.totalDurationMs, undefined);
+  assert.equal(partialSummary.totalWallTimeMs, undefined);
+  assert.equal(partialSummary.totalTurns, undefined);
   assert.equal(partialSummary.tokenUsage, undefined);
 
   // Multi-trial aggregation per case and mismatched trial count comparison
@@ -359,17 +417,23 @@ test("eval-report redacts raw grader evidence and error strings, requires comple
     makeFooter("s-cand"),
   ]);
   const mismatchedTrialsComp = compareSummaries(multiBase, singleTrialCand);
+  assert.equal(mismatchedTrialsComp.cases[0].turnsDelta, undefined);
   assert.equal(mismatchedTrialsComp.cases[0].tokenDelta, undefined);
   assert.equal(mismatchedTrialsComp.cases[0].durationDeltaMs, undefined);
+  assert.equal(mismatchedTrialsComp.cases[0].wallTimeDeltaMs, undefined);
   assert.equal(mismatchedTrialsComp.cases[0].transition, "Unchanged");
+  assert.equal(mismatchedTrialsComp.deltas.totalTurns, undefined);
   assert.equal(mismatchedTrialsComp.deltas.totalTokens, undefined);
   assert.equal(mismatchedTrialsComp.deltas.totalTokensPct, undefined);
+  assert.equal(mismatchedTrialsComp.deltas.totalWallTimeMs, undefined);
   assert.equal(mismatchedTrialsComp.deltas.totalDurationMs, undefined);
   const mismatchedTrialsReport = renderReport(singleTrialCand, "cand/results.jsonl", {
     baselineSummary: multiBase,
     baselinePath: "base/results.jsonl",
   });
+  assert.match(mismatchedTrialsReport, /\| Total Turns \| 2 \| 1 \| — \|/);
   assert.match(mismatchedTrialsReport, /\| Total Tokens \| 1,100 \(in: 900, out: 200\) \| 400 \(in: 300, out: 100\) \| — \|/);
+  assert.match(mismatchedTrialsReport, /\| Agent Wall Time \| 2\.2s \| 900ms \| — \|/);
   assert.match(mismatchedTrialsReport, /\| Total Duration \| 2\.2s \| 900ms \| — \|/);
 
   const extraCaseBase = summarizeRun([
@@ -378,8 +442,10 @@ test("eval-report redacts raw grader evidence and error strings, requires comple
     makeFooter("e-base"),
   ]);
   const mismatchedCasesComp = compareSummaries(extraCaseBase, singleTrialCand);
+  assert.equal(mismatchedCasesComp.deltas.totalTurns, undefined);
   assert.equal(mismatchedCasesComp.deltas.totalTokens, undefined);
   assert.equal(mismatchedCasesComp.deltas.totalTokensPct, undefined);
+  assert.equal(mismatchedCasesComp.deltas.totalWallTimeMs, undefined);
   assert.equal(mismatchedCasesComp.deltas.totalDurationMs, undefined);
 
   // Unscored / errored transitions
