@@ -129,8 +129,9 @@ standard-model experiment inherit it.
 
 This marketplace pins the GitHub Copilot Evals plugin in [marketplace.json](../marketplace.json)
 (published on [github/evals releases](https://github.com/github/evals/releases)). Its packaged
-full-engine project reader (`packages/plugin/dist/mcp/server.mjs` at the `source.sha` commit in
-`marketplace.json`)
+full-engine project reader (`packages/plugin/com.github.copilot/extensions/copilot-evals/workbench.mjs`,
+loaded by `packages/plugin/dist/mcp/server.mjs` at the `eval` entry's pinned `source.ref` /
+`source.sha` in `marketplace.json`)
 accepts `environments`, `params`, `metadata`, `paths` and `suites`, and rejects
 the advanced project `defaults` key. The regression check covers this root-key
 shape, not an installed-version or end-to-end execution test. Tools still

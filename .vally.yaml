@@ -25,23 +25,28 @@ environments:
     commands:
       - >-
         node -e "const fs = require('node:fs'); const { execFileSync } =
-        require('node:child_process'); const pin =
+        require('node:child_process'); try { const entry =
         JSON.parse(fs.readFileSync('.vally-eval-pin.json',
-        'utf8')).plugins.find(p => p.name === 'eval')?.source; if (!pin ||
-        pin.repo !== 'github/evals' || pin.path !== 'packages/plugin' ||
-        !/^copilot-evals-v[0-9]+\.[0-9]+\.[0-9]+$/.test(pin.ref) ||
-        !/^[0-9a-f]{40}$/.test(pin.sha)) { throw new Error('Invalid eval remote
-        pin in marketplace.json'); } try { execFileSync('git', ['clone',
-        '--filter=blob:none', '--no-checkout', '--depth', '1', '--branch',
-        pin.ref, '--sparse', 'https://github.com/github/evals.git',
+        'utf8')).plugins?.find(p => p.name === 'eval'); if (entry) { const pin =
+        entry.source; if (!pin || pin.source !== 'github' || pin.repo !==
+        'github/evals' || pin.path !== 'packages/plugin' || typeof pin.sha !==
+        'string' || !/^[0-9a-f]{40}$/.test(pin.sha) || (pin.ref !== undefined &&
+        (typeof pin.ref !== 'string' || !/^[A-Za-z0-9._/-]+$/.test(pin.ref) ||
+        pin.ref.startsWith('-')))) { throw new Error('Invalid eval remote pin in
+        marketplace.json'); } execFileSync('git', ['init', '-q',
         '.vally-eval-source'], { stdio: 'inherit' }); execFileSync('git', ['-C',
-        '.vally-eval-source', 'sparse-checkout', 'set',
-        'packages/plugin/skills'], { stdio: 'inherit' }); execFileSync('git',
-        ['-C', '.vally-eval-source', 'checkout', '--detach', pin.sha], { stdio:
-        'inherit' }); fs.cpSync('.vally-eval-source/packages/plugin/skills',
-        '.github/skills', { recursive: true }); } finally {
-        fs.rmSync('.vally-eval-source', { recursive: true, force: true });
-        fs.rmSync('.vally-eval-pin.json', { force: true }); }"
+        '.vally-eval-source', 'remote', 'add', 'origin',
+        'https://github.com/github/evals.git'], { stdio: 'inherit' });
+        execFileSync('git', ['-C', '.vally-eval-source', 'sparse-checkout',
+        'set', 'packages/plugin/skills'], { stdio: 'inherit' });
+        execFileSync('git', ['-C', '.vally-eval-source', 'fetch',
+        '--filter=blob:none', '--depth', '1', '--no-tags', 'origin', pin.sha], {
+        stdio: 'inherit' }); execFileSync('git', ['-C', '.vally-eval-source',
+        'checkout', '-q', '--detach', 'FETCH_HEAD'], { stdio: 'inherit' });
+        fs.cpSync('.vally-eval-source/packages/plugin/skills', '.github/skills',
+        { recursive: true }); } } finally { fs.rmSync('.vally-eval-source', {
+        recursive: true, force: true }); fs.rmSync('.vally-eval-pin.json', {
+        force: true }); }"
 suites:
   smoke:
     description: One representative case for each skill and agent
