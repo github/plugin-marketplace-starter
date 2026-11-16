@@ -9,7 +9,12 @@ const stripTerminalControls = (text) => stripVTControlCharacters(String(text ?? 
   // eslint-disable-next-line no-control-regex
   .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]+/gu, " ")
   .trim();
-const escapeCell = (text) => stripTerminalControls(text).replaceAll("|", "\\|").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+const escapeCell = (text) => stripTerminalControls(text)
+  .replaceAll("&", "&amp;")
+  .replaceAll("|", "\\|")
+  .replaceAll("`", "\\`")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;");
 const finiteNonNegative = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 const sanitizeIdentifier = (value, fallback = "check") => {
   const cleaned = String(value ?? fallback).replace(/[^A-Za-z0-9._:-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -237,6 +242,7 @@ export function summarizeRun(records) {
       if (grade.passed) {
         group.passedCount++;
       } else {
+        group.failedCount = (group.failedCount ?? 0) + 1;
         group.allPassed = false;
       }
       group.scoreSum += grade.score;
@@ -292,6 +298,7 @@ export function summarizeRun(records) {
       name: group.name,
       trials: group.trials,
       passedCount: group.passedCount,
+      failedCount: group.failedCount ?? 0,
       status,
       passed,
       score: !group.hasFatal && group.allScored ? group.scoreSum / group.trials : undefined,
@@ -569,10 +576,12 @@ export function summarizeSkillVerdicts(comparison) {
   const severityOrder = { "🛑 No ship": 0, "⚠️ Re-run": 1, "✅ Ship": 2 };
   return [...bySkill.values()]
     .map((group) => {
-      const hasBehavioralFailure = group.cases.some((c) => c.candidate?.status === "BEHAVIORAL FAILURE");
+      const hasBehavioralFailure = group.cases.some(
+        (c) => c.candidate?.status === "BEHAVIORAL FAILURE" || (c.candidate?.failedCount ?? 0) > 0,
+      );
       const verdict = group.candTotal === 0 || (group.errored > 0 && !hasBehavioralFailure && group.broke === 0)
         ? "⚠️ Re-run"
-        : group.candPassed === group.candTotal && group.broke === 0 && group.errored === 0
+        : group.candPassed === group.candTotal && group.broke === 0 && group.errored === 0 && !hasBehavioralFailure
           ? "✅ Ship"
           : "🛑 No ship";
       const reasons = [];
@@ -613,8 +622,21 @@ export function summarizeSkillVerdicts(comparison) {
 function describeCaseChange(item) {
   const baseFailures = item.baseline?.failures ?? [];
   const candFailures = item.candidate?.failures ?? [];
-  if (item.candidate?.status === "ERROR / NOT EVALUATED") {
+  if (!item.candidate) {
+    return "Scenario not evaluated in candidate run";
+  }
+  if (item.candidate.status === "ERROR / NOT EVALUATED") {
     return "Trial execution error; re-run workflow to verify";
+  }
+  if (item.transition === "Added") {
+    if (item.candidate.passed) {
+      return item.candidate.gradersTotal
+        ? `New scenario (${item.candidate.gradersPassed}/${item.candidate.gradersTotal} checks passed)`
+        : "New scenario passing";
+    }
+    return candFailures.length
+      ? `New scenario failed (${candFailures.map((f) => `\`${escapeCell(f)}\``).join(", ")})`
+      : "New scenario failed";
   }
   const hasCounts = Boolean(item.baseline?.gradersTotal && item.candidate?.gradersTotal);
   const countPrefix = hasCounts
@@ -654,18 +676,22 @@ function renderSkillDetailsBlock(skill, defaultModel) {
     "| | Scenario | Model | Score | Output Tokens | What happened |",
     "| --- | --- | --- | --- | ---: | --- |",
     ...skill.cases.map((item) => {
-      const badge = item.candidate?.status === "ERROR / NOT EVALUATED"
-        ? "⚠️ Error"
-        : item.transition === "Fixed"
-          ? "📈 Fixed"
-          : item.transition === "Regressed"
-            ? "📉 Broke"
-            : item.candidate?.passed
-              ? "✅ Passed"
-              : "❌ Failed";
+      const badge = !item.candidate
+        ? "⚠️ Missing"
+        : item.candidate.status === "ERROR / NOT EVALUATED"
+          ? "⚠️ Error"
+          : item.transition === "Added"
+            ? (item.candidate.passed ? "🆕 Added" : "❌ Failed")
+            : item.transition === "Fixed"
+              ? "📈 Fixed"
+              : item.transition === "Regressed"
+                ? "📉 Broke"
+                : item.candidate.passed
+                  ? "✅ Passed"
+                  : "❌ Failed";
       const rawCaseName = item.candidate?.name ?? item.baseline?.name ?? item.key;
       const model = item.candidate?.models?.[0] ?? item.baseline?.models?.[0] ?? modelLabel;
-      const scoreText = `${formatScore(item.baseline?.score)} → ${item.candidate?.status === "ERROR / NOT EVALUATED" ? "—" : formatScore(item.candidate?.score)}`;
+      const scoreText = `${formatScore(item.baseline?.score)} → ${!item.candidate || item.candidate.status === "ERROR / NOT EVALUATED" ? "—" : formatScore(item.candidate.score)}`;
       const baseOut = item.baseline?.tokenUsage?.outputTokens;
       const candOut = item.candidate?.tokenUsage?.outputTokens;
       const outText = typeof baseOut === "number" && typeof candOut === "number" && item.candidate?.status !== "ERROR / NOT EVALUATED"
