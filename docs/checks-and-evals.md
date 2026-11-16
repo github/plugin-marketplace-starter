@@ -266,31 +266,34 @@ For these direct Vally runs, results follow `paths.results` in
 [.vally.yaml](../.vally.yaml), currently `evals/results/`. The report command
 uses the same configured directory unless you supply an explicit results path.
 
-Summarize the newest saved run (verdicts, scores, input/output/total tokens,
-and duration) or compare a baseline run against a candidate run without calling
-a model:
+Summarize the newest saved run (verdicts, scores, model, skills invoked, turns,
+input/output/total tokens, agent wall time, and total duration) or compare a
+baseline run against a candidate run without calling a model:
 
 ```sh
 npm run eval:report
 npm run eval:compare -- --baseline evals/_shared/fixtures/pr-description/baseline-results.jsonl --candidate evals/_shared/fixtures/pr-description/candidate-results.jsonl
 ```
 
-The shared `pr-description` baseline (`v0`) and candidate (`v1`) fixtures
-contain recorded Vally 0.21.0 (`claude-haiku-5.5`) runs showing a behavioral
-contract fix alongside an output-token reduction (`1,447` → `991` output tokens,
-`-31.5%`).
+The shared `pr-description` baseline (`v0`, run `63a64377`) and candidate (`v1`,
+run `ab6a6e4d`) fixtures contain recorded Vally 0.21.0 (`claude-haiku-5.5`) runs
+showing a behavioral contract fix (`87.5%` → `100.0%`) alongside an output-token
+reduction (`1,447` → `991` output tokens, `-31.5%`) and agent wall time
+reduction (`17.5s` → `16.4s` total; `11.1s` → `7.1s`, `-36.2%` on the positive
+case).
 
 [Evals](../.github/workflows/evals.yml) runs the smoke suite only when you
 explicitly start it with **Run workflow** in GitHub Actions
-(`workflow_dispatch`). Pull requests never start paid evals by default. Review
-the selected branch and its eval code before dispatching a run.
+(`workflow_dispatch`). Review the selected branch and its eval code before
+dispatching a run.
 
 ### Automatic PR skill comparison
 
-Any skill under `plugins/<plugin>/skills/<skill>/` that has a matching eval at
-`evals/<plugin>/skills/<skill>/eval.yaml` follows a standard layout, so a pull
-request workflow can detect changed skills automatically without per-skill YAML
-changes:
+[Skill eval comparison](../.github/workflows/skill-eval-comparison.yml) runs
+automatically on same-repository pull requests
+(`github.event.pull_request.head.repo.full_name == github.repository`, excluding
+fork PRs) whenever a skill under `plugins/<plugin>/skills/<skill>/` with a
+matching `evals/<plugin>/skills/<skill>/eval.yaml` changes:
 
 1. **Discover changed skills (`select`):** diff `plugins/<plugin>/skills/<skill>/`
    between the PR base and head, and keep every skill whose
@@ -311,8 +314,8 @@ changes:
 
 > **Action version note:** `baseline-report-id` (`evals-baseline`) is provided
 > by [github/evals-action#34](https://github.com/github/evals-action/pull/34)
-> (verified commit `fcc3794a85b0e248241991add59e2eb9c87fcd1d`). Pin
-> `github/evals-action@fcc3794a85b0e248241991add59e2eb9c87fcd1d` until `#34`
+> (verified commit `3c551330898c1467b8ddf9ef7c7f6e6c6af489d6`). Pin
+> `github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6` until `#34`
 > is merged and published to `github/evals-action@v0`.
 
 ```yaml
@@ -365,7 +368,6 @@ jobs:
     needs: select
     if: needs.select.outputs.eval_paths != ''
     runs-on: ubuntu-latest
-    environment: evals
     timeout-minutes: 15
     permissions:
       contents: read
@@ -386,7 +388,7 @@ jobs:
               git checkout "$BASE_SHA" -- "$dir"
             fi
           done <<< "$SKILL_DIRS"
-      - uses: github/evals-action@fcc3794a85b0e248241991add59e2eb9c87fcd1d # github/evals-action#34 (use @v0 once released)
+      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
         continue-on-error: true
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
@@ -402,7 +404,6 @@ jobs:
     needs: select
     if: needs.select.outputs.eval_paths != ''
     runs-on: ubuntu-latest
-    environment: evals
     timeout-minutes: 15
     permissions:
       contents: read
@@ -411,7 +412,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: github/evals-action@fcc3794a85b0e248241991add59e2eb9c87fcd1d # github/evals-action#34 (use @v0 once released)
+      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
         with:
@@ -435,13 +436,13 @@ jobs:
       group: evals-${{ github.workflow_ref }}
       cancel-in-progress: false
     steps:
-      - uses: github/evals-action@fcc3794a85b0e248241991add59e2eb9c87fcd1d # github/evals-action#34 (use @v0 once released)
+      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
         with:
           command: report
           report-id: evals
           baseline-report-id: evals-baseline
 ```
 
-Protect the `evals` environment with required reviewers before enabling pull
-request triggers so a maintainer reviews candidate changes before any paid
-Copilot run executes.
+Teams that want a manual approval gate before paid PR comparisons run can
+optionally add a protected `environment:` (such as `environment: evals` with
+required reviewers) to `run-baseline` and `run`.

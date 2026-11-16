@@ -200,23 +200,25 @@ request.
 Local examples use a dedicated Copilot Requests token with public-repository
 access for the synthetic fixtures, not a broad GitHub CLI login credential.
 Then `npm run eval` runs real Copilot sessions and costs AI credits.
-[Evals](.github/workflows/evals.yml) runs only when manually started; pull
-requests never trigger paid evals by default.
+[Evals](.github/workflows/evals.yml) runs the full smoke suite only when
+manually started (`workflow_dispatch`).
 
 **Baseline vs. Candidate skill comparison:** locally, run
 `npm run eval:compare -- --baseline <base-results.jsonl> --candidate <cand-results.jsonl>`
-to compare two saved Vally runs (verdicts, score deltas, total and output token
-deltas, duration deltas, and per-case transitions) without calling a model. For
-pull requests in your own marketplace, see
-[automatic PR skill comparison](docs/checks-and-evals.md#automatic-pr-skill-comparison)
-to configure `github/evals-action` (`report-id: evals-baseline` and
+to compare two saved Vally runs (verdicts, score deltas, model, skills invoked,
+turns, total and output token deltas, agent wall time deltas, total duration,
+and per-case transitions) without calling a model. On same-repository pull
+requests (`head.repo.full_name == github.repository`, excluding fork PRs),
+[Skill eval comparison](.github/workflows/skill-eval-comparison.yml) uses
+`github/evals-action` (`report-id: evals-baseline` and
 `baseline-report-id: evals-baseline`, introduced in
 [github/evals-action#34](https://github.com/github/evals-action/pull/34) at
-commit `fcc3794a85b0e248241991add59e2eb9c87fcd1d` and included in `@v0` once
+commit `3c551330898c1467b8ddf9ef7c7f6e6c6af489d6` and included in `@v0` once
 released) so any changed skill under
 `plugins/<plugin>/skills/<skill>/` with a matching
 `evals/<plugin>/skills/<skill>/eval.yaml` automatically runs Baseline vs.
-Candidate and updates one sticky PR comparison comment.
+Candidate and updates one sticky PR comparison comment; see
+[automatic PR skill comparison](docs/checks-and-evals.md#automatic-pr-skill-comparison).
 
 Repository evals use **Vally's default local backend**, without an advanced
 project backend setting. This keeps [.vally.yaml](.vally.yaml) within the GitHub
@@ -226,7 +228,10 @@ review eval setup, tools, network access and credential exposure before approval
 `npm run eval -- --suite full` selects every retained case, including the
 independent reviewer agent, and still spends AI credits. See
 [execution and authentication](docs/checks-and-evals.md#execution-and-authentication)
-for the compatibility and isolation limits. Paid CI remains manual-only.
+for the compatibility and isolation limits. The smoke-suite workflow remains
+manual-only; teams wanting a manual approval gate on PR skill comparisons can
+optionally add a protected `environment:` to the comparison workflow's execution
+jobs.
 
 **Standard models:** `npm run eval:models` uses the native
 [model experiment](evals/standard-models.experiment.yaml) to test every retained

@@ -1,11 +1,11 @@
 name: Evals
 # Runs the smoke evals with real Copilot sessions, which cost AI credits.
-# Start by explicit manual dispatch only; pull requests never start paid runs by default.
-# To enable automatic PR Baseline vs. Candidate skill comparison for any changed
-# plugins/<plugin>/skills/<skill>/ with a matching evals/<plugin>/skills/<skill>/eval.yaml
-# (using github/evals-action@fcc3794a85b0e248241991add59e2eb9c87fcd1d from
+# This full smoke-suite workflow starts by explicit manual dispatch only.
+# Same-repository PRs that change plugins/<plugin>/skills/<skill>/ with a matching
+# evals/<plugin>/skills/<skill>/eval.yaml run .github/workflows/skill-eval-comparison.yml
+# (using github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 from
 # github/evals-action#34 with report-id: evals-baseline and
-# baseline-report-id: evals-baseline to update one sticky PR comment automatically),
+# baseline-report-id: evals-baseline to update one sticky PR comment automatically);
 # see docs/checks-and-evals.md#automatic-pr-skill-comparison.
 on:
   workflow_dispatch:

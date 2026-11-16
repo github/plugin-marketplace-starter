@@ -15,6 +15,6 @@ copilot plugin install pr-description@plugin-marketplace-starter
 
 ## Try it
 
-> Draft a pull request description for these changes: added `--timeout` validation in `cli.mjs` and unit tests in `test/cli.test.mjs` (`npm test` passed). Retry backoff (#42) is still open in the backlog.
+> Draft a pull request description for these changes: added `--timeout` validation in `src/cli.mjs` and unit tests in `test/cli.test.mjs` (`npm test` passed). Retry backoff (#42) is still open in the backlog.
 
 The skill drafts the description in chat without modifying files, running commands, or opening a pull request unless you ask.

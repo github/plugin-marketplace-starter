@@ -613,9 +613,11 @@ export async function loadResults(path, root = process.cwd()) {
 export const usage = `Usage: node .github/scripts/eval-report.mjs [options]
 
 Reads Vally results.jsonl files and prints a Markdown report with per-case and
-aggregate verdicts, scores, token usage (input, output, total), and duration.
+aggregate verdicts, scores, model, skills invoked, turns, token usage (input,
+output, total), agent wall time, and total duration.
 When --baseline is supplied, also prints a Baseline vs. Candidate comparison
-table highlighting fixed failures, regressions, and token deltas.
+table highlighting fixed failures, regressions, turn deltas, total/output token
+deltas, and agent wall time deltas.
 
 Options:
   --results, --candidate, --run-dir <path>
