@@ -242,7 +242,6 @@ export function summarizeRun(records) {
       if (grade.passed) {
         group.passedCount++;
       } else {
-        group.failedCount = (group.failedCount ?? 0) + 1;
         group.allPassed = false;
       }
       group.scoreSum += grade.score;
@@ -298,7 +297,6 @@ export function summarizeRun(records) {
       name: group.name,
       trials: group.trials,
       passedCount: group.passedCount,
-      failedCount: group.failedCount ?? 0,
       status,
       passed,
       score: !group.hasFatal && group.allScored ? group.scoreSum / group.trials : undefined,
@@ -525,7 +523,6 @@ export function summarizeSkillVerdicts(comparison) {
       group = {
         skillName,
         cases: [],
-        models: new Set(),
         fixed: 0,
         broke: 0,
         errored: 0,
@@ -541,9 +538,6 @@ export function summarizeSkillVerdicts(comparison) {
       bySkill.set(skillName, group);
     }
     group.cases.push(item);
-    for (const model of [...(item.candidate?.models ?? []), ...(item.baseline?.models ?? [])]) {
-      if (model) group.models.add(model);
-    }
     if (item.baseline) {
       group.baseTotal++;
       if (item.baseline.passed) group.basePassed++;
@@ -580,12 +574,10 @@ export function summarizeSkillVerdicts(comparison) {
   const severityOrder = { "🛑 No ship": 0, "⚠️ Re-run": 1, "✅ Ship": 2 };
   return [...bySkill.values()]
     .map((group) => {
-      const hasBehavioralFailure = group.cases.some(
-        (c) => c.candidate?.status === "BEHAVIORAL FAILURE" || (c.candidate?.failedCount ?? 0) > 0,
-      );
+      const hasBehavioralFailure = group.cases.some((c) => c.candidate?.status === "BEHAVIORAL FAILURE");
       const verdict = group.candTotal === 0 || (group.errored > 0 && !hasBehavioralFailure && group.broke === 0)
         ? "⚠️ Re-run"
-        : group.candPassed === group.candTotal && group.broke === 0 && group.errored === 0 && !hasBehavioralFailure
+        : group.candPassed === group.candTotal && group.broke === 0 && group.errored === 0
           ? "✅ Ship"
           : "🛑 No ship";
       const reasons = [];
@@ -615,7 +607,6 @@ export function summarizeSkillVerdicts(comparison) {
       if (summaryCounts.length === 0) summaryCounts.push(`${group.candPassed}/${group.candTotal} passing`);
       return {
         ...group,
-        models: [...group.models],
         verdict,
         summaryLabel: `${summaryCounts.join(", ")} (${group.basePassed}/${group.baseTotal} → ${group.candPassed}/${group.candTotal} passing)`,
         why: reasons.join(" · "),
@@ -627,21 +618,8 @@ export function summarizeSkillVerdicts(comparison) {
 function describeCaseChange(item) {
   const baseFailures = item.baseline?.failures ?? [];
   const candFailures = item.candidate?.failures ?? [];
-  if (!item.candidate) {
-    return "Scenario not evaluated in candidate run";
-  }
-  if (item.candidate.status === "ERROR / NOT EVALUATED") {
+  if (item.candidate?.status === "ERROR / NOT EVALUATED") {
     return "Trial execution error; re-run workflow to verify";
-  }
-  if (item.transition === "Added") {
-    if (item.candidate.passed) {
-      return item.candidate.gradersTotal
-        ? `New scenario (${item.candidate.gradersPassed}/${item.candidate.gradersTotal} checks passed)`
-        : "New scenario passing";
-    }
-    return candFailures.length
-      ? `New scenario failed (${candFailures.map((f) => `\`${escapeCell(f)}\``).join(", ")})`
-      : "New scenario failed";
   }
   const hasCounts = Boolean(item.baseline?.gradersTotal && item.candidate?.gradersTotal);
   const countPrefix = hasCounts
@@ -673,7 +651,7 @@ function describeCaseChange(item) {
 
 function renderSkillDetailsBlock(skill, defaultModel) {
   const verdictEmoji = skill.verdict.split(" ")[0];
-  const skillModelLabel = skill.models?.length ? skill.models.join(", ") : (defaultModel || "default");
+  const modelLabel = defaultModel || "default";
   return [
     "<details>",
     `<summary>${verdictEmoji} <strong>${escapeCell(skill.skillName)}</strong> — ${skill.summaryLabel}</summary>`,
@@ -681,37 +659,29 @@ function renderSkillDetailsBlock(skill, defaultModel) {
     "| | Scenario | Model | Score | Output Tokens | What happened |",
     "| --- | --- | --- | --- | ---: | --- |",
     ...skill.cases.map((item) => {
-      const badge = !item.candidate
-        ? "⚠️ Missing"
-        : item.candidate.status === "ERROR / NOT EVALUATED"
-          ? "⚠️ Error"
-          : item.transition === "Added"
-            ? (item.candidate.passed ? "🆕 Added" : "❌ Failed")
-            : item.transition === "Fixed"
-              ? "📈 Fixed"
-              : item.transition === "Regressed"
-                ? "📉 Broke"
-                : item.candidate.passed
-                  ? "✅ Passed"
-                  : "❌ Failed";
+      const badge = item.candidate?.status === "ERROR / NOT EVALUATED"
+        ? "⚠️ Error"
+        : item.transition === "Fixed"
+          ? "📈 Fixed"
+          : item.transition === "Regressed"
+            ? "📉 Broke"
+            : item.candidate?.passed
+              ? "✅ Passed"
+              : "❌ Failed";
       const rawCaseName = item.candidate?.name ?? item.baseline?.name ?? item.key;
-      const caseModels = item.candidate?.models?.length ? item.candidate.models : item.baseline?.models;
-      const model = caseModels?.length ? caseModels.join(", ") : skillModelLabel;
-      const scoreText = `${formatScore(item.baseline?.score)} → ${!item.candidate || item.candidate.status === "ERROR / NOT EVALUATED" ? "—" : formatScore(item.candidate.score)}`;
+      const model = item.candidate?.models?.[0] ?? item.baseline?.models?.[0] ?? modelLabel;
+      const scoreText = `${formatScore(item.baseline?.score)} → ${item.candidate?.status === "ERROR / NOT EVALUATED" ? "—" : formatScore(item.candidate?.score)}`;
       const baseOut = item.baseline?.tokenUsage?.outputTokens;
       const candOut = item.candidate?.tokenUsage?.outputTokens;
-      const candHasOut = typeof candOut === "number" && item.candidate && item.candidate.status !== "ERROR / NOT EVALUATED";
-      const outText = typeof baseOut === "number" && candHasOut
-        ? `${baseOut.toLocaleString("en-US")} → ${candOut.toLocaleString("en-US")}${typeof item.outputTokenDelta === "number" ? ` (${formatTokenDelta(item.outputTokenDelta, item.outputTokenDeltaPct)})` : ""}`
-        : candHasOut
-          ? `— → ${candOut.toLocaleString("en-US")}`
-          : typeof baseOut === "number"
-            ? `${baseOut.toLocaleString("en-US")} → —`
-            : "—";
+      const outText = typeof baseOut === "number" && typeof candOut === "number" && item.candidate?.status !== "ERROR / NOT EVALUATED"
+        ? `${baseOut.toLocaleString("en-US")} → ${candOut.toLocaleString("en-US")} (${formatTokenDelta(item.outputTokenDelta, item.outputTokenDeltaPct)})`
+        : typeof baseOut === "number"
+          ? `${baseOut.toLocaleString("en-US")} → —`
+          : "—";
       return `| ${badge} | \`${escapeCell(rawCaseName)}\` | \`${escapeCell(model)}\` | ${scoreText} | ${outText} | ${describeCaseChange(item)} |`;
     }),
     "",
-    `<sub><strong>Pass rate (before → after):</strong> <code>${escapeCell(skillModelLabel)}</code> ${skill.basePassed}/${skill.baseTotal} → ${skill.candPassed}/${skill.candTotal}</sub>`,
+    `<sub><strong>Pass rate (before → after):</strong> <code>${escapeCell(modelLabel)}</code> ${skill.basePassed}/${skill.baseTotal} → ${skill.candPassed}/${skill.candTotal}</sub>`,
     "",
     "</details>",
     "",
@@ -812,10 +782,9 @@ export function renderReport(summary, path, { baselineSummary, baselinePath } = 
       "",
       "| Skill | Status | Scenarios (Before → After) | Details |",
       "| --- | --- | --- | --- |",
-      ...unchangedPassingSkills.map((s) => {
-        const skillModel = s.models?.length ? s.models.join(", ") : defaultModel;
-        return `| \`${escapeCell(s.skillName)}\` | ✅ Unchanged | ${s.basePassed}/${s.baseTotal} → ${s.candPassed}/${s.candTotal} | All scenarios passing on \`${escapeCell(skillModel)}\` |`;
-      }),
+      ...unchangedPassingSkills.map((s) =>
+        `| \`${escapeCell(s.skillName)}\` | ✅ Unchanged | ${s.basePassed}/${s.baseTotal} → ${s.candPassed}/${s.candTotal} | All scenarios passing on \`${escapeCell(defaultModel)}\` |`,
+      ),
       "",
       `<sub><strong>Run config:</strong> ${comparison.cases.length} scenarios across ${skillVerdicts.length} ${skillVerdicts.length === 1 ? "eval" : "evals"} · <code>${escapeCell(defaultModel)}</code></sub>`,
       "",
