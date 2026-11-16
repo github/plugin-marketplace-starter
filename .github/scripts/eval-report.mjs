@@ -543,7 +543,10 @@ export function summarizeSkillVerdicts(comparison) {
     }
     const baseOut = item.baseline?.tokenUsage?.outputTokens;
     const candOut = item.candidate?.tokenUsage?.outputTokens;
-    if (typeof baseOut === "number" && typeof candOut === "number") {
+    const sameCaseTrials = Boolean(
+      item.baseline && item.candidate && (item.baseline.trials ?? 1) === (item.candidate.trials ?? 1),
+    );
+    if (sameCaseTrials && typeof baseOut === "number" && typeof candOut === "number") {
       group.baseOutputTokens += baseOut;
       group.candOutputTokens += candOut;
     } else {
@@ -718,15 +721,24 @@ export function renderReport(summary, path, { baselineSummary, baselinePath } = 
   const comparison = compareSummaries(baselineSummary, summary);
   const skillVerdicts = summarizeSkillVerdicts(comparison);
   const hasNoShip = skillVerdicts.some((s) => s.verdict === "🛑 No ship") || summary.failedCount > 0;
-  const hasRerun = skillVerdicts.some((s) => s.verdict === "⚠️ Re-run") || summary.errorCount > 0;
+  const hasRerun = skillVerdicts.some((s) => s.verdict === "⚠️ Re-run")
+    || summary.errorCount > 0
+    || summary.errors.length > 0
+    || baselineSummary.errors.length > 0;
   const overallVerdict = hasNoShip ? "🛑 No ship" : hasRerun ? "⚠️ Re-run" : "✅ Ship";
-  const baseOutcome = (baselineSummary.failedCount + baselineSummary.errorCount) === 0 ? "passed" : "failed";
-  const candOutcome = (summary.failedCount + summary.errorCount) === 0 ? `passed (${overallVerdict})` : `failed (${overallVerdict})`;
-  const outcomeDelta = baseOutcome === "failed" && (summary.failedCount + summary.errorCount) === 0
-    ? "fixed"
-    : baseOutcome === "passed" && (summary.failedCount + summary.errorCount) > 0
-      ? "regressed"
-      : `${overallVerdict}`;
+  const baseClean = (baselineSummary.failedCount + baselineSummary.errorCount) === 0 && baselineSummary.errors.length === 0;
+  const candClean = (summary.failedCount + summary.errorCount) === 0 && summary.errors.length === 0;
+  const baseOutcome = baseClean ? "passed" : "failed";
+  const candOutcome = overallVerdict === "✅ Ship"
+    ? "passed (✅ Ship)"
+    : overallVerdict === "🛑 No ship"
+      ? "failed (🛑 No ship)"
+      : `${candClean ? "passed" : "failed"} (⚠️ Re-run)`;
+  const outcomeDelta = overallVerdict === "✅ Ship"
+    ? (baseOutcome === "failed" ? "fixed" : "unchanged")
+    : overallVerdict === "🛑 No ship"
+      ? (baseOutcome === "passed" || skillVerdicts.some((s) => s.broke > 0) ? "regressed" : "🛑 No ship")
+      : "⚠️ Re-run";
   const defaultModel = summary.models?.[0] ?? baselineSummary.models?.[0] ?? "default";
 
   const actionableSkills = skillVerdicts.filter((s) => s.verdict !== "✅ Ship");

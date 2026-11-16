@@ -484,6 +484,19 @@ test("eval-report redacts raw grader evidence and error strings, requires comple
   assert.match(mismatchedTrialsReport, /\| Total Tokens \| 1,100 \(in: 900, out: 200\) \| 400 \(in: 300, out: 100\) \| — \|/);
   assert.match(mismatchedTrialsReport, /\| Agent Wall Time \| 2\.2s \| 900ms \| — \|/);
   assert.match(mismatchedTrialsReport, /\| Total Duration \| 2\.2s \| 900ms \| — \|/);
+  assert.doesNotMatch(mismatchedTrialsReport, /output tokens/);
+
+  // Footer execution error without trial failure still triggers Re-run and Outcome alignment
+  const footerErrCand = summarizeRun([
+    makeTrial({ runId: "f-cand", stimulus: "repeat-case", passed: true, gradeScore: 1, durationMs: 900, inputTokens: 300, outputTokens: 100, totalTokens: 400 }),
+    makeFooter("f-cand", true),
+  ]);
+  const footerErrReport = renderReport(footerErrCand, "cand/results.jsonl", {
+    baselineSummary: singleTrialCand,
+    baselinePath: "base/results.jsonl",
+  });
+  assert.match(footerErrReport, /## Evals: ⚠️ Re-run/);
+  assert.match(footerErrReport, /\| Outcome \| passed \| failed \(⚠️ Re-run\) \| ⚠️ Re-run \|/);
 
   const extraCaseBase = summarizeRun([
     makeTrial({ runId: "e-base", stimulus: "repeat-case", passed: true, gradeScore: 1, durationMs: 900, inputTokens: 300, outputTokens: 100, totalTokens: 400 }),
