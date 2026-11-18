@@ -28,10 +28,10 @@
         "source": "github",
         "repo": "github/evals",
         "path": "packages/plugin",
-        "ref": "copilot-evals-v0.24.56",
-        "sha": "fd4e8f7387c24359f50f010884523e86b1543214"
+        "ref": "copilot-evals-v0.24.60",
+        "sha": "133d6ea130dc1ff55ffcc08b1ce64f77c6e4ce02"
       },
-      "version": "0.24.56",
+      "version": "0.24.60",
       "description": "GitHub Copilot Evals (Preview): set up a project with /eval setup, create and save evals with /eval create, save revised copies with /eval improve, run with /eval run, review with /eval review, and compare saved runs or explore one skill with /eval compare. Setup is optional; saves use normal host permissions and runs require cost/effect approval.",
       "homepage": "https://github.com/github/evals"
     }
