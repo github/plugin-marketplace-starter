@@ -299,8 +299,9 @@ test("manifest authentication and server errors stop rather than falling through
 });
 
 test("gh transport retains HTTP statuses and raw JSON without exposing stderr", () => {
-  const run = (_command, args) => {
+  const run = (_command, args, options) => {
     assert.ok(args.includes("--include"));
+    assert.equal(options.maxBuffer, 16 * 1024 * 1024);
     return { status: 0, stdout: 'HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n{"name":"tool"}', stderr: "" };
   };
   assert.deepEqual(githubApi("repos/owner/repo", run), { status: 200, body: '{"name":"tool"}' });

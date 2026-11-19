@@ -129,8 +129,8 @@ const passed = ({ context, app }, checkRuns, status) =>
   checkRuns.check_runs.some((run) => run.name === context && (!(app > 0) || run.app?.id === app) && run.status === "completed" && settled.has(run.conclusion)) ||
   (!(app > 0) && (status.statuses ?? []).some((entry) => entry.context === context && entry.state === "success"));
 
-export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compare, required = [], stale = [], bot, expectHead }) {
-  const result = (decision, reason) => ({ decision, reason, pr: pr?.number, head: pr?.head?.sha });
+export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compare, required = [], stale = [], bot, expectHead, trustedLintPassed = false, reviewDecision }) {
+  const result = (decision, reason) => ({ decision, reason, pr: pr?.number, prNodeId: pr?.node_id, head: pr?.head?.sha });
   if (!pr) return result("none", "No open pin update PR.");
   const author = pr.user?.login;
   if (pr.state !== "open" || pr.draft) return result("block", "PR is closed or a draft.");
@@ -140,6 +140,7 @@ export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compa
   if (!commits.length || commits.length !== pr.commits || commits.some((commit) => commit.author?.login !== author || commit.committer?.login !== author)) return result("block", `Commits aren't all authored and committed by ${author}.`);
   const unexpected = files.filter((file) => file.status !== "modified" || !ALLOWED_FILES.has(file.filename));
   if (!files.length || files.length !== pr.changed_files || unexpected.length) return result("block", `Unexpected file changes: ${unexpected.map((file) => file.filename).join(", ") || "none"}.`);
+  if (pr.mergeable === null || pr.mergeable_state === "unknown") return result("wait", "GitHub is still computing mergeability.");
   if (pr.mergeable_state === "dirty") return result("block", "PR has merge conflicts.");
   if (checkRuns.total_count !== checkRuns.check_runs.length) return result("block", "Too many check runs to verify in one page.");
   const failed = checkRuns.check_runs.filter((run) => run.status === "completed" && !settled.has(run.conclusion));
@@ -147,6 +148,9 @@ export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compa
   if (status.total_count > 0 && ["failure", "error"].includes(status.state)) return result("block", "A commit status failed.");
   if (expectHead && pr.head.sha !== expectHead) return result("wait", "PR head changed since the gate ran.");
   if (compare.behind_by !== 0) return result("wait", "PR is behind the default branch; the next update rebases it.");
+  if (!trustedLintPassed) return result("wait", "The Validate workflow's lint job hasn't passed on this head yet.");
+  if (reviewDecision === "CHANGES_REQUESTED") return result("block", "A reviewer requested changes.");
+  if (reviewDecision !== "APPROVED") return result("wait", "A required human approval is still pending.");
   // Git attribution can be set by anyone who can push, so the content itself must match a fresh update.
   if (stale.length) return result("wait", `Doesn't match a fresh pin update: ${stale.join(", ")}; the next update replaces it.`);
   if (checkRuns.check_runs.some((run) => run.status !== "completed")) return result("wait", "Checks are still running.");
@@ -164,10 +168,29 @@ export function planPublish({ main, localTree, remote, bot }) {
   return current ? "skip" : "push";
 }
 
+export function assertBotPr(pr, bot) {
+  if (pr && (pr.user?.type !== "Bot" || pr.user?.login !== bot)) {
+    throw new Error(`Open PR #${pr.number} on ${BRANCH} isn't authored by ${bot}; leaving it alone.`);
+  }
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], ...options });
   if (result.error || result.status !== 0) throw new Error(`${command} ${args[0]} failed (exit ${result.status ?? result.error?.code}).`);
   return result.stdout.trim();
+}
+
+function getReviewDecision(repo, number) {
+  const [owner, name] = repo.split("/");
+  const query = "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewDecision}}}";
+  return run("gh", [
+    "api", "graphql",
+    "-f", `query=${query}`,
+    "-F", `owner=${owner}`,
+    "-F", `name=${name}`,
+    "-F", `number=${number}`,
+    "--jq", ".data.repository.pullRequest.reviewDecision",
+  ]);
 }
 
 function openPr(api, repo) {
@@ -207,7 +230,10 @@ const readFiles = () =>
 export function requiredChecks(api, repo, branch) {
   const rules = [];
   for (let page = 1; ; page++) {
-    const batch = getJson(api, `repos/${repo}/rules/branches/${encodeURIComponent(branch)}?per_page=100&page=${page}`);
+    const response = api(`repos/${repo}/rules/branches/${encodeURIComponent(branch)}?per_page=100&page=${page}`);
+    if (response.status === 403 && /Upgrade to GitHub Pro or make this repository public to enable this feature/i.test(response.body)) break;
+    if (response.status !== 200) throw new Error(`repos/${repo}/rules/branches/${encodeURIComponent(branch)}: GitHub API returned HTTP ${response.status}.`);
+    const batch = JSON.parse(response.body);
     rules.push(...batch);
     if (batch.length < 100) break;
   }
@@ -218,6 +244,27 @@ export function requiredChecks(api, repo, branch) {
       .flatMap((rule) => rule.parameters.required_status_checks.map((check) => ({ context: check.context, app: check.integration_id }))),
     ...(classic?.checks ?? (classic?.contexts ?? []).map((context) => ({ context }))).map((check) => ({ context: check.context, app: check.app_id })),
   ];
+}
+
+function paged(api, endpoint, key) {
+  const items = [];
+  const separator = endpoint.includes("?") ? "&" : "?";
+  for (let page = 1; ; page++) {
+    const batch = getJson(api, `${endpoint}${separator}per_page=100&page=${page}`)[key];
+    if (!Array.isArray(batch)) throw new Error(`${endpoint}: GitHub API response is missing ${key}.`);
+    items.push(...batch);
+    if (batch.length < 100) return items;
+  }
+}
+
+export function trustedValidateLint(api, repo, head) {
+  const runs = paged(api, `repos/${repo}/actions/runs?head_sha=${encodeURIComponent(head)}`, "workflow_runs")
+    .filter((run) => run.name === "Validate" && run.path === ".github/workflows/validate.yml" && run.event === "pull_request" && run.head_sha === head)
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || b.run_attempt - a.run_attempt);
+  const latest = runs[0];
+  if (!latest || latest.status !== "completed" || latest.conclusion !== "success") return false;
+  const jobs = paged(api, `repos/${repo}/actions/runs/${latest.id}/jobs`, "jobs");
+  return jobs.some((job) => job.name === "lint" && job.status === "completed" && job.conclusion === "success");
 }
 
 // Files on the PR head that differ from what `update` produces on this checkout of the default branch.
@@ -237,6 +284,8 @@ function readGate(api, repo, { bot, expectHead }) {
   const head = pr.head.sha;
   return evaluateMergeGate({
     required: requiredChecks(api, repo, pr.base.ref),
+    trustedLintPassed: trustedValidateLint(api, repo, head),
+    reviewDecision: getReviewDecision(repo, pr.number),
     stale: staleFiles(api, repo, head),
     pr,
     commits: getJson(api, `repos/${repo}/pulls/${pr.number}/commits?per_page=100`),
@@ -251,6 +300,7 @@ function readGate(api, repo, { bot, expectHead }) {
 
 function publish(api, repo, { title, bodyFile, bot }) {
   const pr = openPr(api, repo);
+  assertBotPr(pr, bot);
   const main = run("git", ["rev-parse", "HEAD"]);
   const remote = remoteBranch(api, repo, main);
   const paths = [...ALLOWED_FILES].filter((file) => existsSync(file));
@@ -295,7 +345,7 @@ function main(argv) {
     summary(`### Publish\n\n${result}`);
   } else if (command === "gate") {
     const gate = readGate(githubApi, repo, { bot: args.bot, expectHead: args["expect-head"] });
-    output({ decision: gate.decision, pr: gate.pr, head: gate.head });
+    output({ decision: gate.decision, pr: gate.pr, pr_node_id: gate.prNodeId, head: gate.head });
     summary(`### Merge gate\n\n**${gate.decision}**${gate.pr ? ` for #${gate.pr}` : ""}: ${gate.reason}`);
     if (gate.decision === "block") throw new Error(gate.reason);
   } else {

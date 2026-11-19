@@ -1,6 +1,6 @@
 name: Update pins
 # Moves remote marketplace pins and github/evals-action pins to their newest releases in one bot PR,
-# then merges it once Validate and every other check pass. Setup: docs/checks-and-evals.md#automatic-pin-updates.
+# then enqueues it after required checks pass. Setup: docs/checks-and-evals.md#automatic-pin-updates.
 on:
   schedule:
     - cron: '7,37 * * * *'
@@ -90,8 +90,10 @@ jobs:
       pull-requests: read
       checks: read
       statuses: read
+      actions: read
     outputs:
       decision: ${{ steps.gate.outputs.decision }}
+      pr_node_id: ${{ steps.gate.outputs.pr_node_id }}
       head: ${{ steps.gate.outputs.head }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -105,7 +107,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/update-pins.mjs gate
 
-  merge:
+  enqueue:
     needs: gate
     if: ${{ !cancelled() && needs.gate.result == 'success' && needs.gate.outputs.decision == 'merge' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
     environment: pin-automation
@@ -116,15 +118,14 @@ jobs:
       pull-requests: read
       checks: read
       statuses: read
+      actions: read
     steps:
       - id: app
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.PIN_APP_CLIENT_ID }}
           private-key: ${{ secrets.PIN_APP_PRIVATE_KEY }}
-          permission-contents: write
           permission-pull-requests: write
-          permission-workflows: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
@@ -141,6 +142,11 @@ jobs:
       - if: steps.recheck.outputs.decision == 'merge'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
-          PR: ${{ steps.recheck.outputs.pr }}
+          PR_NODE_ID: ${{ steps.recheck.outputs.pr_node_id }}
           HEAD_SHA: ${{ steps.recheck.outputs.head }}
-        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/pulls/$PR/merge" -f merge_method=squash -f sha="$HEAD_SHA" --silent
+        run: |
+          gh api graphql \
+            -f query='mutation($input: EnqueuePullRequestInput!) { enqueuePullRequest(input: $input) { mergeQueueEntry { state } } }' \
+            -F input.pullRequestId="$PR_NODE_ID" \
+            -F input.expectedHeadOid="$HEAD_SHA" \
+            -F input.jump=false

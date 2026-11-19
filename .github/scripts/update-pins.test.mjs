@@ -6,11 +6,13 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import {
   BRANCH,
+  assertBotPr,
   evaluateMergeGate,
   newestRelease,
   planPublish,
   planUpdate,
   requiredChecks,
+  trustedValidateLint,
 } from "./update-pins.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -132,14 +134,45 @@ test("requiredChecks reads every rules page and keeps app bindings", () => {
   assert.deepEqual(requiredChecks(api, "o/r", "main"), [{ context: "evals", app: 42 }, { context: "ci/legacy", app: null }]);
 });
 
+test("requiredChecks treats only the GitHub Free rulesets entitlement error as no rules", () => {
+  const api = (endpoint) => endpoint.includes("/rules/branches/")
+    ? { status: 403, body: JSON.stringify({ message: "Upgrade to GitHub Pro or make this repository public to enable this feature." }) }
+    : { status: 200, body: JSON.stringify({ protection: { required_status_checks: null } }) };
+  assert.deepEqual(requiredChecks(api, "o/r", "main"), []);
+  assert.throws(() => requiredChecks(() => ({ status: 403, body: '{"message":"Resource not accessible by integration"}' }), "o/r", "main"), /HTTP 403/);
+});
+
+test("trusted Validate lint is required from a successful pull_request run on the exact head", () => {
+  const head = sha("d");
+  const runsEndpoint = `repos/o/r/actions/runs?head_sha=${head}&per_page=100&page=1`;
+  const jobsEndpoint = "repos/o/r/actions/runs/10/jobs?per_page=100&page=1";
+  const validRun = { id: 10, name: "Validate", path: ".github/workflows/validate.yml", event: "pull_request", head_sha: head, status: "completed", conclusion: "success", created_at: "2026-01-01T00:00:00Z", run_attempt: 1 };
+  const api = fakeApi({
+    [runsEndpoint]: { workflow_runs: [validRun] },
+    [jobsEndpoint]: { jobs: [{ name: "lint", status: "completed", conclusion: "success" }] },
+  });
+  assert.equal(trustedValidateLint(api, "o/r", head), true);
+
+  const untrusted = fakeApi({
+    [runsEndpoint]: { workflow_runs: [{ ...validRun, name: "Unrelated workflow" }] },
+  });
+  assert.equal(trustedValidateLint(untrusted, "o/r", head), false);
+  const wrongHead = fakeApi({
+    [runsEndpoint]: { workflow_runs: [{ ...validRun, head_sha: sha("e") }] },
+  });
+  assert.equal(trustedValidateLint(wrongHead, "o/r", head), false);
+});
+
 const pr = (overrides = {}) => ({
   number: 7,
   state: "open",
   draft: false,
   user: { login: bot, type: "Bot" },
   head: { ref: BRANCH, sha: sha("d"), repo: { full_name: "o/r" } },
+  node_id: "PR_kwDOAAA",
   base: { ref: "main", repo: { full_name: "o/r", default_branch: "main" } },
   mergeable_state: "blocked",
+  mergeable: true,
   commits: 1,
   changed_files: 1,
   ...overrides,
@@ -151,12 +184,15 @@ const ready = (overrides = {}) => ({
   checkRuns: { total_count: 2, check_runs: [{ name: "lint", status: "completed", conclusion: "success" }, { name: "Copilot", status: "completed", conclusion: "neutral" }] },
   status: { state: "pending", total_count: 0 },
   compare: { behind_by: 0 },
+  trustedLintPassed: true,
+  reviewDecision: "APPROVED",
   bot,
   ...overrides,
 });
 
 test("merge gate merges only a current, bot-only, allowlisted PR with every check settled", () => {
   assert.equal(evaluateMergeGate(ready()).decision, "merge");
+  assert.equal(evaluateMergeGate(ready()).prNodeId, "PR_kwDOAAA");
   assert.equal(evaluateMergeGate({ ...ready(), pr: undefined }).decision, "none");
   const waits = {
     "lint missing": { checkRuns: { total_count: 0, check_runs: [] } },
@@ -164,6 +200,9 @@ test("merge gate merges only a current, bot-only, allowlisted PR with every chec
     "status pending": { status: { state: "pending", total_count: 1 } },
     "behind main": { compare: { behind_by: 1 } },
     "head moved": { expectHead: sha("e") },
+    "trusted lint missing": { trustedLintPassed: false },
+    "human approval missing": { reviewDecision: "REVIEW_REQUIRED" },
+    "mergeability pending": { pr: pr({ mergeable: null, mergeable_state: "unknown" }) },
     "content not generated": { stale: ["marketplace.json"] },
     "required check missing": { required: [{ context: "evals" }] },
     "required status pending": { required: [{ context: "ci/legacy" }], status: { state: "pending", total_count: 1, statuses: [{ context: "ci/legacy", state: "pending" }] } },
@@ -173,10 +212,16 @@ test("merge gate merges only a current, bot-only, allowlisted PR with every chec
   for (const [label, overrides] of Object.entries(waits)) {
     assert.equal(evaluateMergeGate(ready(overrides)).decision, "wait", label);
   }
+  assert.equal(evaluateMergeGate(ready({ reviewDecision: "CHANGES_REQUESTED" })).decision, "block");
   assert.equal(evaluateMergeGate(ready({ required: [{ context: "Copilot" }] })).decision, "merge", "a settled required check run counts");
   const appRun = { checkRuns: { total_count: 2, check_runs: [{ name: "lint", status: "completed", conclusion: "success" }, { name: "Copilot", status: "completed", conclusion: "neutral", app: { id: 42 } }] } };
   assert.equal(evaluateMergeGate(ready({ ...appRun, required: [{ context: "Copilot", app: 42 }] })).decision, "merge", "the bound app's check run counts");
   assert.equal(evaluateMergeGate(ready({ required: [{ context: "ci/legacy" }], status: { state: "success", total_count: 1, statuses: [{ context: "ci/legacy", state: "success" }] } })).decision, "merge", "a successful required status counts");
+  assert.equal(evaluateMergeGate(ready({
+    checkRuns: { total_count: 0, check_runs: [] },
+    status: { state: "success", total_count: 1, statuses: [{ context: "lint", state: "success" }] },
+    trustedLintPassed: false,
+  })).decision, "wait", "a same-named commit status cannot substitute for Validate's lint job");
   const blocks = {
     "human author": { pr: pr({ user: { login: "someone", type: "User" } }) },
     "other app": { pr: pr({ user: { login: "other[bot]", type: "Bot" } }) },
@@ -208,10 +253,18 @@ test("planPublish creates, skips identical current branches, and refuses human c
   assert.throws(() => planPublish({ ...base, remote: { ...remote, authors: [bot, "someone"] } }), /not authored by/);
 });
 
+test("pin publication refuses to close or edit a PR not opened by its App", () => {
+  assert.doesNotThrow(() => assertBotPr({ number: 7, user: { login: bot, type: "Bot" } }, bot));
+  assert.throws(() => assertBotPr({ number: 7, user: { login: "maintainer", type: "User" } }, bot), /isn't authored by/);
+  assert.throws(() => assertBotPr({ number: 7, user: { login: "other-app[bot]", type: "Bot" } }, bot), /isn't authored by/);
+});
+
 test("update-pins workflow keeps secrets out of read-only and dry-run jobs", () => {
   const text = readFileSync(resolve(root, ".github/workflows/update-pins.yml"), "utf8");
   const workflow = parse(text);
+  const validate = parse(readFileSync(resolve(root, ".github/workflows/validate.yml"), "utf8"));
   assert.deepEqual(workflow.permissions, { contents: "read" });
+  assert.deepEqual(validate.on.merge_group, { types: ["checks_requested"] });
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   assert.deepEqual(workflow.on.workflow_run.branches, [BRANCH]);
   for (const [name, job] of Object.entries(workflow.jobs)) {
@@ -227,5 +280,11 @@ test("update-pins workflow keeps secrets out of read-only and dry-run jobs", () 
       assert.doesNotMatch(step.run ?? "", /npm (ci|install)/, `${name}: no dependency scripts`);
     }
   }
+  const enqueue = workflow.jobs.enqueue;
+  assert.deepEqual(enqueue.needs, "gate");
+  assert.equal(JSON.stringify(enqueue).includes("inputs.dry_run"), true);
+  assert.equal(JSON.stringify(enqueue).includes("expectedHeadOid"), true);
+  assert.equal(JSON.stringify(enqueue).includes("pullRequestId"), true);
+  assert.equal(JSON.stringify(enqueue).includes("/pulls/$PR/merge"), false);
   assert.doesNotMatch(text, /pull_request_target|github\.event\.workflow_run\.head_sha/);
 });

@@ -12,6 +12,7 @@ export function githubApi(endpoint, run = spawnSync) {
   const result = run("gh", ["api", endpoint, "--include", "-H", "Accept: application/vnd.github.raw+json"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 16 * 1024 * 1024,
   });
   if (result.error) throw new Error(`Couldn't run gh api (${result.error.code ?? "process error"}).`);
   const response = /^HTTP\/[\d.]+\s+(\d{3})[^\r\n]*\r?\n[\s\S]*?\r?\n\r?\n([\s\S]*)$/.exec(result.stdout ?? "");

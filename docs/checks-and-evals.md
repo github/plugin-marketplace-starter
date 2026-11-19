@@ -80,29 +80,39 @@ pins and the `github/evals-action` pins current without manual edits:
   `@<sha> # <tag>`. A candidate that is not ahead of the current commit is
   skipped.
 
-The workflow checks for releases every 30 minutes and on manual dispatch. It
-opens or updates one pull request from `automation/update-pins`, closes it when
-nothing remains to change, and squash-merges it pinned to the checked head only
+The workflow checks for releases every 30 minutes, rechecks after Validate
+completes on its pin branch, and supports manual dispatch. It opens or updates
+one pull request from `automation/update-pins`, closes it when
+nothing remains to change, and enqueues it pinned to the checked head only
 when the PR changes nothing beyond the allowlisted files, contains only bot
 commits, matches what a fresh update would write, is mergeable and up to date,
 and every check (including Validate's `lint` and any status check your branch
-rules require) has passed. Any failure leaves the PR open for a maintainer.
+rules require) has passed, and a required human approval is present. The
+required merge queue then runs `Validate` again for the combined merge-group
+head before merging. Once its ruleset is enabled, direct merges are blocked.
+Any failure leaves the PR open for a maintainer.
 The workflow doesn't review upstream changes: enabling it means you trust each
 pinned repository's published releases. Keep a pin you want reviewed by hand
 off a release tag, or leave the workflow disabled and follow
 [remote pin rules](../plugins/marketplace-maintainer/skills/update-remote-pins/references/remote-pins.md).
 
 Manual dispatch defaults to `dry_run`, which only reports the planned update.
-To enable unattended updates:
+To enable automatic pin-update proposals:
 
 1. Create a GitHub App, or reuse one, with **Contents**, **Pull requests**,
    and **Workflows** read and write access, installed on this repository.
 2. Create an environment named `pin-automation` limited to the default branch,
    with the variable `PIN_APP_CLIENT_ID` (the App's client ID) and the secret
    `PIN_APP_PRIVATE_KEY`.
-3. If a branch ruleset requires approving reviews, add the App as a bypass
-   actor for pull requests. An App can't approve its own pull request.
-4. Set the repository variable `PIN_AUTOMATION` to `true`.
+3. Keep the required human-review rule enabled and do not add the App as a
+   bypass actor. The automation waits for a human approval; an App can't
+   approve its own pull request.
+4. Add a separate, active ruleset for the default branch with strict required
+   status check `lint` from GitHub Actions and a required squash merge queue.
+   Do not add a bypass actor to this ruleset. `Validate` must include the
+   `merge_group` event so the queue receives the check result for its combined
+   head.
+5. Set the repository variable `PIN_AUTOMATION` to `true`.
 
 Pull requests created with an App token trigger Validate normally; the default
 `GITHUB_TOKEN` would not.
