@@ -10,6 +10,7 @@ import {
   newestRelease,
   planPublish,
   planUpdate,
+  requiredChecks,
 } from "./update-pins.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -119,6 +120,18 @@ test("planUpdate reads every release page before choosing", () => {
   assert.equal(JSON.parse(plan.files["marketplace.json"]).plugins[1].source.ref, "copilot-evals-v0.24.68");
 });
 
+test("requiredChecks reads every rules page and keeps app bindings", () => {
+  const filler = Array.from({ length: 100 }, () => ({ type: "deletion" }));
+  const api = fakeApi({
+    "repos/o/r/rules/branches/main?per_page=100&page=1": filler,
+    "repos/o/r/rules/branches/main?per_page=100&page=2": [
+      { type: "required_status_checks", parameters: { required_status_checks: [{ context: "evals", integration_id: 42 }] } },
+    ],
+    "repos/o/r/branches/main": { protection: { required_status_checks: { checks: [{ context: "ci/legacy", app_id: null }] } } },
+  });
+  assert.deepEqual(requiredChecks(api, "o/r", "main"), [{ context: "evals", app: 42 }, { context: "ci/legacy", app: null }]);
+});
+
 const pr = (overrides = {}) => ({
   number: 7,
   state: "open",
@@ -152,14 +165,18 @@ test("merge gate merges only a current, bot-only, allowlisted PR with every chec
     "behind main": { compare: { behind_by: 1 } },
     "head moved": { expectHead: sha("e") },
     "content not generated": { stale: ["marketplace.json"] },
-    "required check missing": { required: ["evals"] },
-    "required status pending": { required: ["ci/legacy"], status: { state: "pending", total_count: 1, statuses: [{ context: "ci/legacy", state: "pending" }] } },
+    "required check missing": { required: [{ context: "evals" }] },
+    "required status pending": { required: [{ context: "ci/legacy" }], status: { state: "pending", total_count: 1, statuses: [{ context: "ci/legacy", state: "pending" }] } },
+    "required check from another app": { required: [{ context: "Copilot", app: 42 }] },
+    "app-bound status": { required: [{ context: "ci/legacy", app: 42 }], status: { state: "success", total_count: 1, statuses: [{ context: "ci/legacy", state: "success" }] } },
   };
   for (const [label, overrides] of Object.entries(waits)) {
     assert.equal(evaluateMergeGate(ready(overrides)).decision, "wait", label);
   }
-  assert.equal(evaluateMergeGate(ready({ required: ["Copilot"] })).decision, "merge", "a settled required check run counts");
-  assert.equal(evaluateMergeGate(ready({ required: ["ci/legacy"], status: { state: "success", total_count: 1, statuses: [{ context: "ci/legacy", state: "success" }] } })).decision, "merge", "a successful required status counts");
+  assert.equal(evaluateMergeGate(ready({ required: [{ context: "Copilot" }] })).decision, "merge", "a settled required check run counts");
+  const appRun = { checkRuns: { total_count: 2, check_runs: [{ name: "lint", status: "completed", conclusion: "success" }, { name: "Copilot", status: "completed", conclusion: "neutral", app: { id: 42 } }] } };
+  assert.equal(evaluateMergeGate(ready({ ...appRun, required: [{ context: "Copilot", app: 42 }] })).decision, "merge", "the bound app's check run counts");
+  assert.equal(evaluateMergeGate(ready({ required: [{ context: "ci/legacy" }], status: { state: "success", total_count: 1, statuses: [{ context: "ci/legacy", state: "success" }] } })).decision, "merge", "a successful required status counts");
   const blocks = {
     "human author": { pr: pr({ user: { login: "someone", type: "User" } }) },
     "other app": { pr: pr({ user: { login: "other[bot]", type: "Bot" } }) },

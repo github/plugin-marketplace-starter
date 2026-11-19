@@ -124,9 +124,10 @@ export function planUpdate({ files, actionFiles = ACTION_FILES, api = githubApi 
   return { files: next, changes, notes, title, body };
 }
 
-const passed = (name, checkRuns, status) =>
-  checkRuns.check_runs.some((run) => run.name === name && run.status === "completed" && settled.has(run.conclusion)) ||
-  (status.statuses ?? []).some((entry) => entry.context === name && entry.state === "success");
+// A check bound to a GitHub App counts only when that App reported it; commit statuses can't prove their App.
+const passed = ({ context, app }, checkRuns, status) =>
+  checkRuns.check_runs.some((run) => run.name === context && (!(app > 0) || run.app?.id === app) && run.status === "completed" && settled.has(run.conclusion)) ||
+  (!(app > 0) && (status.statuses ?? []).some((entry) => entry.context === context && entry.state === "success"));
 
 export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compare, required = [], stale = [], bot, expectHead }) {
   const result = (decision, reason) => ({ decision, reason, pr: pr?.number, head: pr?.head?.sha });
@@ -149,8 +150,8 @@ export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compa
   // Git attribution can be set by anyone who can push, so the content itself must match a fresh update.
   if (stale.length) return result("wait", `Doesn't match a fresh pin update: ${stale.join(", ")}; the next update replaces it.`);
   if (checkRuns.check_runs.some((run) => run.status !== "completed")) return result("wait", "Checks are still running.");
-  const missing = [...new Set(["lint", ...required])].filter((name) => !passed(name, checkRuns, status));
-  if (missing.length) return result("wait", `Required checks haven't passed on this head yet: ${missing.join(", ")}.`);
+  const missing = [{ context: "lint" }, ...required].filter((check) => !passed(check, checkRuns, status));
+  if (missing.length) return result("wait", `Required checks haven't passed on this head yet: ${[...new Set(missing.map((check) => check.context))].join(", ")}.`);
   if (status.total_count > 0 && status.state !== "success") return result("wait", "Commit statuses are pending.");
   return result("merge", "Every gate passed.");
 }
@@ -203,12 +204,19 @@ function summary(text) {
 const readFiles = () =>
   Object.fromEntries(["marketplace.json", ...ACTION_FILES].filter((file) => existsSync(file)).map((file) => [file, readFileSync(file, "utf8")]));
 
-function requiredChecks(api, repo, branch) {
-  const rules = getJson(api, `repos/${repo}/rules/branches/${encodeURIComponent(branch)}`);
-  const { protection } = getJson(api, `repos/${repo}/branches/${encodeURIComponent(branch)}`);
+export function requiredChecks(api, repo, branch) {
+  const rules = [];
+  for (let page = 1; ; page++) {
+    const batch = getJson(api, `repos/${repo}/rules/branches/${encodeURIComponent(branch)}?per_page=100&page=${page}`);
+    rules.push(...batch);
+    if (batch.length < 100) break;
+  }
+  const classic = getJson(api, `repos/${repo}/branches/${encodeURIComponent(branch)}`).protection?.required_status_checks;
   return [
-    ...rules.filter((rule) => rule.type === "required_status_checks").flatMap((rule) => rule.parameters.required_status_checks.map((check) => check.context)),
-    ...(protection?.required_status_checks?.contexts ?? []),
+    ...rules
+      .filter((rule) => rule.type === "required_status_checks")
+      .flatMap((rule) => rule.parameters.required_status_checks.map((check) => ({ context: check.context, app: check.integration_id }))),
+    ...(classic?.checks ?? (classic?.contexts ?? []).map((context) => ({ context }))).map((check) => ({ context: check.context, app: check.app_id })),
   ];
 }
 

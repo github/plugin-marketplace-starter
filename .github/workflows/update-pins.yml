@@ -107,7 +107,7 @@ jobs:
 
   merge:
     needs: gate
-    if: always() && needs.gate.result == 'success' && needs.gate.outputs.decision == 'merge' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
+    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.gate.outputs.decision == 'merge' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
     environment: pin-automation
     runs-on: ubuntu-latest
     timeout-minutes: 10

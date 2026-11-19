@@ -87,6 +87,10 @@ when the PR changes nothing beyond the allowlisted files, contains only bot
 commits, matches what a fresh update would write, is mergeable and up to date,
 and every check (including Validate's `lint` and any status check your branch
 rules require) has passed. Any failure leaves the PR open for a maintainer.
+The workflow doesn't review upstream changes: enabling it means you trust each
+pinned repository's published releases. Keep a pin you want reviewed by hand
+off a release tag, or leave the workflow disabled and follow
+[remote pin rules](../plugins/marketplace-maintainer/skills/update-remote-pins/references/remote-pins.md).
 
 Manual dispatch defaults to `dry_run`, which only reports the planned update.
 To enable unattended updates:
