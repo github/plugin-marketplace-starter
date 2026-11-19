@@ -279,6 +279,40 @@ export function approvedCopilotReview(api, repo, number, head) {
   return reviews.length > 0 && reviews[reviews.length - 1].state === "APPROVED";
 }
 
+export function requestCopilotReview(api, request, repo, bot) {
+  const pr = openPr(api, repo);
+  if (!pr) return { state: "none" };
+  assertBotPr(pr, bot);
+  const head = pr.head?.sha;
+  if (!head) throw new Error(`PR #${pr.number} doesn't have a head SHA.`);
+  const reviews = paged(api, `repos/${repo}/pulls/${pr.number}/reviews`);
+  if (reviews.some((review) =>
+    review.user?.login === copilotReviewer &&
+    review.commit_id === head &&
+    Number.isFinite(Date.parse(review.submitted_at)))) {
+    return { state: "completed", pr: pr.number, head };
+  }
+
+  const endpoint = `repos/${repo}/pulls/${pr.number}/copilot-code-review`;
+  const response = request(endpoint);
+  if (response.status === 409) return { state: "pending", pr: pr.number, head };
+  if (response.status !== 201) {
+    let reason;
+    try {
+      reason = JSON.parse(response.body).failure_reason;
+    } catch {}
+    throw new Error(`${endpoint}: GitHub API returned HTTP ${response.status}${reason ? ` (${reason})` : ""}.`);
+  }
+  let review;
+  try {
+    review = JSON.parse(response.body);
+  } catch {
+    throw new Error(`${endpoint}: GitHub API response isn't valid JSON.`);
+  }
+  if (review.state !== "PENDING") throw new Error(`${endpoint}: Copilot review request didn't enter the pending state.`);
+  return { state: "requested", pr: pr.number, head };
+}
+
 // Files on the PR head that differ from what `update` produces on this checkout of the default branch.
 function staleFiles(api, repo, head) {
   const expected = planUpdate({ files: readFiles(), actionFiles: ACTION_FILES, api }).files;
@@ -311,7 +345,7 @@ function readGate(api, repo, { bot, expectHead }) {
   });
 }
 
-function publish(api, repo, { title, bodyFile, bot }) {
+function publish(api, repo, { title, bodyFile, bot, requestReview }) {
   const pr = openPr(api, repo);
   assertBotPr(pr, bot);
   const main = run("git", ["rev-parse", "HEAD"]);
@@ -335,7 +369,11 @@ function publish(api, repo, { title, bodyFile, bot }) {
   }
   if (pr) run("gh", ["pr", "edit", String(pr.number), "-R", repo, "--title", title, "--body-file", bodyFile]);
   else run("gh", ["pr", "create", "-R", repo, "--base", getJson(api, `repos/${repo}`).default_branch, "--head", BRANCH, "--title", title, "--body-file", bodyFile]);
-  return decision === "push" ? `pushed ${BRANCH}` : `${BRANCH} already current`;
+  const review = requestCopilotReview(api, requestReview, repo, bot);
+  const reviewSummary = review.state === "none"
+    ? "no open PR for Copilot review"
+    : `${review.state === "completed" ? "already completed" : review.state === "pending" ? "already pending" : "requested"} for #${review.pr} at ${review.head.slice(0, 12)}`;
+  return `${decision === "push" ? `pushed ${BRANCH}` : `${BRANCH} already current`}; Copilot review ${reviewSummary}`;
 }
 
 function main(argv) {
@@ -353,7 +391,8 @@ function main(argv) {
     output({ changed: plan.changes.length > 0, title: plan.title, open_pr: pr?.number });
     summary(plan.changes.length ? `### Pin update\n\n${plan.body}` : `### Pin update\n\nPins are current.${plan.notes.map((note) => `\n- ${note}`).join("")}`);
   } else if (command === "publish") {
-    const result = publish(githubApi, repo, { title: args.title, bodyFile: args["body-file"], bot: args.bot });
+    const requestReview = (endpoint) => githubApi(endpoint, spawnSync, "POST");
+    const result = publish(githubApi, repo, { title: args.title, bodyFile: args["body-file"], bot: args.bot, requestReview });
     console.log(result);
     summary(`### Publish\n\n${result}`);
   } else if (command === "gate") {

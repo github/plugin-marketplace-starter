@@ -12,6 +12,7 @@ import {
   newestRelease,
   planPublish,
   planUpdate,
+  requestCopilotReview,
   requiredChecks,
   trustedValidateLint,
 } from "./update-pins.mjs";
@@ -203,6 +204,49 @@ test("approvedCopilotReview requires Copilot's latest approval on the exact head
   assert.equal(approvedCopilotReview(staleApproval, "o/r", 7, head), false);
 });
 
+test("requestCopilotReview requests only when the current App PR head lacks a Copilot review", () => {
+  const head = sha("d");
+  const prList = "repos/o/r/pulls?state=open&head=o:automation%2Fupdate-pins";
+  const reviews = "repos/o/r/pulls/7/reviews?per_page=100&page=1";
+  const pinPr = { number: 7, user: { login: bot, type: "Bot" }, head: { sha: head } };
+  let requests = 0;
+  const requested = requestCopilotReview(fakeApi({
+    [prList]: [pinPr],
+    [reviews]: [],
+  }), (endpoint) => {
+    requests += 1;
+    assert.equal(endpoint, "repos/o/r/pulls/7/copilot-code-review");
+    return { status: 201, body: JSON.stringify({ state: "PENDING" }) };
+  }, "o/r", bot);
+  assert.deepEqual(requested, { state: "requested", pr: 7, head });
+  assert.equal(requests, 1);
+
+  const commentOnly = fakeApi({
+    [prList]: [pinPr],
+    [reviews]: [{
+      user: { login: "copilot-pull-request-reviewer[bot]" },
+      state: "COMMENTED",
+      commit_id: head,
+      submitted_at: "2026-01-01T00:00:00Z",
+    }],
+  });
+  const alreadyReviewed = requestCopilotReview(commentOnly, () => {
+    throw new Error("must not request another review for the same head");
+  }, "o/r", bot);
+  assert.deepEqual(alreadyReviewed, { state: "completed", pr: 7, head });
+
+  const pending = requestCopilotReview(fakeApi({
+    [prList]: [pinPr],
+    [reviews]: [],
+  }), () => ({ status: 409, body: "{}" }), "o/r", bot);
+  assert.deepEqual(pending, { state: "pending", pr: 7, head });
+
+  assert.throws(() => requestCopilotReview(fakeApi({
+    [prList]: [pinPr],
+    [reviews]: [],
+  }), () => ({ status: 422, body: JSON.stringify({ failure_reason: "NOT_ELIGIBLE" }) }), "o/r", bot), /HTTP 422 \(NOT_ELIGIBLE\)/);
+});
+
 const pr = (overrides = {}) => ({
   number: 7,
   state: "open",
@@ -307,6 +351,8 @@ test("update-pins workflow keeps secrets out of read-only and dry-run jobs", () 
   const workflow = parse(text);
   const validate = parse(readFileSync(resolve(root, ".github/workflows/validate.yml"), "utf8"));
   assert.deepEqual(workflow.permissions, { contents: "read" });
+  assert.match(workflow.jobs.plan.if, /workflow_run/);
+  assert.match(workflow.jobs.plan.if, /conclusion == 'success'/);
   assert.deepEqual(validate.on.merge_group, { types: ["checks_requested"] });
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   assert.deepEqual(workflow.on.workflow_run.branches, [BRANCH]);
@@ -324,6 +370,7 @@ test("update-pins workflow keeps secrets out of read-only and dry-run jobs", () 
     }
   }
   const enqueue = workflow.jobs.enqueue;
+  assert.equal(workflow.jobs.publish.steps.find((step) => step.uses?.startsWith("actions/create-github-app-token@")).with["permission-pull-requests"], "write");
   assert.deepEqual(enqueue.needs, "gate");
   assert.equal(JSON.stringify(enqueue).includes("inputs.dry_run"), true);
   assert.equal(JSON.stringify(enqueue).includes("expectedHeadOid"), true);

@@ -93,6 +93,11 @@ review, including one that says “No open issues,” is not approval. The requi
 merge queue then runs `Validate` again for the combined merge-group head before
 merging. Once its ruleset is enabled, direct merges are blocked. Any failure
 leaves the PR open for a maintainer.
+After each publish/update, the trusted job requests one Copilot review when no
+Copilot review exists for the current head. Pending or completed reviews prevent
+the 30-minute reconciliation from issuing duplicate requests; a new head gets a
+new request. Each request can consume Copilot AI credits. If a review completes
+as `COMMENTED`, it is not retried for that head and the PR remains open.
 The workflow doesn't review upstream changes: enabling it means you trust each
 pinned repository's published releases. Keep a pin you want reviewed by hand
 off a release tag, or leave the workflow disabled and follow
@@ -110,7 +115,9 @@ To enable automatic pin-update proposals:
    actor. The automation waits for both a GitHub-recorded approval and an
    explicit Copilot `APPROVED` review on the current head. If Copilot only
    submits `COMMENTED`, the PR remains open; the pin App never approves its own
-   pull request.
+   pull request. The organization or enterprise must allow Copilot to approve
+   pull requests and allow those approvals to count toward merge requirements;
+   otherwise this gate remains closed.
 4. Add a separate, active ruleset for the default branch with strict required
    status check `lint` from GitHub Actions and a required squash merge queue.
    Do not add a bypass actor to this ruleset. `Validate` must include the

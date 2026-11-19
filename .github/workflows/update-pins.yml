@@ -21,7 +21,10 @@ concurrency:
   cancel-in-progress: false
 jobs:
   plan:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && vars.PIN_AUTOMATION == 'true')
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && vars.PIN_AUTOMATION == 'true') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
