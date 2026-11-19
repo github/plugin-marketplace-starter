@@ -7,6 +7,7 @@ import { parse } from "yaml";
 import {
   BRANCH,
   assertBotPr,
+  approvedCopilotReview,
   evaluateMergeGate,
   newestRelease,
   planPublish,
@@ -163,6 +164,45 @@ test("trusted Validate lint is required from a successful pull_request run on th
   assert.equal(trustedValidateLint(wrongHead, "o/r", head), false);
 });
 
+test("approvedCopilotReview requires Copilot's latest approval on the exact head and reads every page", () => {
+  const head = sha("d");
+  const endpoint = "repos/o/r/pulls/7/reviews";
+  const firstPage = `${endpoint}?per_page=100&page=1`;
+  const secondPage = `${endpoint}?per_page=100&page=2`;
+  const filler = Array.from({ length: 100 }, () => ({ user: { login: "other[bot]" }, state: "COMMENTED" }));
+  const copilot = "copilot-pull-request-reviewer[bot]";
+  const api = fakeApi({
+    [firstPage]: filler,
+    [secondPage]: [
+      { user: { login: copilot }, state: "COMMENTED", commit_id: head, submitted_at: "2026-01-01T00:00:00Z" },
+      { user: { login: copilot }, state: "APPROVED", commit_id: head, submitted_at: "2026-01-02T00:00:00Z" },
+    ],
+  });
+  assert.equal(approvedCopilotReview(api, "o/r", 7, head), true);
+  assert.deepEqual(api.calls, [firstPage, secondPage]);
+
+  const commentOnly = fakeApi({
+    [firstPage]: [
+      { user: { login: "wbreza" }, state: "APPROVED", commit_id: head, submitted_at: "2026-01-01T00:00:00Z" },
+      { user: { login: copilot }, state: "COMMENTED", commit_id: head, submitted_at: "2026-01-02T00:00:00Z" },
+    ],
+  });
+  assert.equal(approvedCopilotReview(commentOnly, "o/r", 7, head), false);
+
+  const supersededApproval = fakeApi({
+    [firstPage]: [
+      { user: { login: copilot }, state: "APPROVED", commit_id: head, submitted_at: "2026-01-01T00:00:00Z" },
+      { user: { login: copilot }, state: "COMMENTED", commit_id: head, submitted_at: "2026-01-02T00:00:00Z" },
+    ],
+  });
+  assert.equal(approvedCopilotReview(supersededApproval, "o/r", 7, head), false);
+
+  const staleApproval = fakeApi({
+    [firstPage]: [{ user: { login: copilot }, state: "APPROVED", commit_id: sha("e"), submitted_at: "2026-01-02T00:00:00Z" }],
+  });
+  assert.equal(approvedCopilotReview(staleApproval, "o/r", 7, head), false);
+});
+
 const pr = (overrides = {}) => ({
   number: 7,
   state: "open",
@@ -186,6 +226,7 @@ const ready = (overrides = {}) => ({
   compare: { behind_by: 0 },
   trustedLintPassed: true,
   reviewDecision: "APPROVED",
+  automatedReviewApproved: true,
   bot,
   ...overrides,
 });
@@ -201,7 +242,9 @@ test("merge gate merges only a current, bot-only, allowlisted PR with every chec
     "behind main": { compare: { behind_by: 1 } },
     "head moved": { expectHead: sha("e") },
     "trusted lint missing": { trustedLintPassed: false },
-    "human approval missing": { reviewDecision: "REVIEW_REQUIRED" },
+    "GitHub approval missing": { reviewDecision: "REVIEW_REQUIRED" },
+    "Copilot approval missing": { automatedReviewApproved: false },
+    "GitHub doesn't recognize the Copilot approval": { reviewDecision: "REVIEW_REQUIRED", automatedReviewApproved: true },
     "mergeability pending": { pr: pr({ mergeable: null, mergeable_state: "unknown" }) },
     "content not generated": { stale: ["marketplace.json"] },
     "required check missing": { required: [{ context: "evals" }] },

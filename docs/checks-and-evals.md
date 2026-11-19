@@ -86,11 +86,13 @@ one pull request from `automation/update-pins`, closes it when
 nothing remains to change, and enqueues it pinned to the checked head only
 when the PR changes nothing beyond the allowlisted files, contains only bot
 commits, matches what a fresh update would write, is mergeable and up to date,
-and every check (including Validate's `lint` and any status check your branch
-rules require) has passed, and a required human approval is present. The
-required merge queue then runs `Validate` again for the combined merge-group
-head before merging. Once its ruleset is enabled, direct merges are blocked.
-Any failure leaves the PR open for a maintainer.
+every check (including Validate's `lint` and any status check your branch rules
+require) has passed, GitHub records a required approval, and Copilot has
+submitted a GitHub `APPROVED` review on the exact head. A `COMMENTED` Copilot
+review, including one that says “No open issues,” is not approval. The required
+merge queue then runs `Validate` again for the combined merge-group head before
+merging. Once its ruleset is enabled, direct merges are blocked. Any failure
+leaves the PR open for a maintainer.
 The workflow doesn't review upstream changes: enabling it means you trust each
 pinned repository's published releases. Keep a pin you want reviewed by hand
 off a release tag, or leave the workflow disabled and follow
@@ -104,9 +106,11 @@ To enable automatic pin-update proposals:
 2. Create an environment named `pin-automation` limited to the default branch,
    with the variable `PIN_APP_CLIENT_ID` (the App's client ID) and the secret
    `PIN_APP_PRIVATE_KEY`.
-3. Keep the required human-review rule enabled and do not add the App as a
-   bypass actor. The automation waits for a human approval; an App can't
-   approve its own pull request.
+3. Keep the required-review rule enabled and do not add the App as a bypass
+   actor. The automation waits for both a GitHub-recorded approval and an
+   explicit Copilot `APPROVED` review on the current head. If Copilot only
+   submits `COMMENTED`, the PR remains open; the pin App never approves its own
+   pull request.
 4. Add a separate, active ruleset for the default branch with strict required
    status check `lint` from GitHub Actions and a required squash merge queue.
    Do not add a bypass actor to this ruleset. `Validate` must include the

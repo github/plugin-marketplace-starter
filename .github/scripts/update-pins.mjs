@@ -13,6 +13,7 @@ export const ACTION_FILES = [".github/workflows/skill-eval-comparison.yml", "doc
 export const ALLOWED_FILES = new Set(["marketplace.json", ...ACTION_FILES]);
 const actionUses = /^(\s*(?:-\s+)?uses:\s*github\/evals-action@)([0-9a-f]{40})(?:[ \t]+#[ \t]*([^\n]*))?$/gm;
 const settled = new Set(["success", "neutral", "skipped"]);
+const copilotReviewer = "copilot-pull-request-reviewer[bot]";
 
 function getJson(api, endpoint) {
   const response = api(endpoint);
@@ -117,8 +118,10 @@ export function planUpdate({ files, actionFiles = ACTION_FILES, api = githubApi 
       `- **${name}**: ${from.tag ?? from.sha.slice(0, 12)} → ${to.tag} ([changes](https://github.com/${repo}/compare/${from.sha}...${to.sha}))`),
     ...notes.map((note) => `- ${note}`),
     "",
-    "Opened by the [Update pins](../blob/main/.github/workflows/update-pins.yml) workflow. It merges this PR after every check",
-    "passes, and replaces it when a newer release appears. Set the `PIN_AUTOMATION` variable to anything but `true` to pause it.",
+    "Opened by the [Update pins](../blob/main/.github/workflows/update-pins.yml) workflow. It enqueues this PR only after GitHub",
+    "records a required approval and Copilot submits a GitHub `APPROVED` review on the current head; a comment-only review",
+    "doesn't qualify. It",
+    "replaces the PR when a newer release appears. Set the `PIN_AUTOMATION` variable to anything but `true` to pause it.",
     "",
   ].join("\n");
   return { files: next, changes, notes, title, body };
@@ -129,7 +132,7 @@ const passed = ({ context, app }, checkRuns, status) =>
   checkRuns.check_runs.some((run) => run.name === context && (!(app > 0) || run.app?.id === app) && run.status === "completed" && settled.has(run.conclusion)) ||
   (!(app > 0) && (status.statuses ?? []).some((entry) => entry.context === context && entry.state === "success"));
 
-export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compare, required = [], stale = [], bot, expectHead, trustedLintPassed = false, reviewDecision }) {
+export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compare, required = [], stale = [], bot, expectHead, trustedLintPassed = false, reviewDecision, automatedReviewApproved = false }) {
   const result = (decision, reason) => ({ decision, reason, pr: pr?.number, prNodeId: pr?.node_id, head: pr?.head?.sha });
   if (!pr) return result("none", "No open pin update PR.");
   const author = pr.user?.login;
@@ -150,7 +153,8 @@ export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compa
   if (compare.behind_by !== 0) return result("wait", "PR is behind the default branch; the next update rebases it.");
   if (!trustedLintPassed) return result("wait", "The Validate workflow's lint job hasn't passed on this head yet.");
   if (reviewDecision === "CHANGES_REQUESTED") return result("block", "A reviewer requested changes.");
-  if (reviewDecision !== "APPROVED") return result("wait", "A required human approval is still pending.");
+  if (reviewDecision !== "APPROVED") return result("wait", "GitHub hasn't recorded a required approval on this head yet.");
+  if (!automatedReviewApproved) return result("wait", "Copilot hasn't submitted an APPROVED review on this head yet.");
   // Git attribution can be set by anyone who can push, so the content itself must match a fresh update.
   if (stale.length) return result("wait", `Doesn't match a fresh pin update: ${stale.join(", ")}; the next update replaces it.`);
   if (checkRuns.check_runs.some((run) => run.status !== "completed")) return result("wait", "Checks are still running.");
@@ -250,8 +254,9 @@ function paged(api, endpoint, key) {
   const items = [];
   const separator = endpoint.includes("?") ? "&" : "?";
   for (let page = 1; ; page++) {
-    const batch = getJson(api, `${endpoint}${separator}per_page=100&page=${page}`)[key];
-    if (!Array.isArray(batch)) throw new Error(`${endpoint}: GitHub API response is missing ${key}.`);
+    const response = getJson(api, `${endpoint}${separator}per_page=100&page=${page}`);
+    const batch = key ? response[key] : response;
+    if (!Array.isArray(batch)) throw new Error(`${endpoint}: GitHub API response is missing ${key ?? "an array"}.`);
     items.push(...batch);
     if (batch.length < 100) return items;
   }
@@ -265,6 +270,13 @@ export function trustedValidateLint(api, repo, head) {
   if (!latest || latest.status !== "completed" || latest.conclusion !== "success") return false;
   const jobs = paged(api, `repos/${repo}/actions/runs/${latest.id}/jobs`, "jobs");
   return jobs.some((job) => job.name === "lint" && job.status === "completed" && job.conclusion === "success");
+}
+
+export function approvedCopilotReview(api, repo, number, head) {
+  const reviews = paged(api, `repos/${repo}/pulls/${number}/reviews`)
+    .filter((review) => review.user?.login === copilotReviewer && review.commit_id === head && Number.isFinite(Date.parse(review.submitted_at)))
+    .sort((a, b) => Date.parse(a.submitted_at) - Date.parse(b.submitted_at));
+  return reviews.length > 0 && reviews[reviews.length - 1].state === "APPROVED";
 }
 
 // Files on the PR head that differ from what `update` produces on this checkout of the default branch.
@@ -286,6 +298,7 @@ function readGate(api, repo, { bot, expectHead }) {
     required: requiredChecks(api, repo, pr.base.ref),
     trustedLintPassed: trustedValidateLint(api, repo, head),
     reviewDecision: getReviewDecision(repo, pr.number),
+    automatedReviewApproved: approvedCopilotReview(api, repo, pr.number, head),
     stale: staleFiles(api, repo, head),
     pr,
     commits: getJson(api, `repos/${repo}/pulls/${pr.number}/commits?per_page=100`),
