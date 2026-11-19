@@ -50,8 +50,8 @@ function fakeApi(routes) {
 
 function upstream({ evalsReleases, actionReleases, actionCompare = "ahead" }) {
   return fakeApi({
-    "repos/github/evals/releases?per_page=100": evalsReleases,
-    "repos/github/evals-action/releases?per_page=100": actionReleases,
+    "repos/github/evals/releases?per_page=100&page=1": evalsReleases,
+    "repos/github/evals-action/releases?per_page=100&page=1": actionReleases,
     "repos/github/evals/commits/copilot-evals-v0.24.68": { sha: sha("2") },
     "repos/github/evals-action/commits/v0.3.0": { sha: sha("b") },
     [`repos/github/evals-action/compare/${sha("a")}...${sha("b")}`]: { status: actionCompare },
@@ -104,6 +104,19 @@ test("planUpdate fails closed on inconsistent action pins or unreadable releases
   const api = upstream({ evalsReleases: [], actionReleases: [] });
   assert.throws(() => planUpdate({ files: { "marketplace.json": marketplace, "w.yml": mixed }, actionFiles: ["w.yml"], api }), /more than one github\/evals-action commit/);
   assert.throws(() => planUpdate({ files: { "marketplace.json": marketplace, "w.yml": workflow }, actionFiles: ["w.yml"], api: fakeApi({}) }), /HTTP 404/);
+  const rateLimited = (endpoint) => (endpoint.includes("/releases/tags/") ? { status: 403, body: "{}" } : api(endpoint));
+  assert.throws(() => planUpdate({ files: { "marketplace.json": marketplace }, api: rateLimited }), /releases\/tags\/copilot-evals-v0\.24\.60: GitHub API returned HTTP 403/);
+});
+
+test("planUpdate reads every release page before choosing", () => {
+  const filler = Array.from({ length: 100 }, (_, index) => release(`other-v0.0.${index}`));
+  const api = fakeApi({
+    "repos/github/evals/releases?per_page=100&page=1": filler,
+    "repos/github/evals/releases?per_page=100&page=2": [release("copilot-evals-v0.24.68"), release("copilot-evals-v0.24.60")],
+    "repos/github/evals/commits/copilot-evals-v0.24.68": { sha: sha("2") },
+  });
+  const plan = planUpdate({ files: { "marketplace.json": marketplace }, api });
+  assert.equal(JSON.parse(plan.files["marketplace.json"]).plugins[1].source.ref, "copilot-evals-v0.24.68");
 });
 
 const pr = (overrides = {}) => ({
@@ -120,7 +133,7 @@ const pr = (overrides = {}) => ({
 });
 const ready = (overrides = {}) => ({
   pr: pr(),
-  commits: [{ author: { login: bot } }],
+  commits: [{ author: { login: bot }, committer: { login: bot } }],
   files: [{ filename: "marketplace.json", status: "modified" }],
   checkRuns: { total_count: 2, check_runs: [{ name: "lint", status: "completed", conclusion: "success" }, { name: "Copilot", status: "completed", conclusion: "neutral" }] },
   status: { state: "pending", total_count: 0 },
@@ -138,14 +151,20 @@ test("merge gate merges only a current, bot-only, allowlisted PR with every chec
     "status pending": { status: { state: "pending", total_count: 1 } },
     "behind main": { compare: { behind_by: 1 } },
     "head moved": { expectHead: sha("e") },
+    "content not generated": { stale: ["marketplace.json"] },
+    "required check missing": { required: ["evals"] },
+    "required status pending": { required: ["ci/legacy"], status: { state: "pending", total_count: 1, statuses: [{ context: "ci/legacy", state: "pending" }] } },
   };
   for (const [label, overrides] of Object.entries(waits)) {
     assert.equal(evaluateMergeGate(ready(overrides)).decision, "wait", label);
   }
+  assert.equal(evaluateMergeGate(ready({ required: ["Copilot"] })).decision, "merge", "a settled required check run counts");
+  assert.equal(evaluateMergeGate(ready({ required: ["ci/legacy"], status: { state: "success", total_count: 1, statuses: [{ context: "ci/legacy", state: "success" }] } })).decision, "merge", "a successful required status counts");
   const blocks = {
     "human author": { pr: pr({ user: { login: "someone", type: "User" } }) },
     "other app": { pr: pr({ user: { login: "other[bot]", type: "Bot" } }) },
-    "human commit": { pr: pr({ commits: 2 }), commits: [{ author: { login: bot } }, { author: { login: "someone" } }] },
+    "human commit": { pr: pr({ commits: 2 }), commits: [{ author: { login: bot }, committer: { login: bot } }, { author: { login: "someone" }, committer: { login: bot } }] },
+    "amended bot commit": { commits: [{ author: { login: bot }, committer: { login: "someone" } }] },
     "truncated commits": { pr: pr({ commits: 101 }) },
     "truncated files": { pr: pr({ changed_files: 101 }) },
     "unexpected file": { files: [{ filename: ".github/workflows/validate.yml", status: "modified" }] },

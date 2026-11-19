@@ -33,18 +33,29 @@ export function newestRelease(releases, prefix, allowPrerelease) {
     .sort((a, b) => compareSemver(semver(b.tag_name, prefix), semver(a.tag_name, prefix)))[0];
 }
 
+function listReleases(api, repo) {
+  const releases = [];
+  for (let page = 1; ; page += 1) {
+    const batch = getJson(api, `repos/${repo}/releases?per_page=100&page=${page}`);
+    releases.push(...batch);
+    if (batch.length < 100) return releases;
+  }
+}
+
 // A pin stays on its channel: stable pins only move to stable releases.
 function candidate(api, repo, currentTag, prefix, notes) {
-  const releases = getJson(api, `repos/${repo}/releases?per_page=100`);
+  const releases = listReleases(api, repo);
   let allowPrerelease = true;
   if (currentTag) {
     let current = releases.find((release) => release.tag_name === currentTag);
     if (!current) {
-      const response = api(`repos/${repo}/releases/tags/${encodeURIComponent(currentTag)}`);
-      if (response.status !== 200) {
+      const endpoint = `repos/${repo}/releases/tags/${encodeURIComponent(currentTag)}`;
+      const response = api(endpoint);
+      if (response.status === 404) {
         notes.push(`${repo}: no release for ${currentTag}, so its channel is unknown; left unchanged.`);
         return undefined;
       }
+      if (response.status !== 200) throw new Error(`${endpoint}: GitHub API returned HTTP ${response.status}.`);
       current = JSON.parse(response.body);
     }
     allowPrerelease = current.prerelease;
@@ -113,7 +124,11 @@ export function planUpdate({ files, actionFiles = ACTION_FILES, api = githubApi 
   return { files: next, changes, notes, title, body };
 }
 
-export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compare, bot, expectHead }) {
+const passed = (name, checkRuns, status) =>
+  checkRuns.check_runs.some((run) => run.name === name && run.status === "completed" && settled.has(run.conclusion)) ||
+  (status.statuses ?? []).some((entry) => entry.context === name && entry.state === "success");
+
+export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compare, required = [], stale = [], bot, expectHead }) {
   const result = (decision, reason) => ({ decision, reason, pr: pr?.number, head: pr?.head?.sha });
   if (!pr) return result("none", "No open pin update PR.");
   const author = pr.user?.login;
@@ -121,7 +136,7 @@ export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compa
   if (pr.head?.ref !== BRANCH || pr.head?.repo?.full_name !== pr.base?.repo?.full_name) return result("block", "PR head isn't this repository's pin branch.");
   if (pr.base?.ref !== pr.base?.repo?.default_branch) return result("block", "PR doesn't target the default branch.");
   if (pr.user?.type !== "Bot" || (bot && author !== bot)) return result("block", `PR author ${author} isn't the pin app.`);
-  if (!commits.length || commits.length !== pr.commits || commits.some((commit) => commit.author?.login !== author)) return result("block", `Commits aren't all authored by ${author}.`);
+  if (!commits.length || commits.length !== pr.commits || commits.some((commit) => commit.author?.login !== author || commit.committer?.login !== author)) return result("block", `Commits aren't all authored and committed by ${author}.`);
   const unexpected = files.filter((file) => file.status !== "modified" || !ALLOWED_FILES.has(file.filename));
   if (!files.length || files.length !== pr.changed_files || unexpected.length) return result("block", `Unexpected file changes: ${unexpected.map((file) => file.filename).join(", ") || "none"}.`);
   if (pr.mergeable_state === "dirty") return result("block", "PR has merge conflicts.");
@@ -131,8 +146,11 @@ export function evaluateMergeGate({ pr, commits, files, checkRuns, status, compa
   if (status.total_count > 0 && ["failure", "error"].includes(status.state)) return result("block", "A commit status failed.");
   if (expectHead && pr.head.sha !== expectHead) return result("wait", "PR head changed since the gate ran.");
   if (compare.behind_by !== 0) return result("wait", "PR is behind the default branch; the next update rebases it.");
+  // Git attribution can be set by anyone who can push, so the content itself must match a fresh update.
+  if (stale.length) return result("wait", `Doesn't match a fresh pin update: ${stale.join(", ")}; the next update replaces it.`);
   if (checkRuns.check_runs.some((run) => run.status !== "completed")) return result("wait", "Checks are still running.");
-  if (!checkRuns.check_runs.some((run) => run.name === "lint" && run.conclusion === "success")) return result("wait", "Validate hasn't passed on this head yet.");
+  const missing = [...new Set(["lint", ...required])].filter((name) => !passed(name, checkRuns, status));
+  if (missing.length) return result("wait", `Required checks haven't passed on this head yet: ${missing.join(", ")}.`);
   if (status.total_count > 0 && status.state !== "success") return result("wait", "Commit statuses are pending.");
   return result("merge", "Every gate passed.");
 }
@@ -166,7 +184,7 @@ function remoteBranch(api, repo, main) {
     sha: commit.sha,
     tree: commit.commit.tree.sha,
     parents: commit.parents.map((parent) => parent.sha),
-    authors: compare.commits.map((entry) => entry.author?.login),
+    authors: compare.commits.flatMap((entry) => [entry.author?.login, entry.committer?.login]),
     aheadBy: compare.ahead_by,
     behindBy: compare.behind_by,
   };
@@ -182,12 +200,36 @@ function summary(text) {
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${text}\n`);
 }
 
+const readFiles = () =>
+  Object.fromEntries(["marketplace.json", ...ACTION_FILES].filter((file) => existsSync(file)).map((file) => [file, readFileSync(file, "utf8")]));
+
+function requiredChecks(api, repo, branch) {
+  const rules = getJson(api, `repos/${repo}/rules/branches/${encodeURIComponent(branch)}`);
+  const { protection } = getJson(api, `repos/${repo}/branches/${encodeURIComponent(branch)}`);
+  return [
+    ...rules.filter((rule) => rule.type === "required_status_checks").flatMap((rule) => rule.parameters.required_status_checks.map((check) => check.context)),
+    ...(protection?.required_status_checks?.contexts ?? []),
+  ];
+}
+
+// Files on the PR head that differ from what `update` produces on this checkout of the default branch.
+function staleFiles(api, repo, head) {
+  const expected = planUpdate({ files: readFiles(), actionFiles: ACTION_FILES, api }).files;
+  return [...ALLOWED_FILES].filter((file) => {
+    const response = api(`repos/${repo}/contents/${file.split("/").map(encodeURIComponent).join("/")}?ref=${head}`);
+    if (response.status !== 200 && response.status !== 404) throw new Error(`${file}@${head}: GitHub API returned HTTP ${response.status}.`);
+    return (response.status === 200 ? response.body : undefined) !== expected[file];
+  });
+}
+
 function readGate(api, repo, { bot, expectHead }) {
   const listed = openPr(api, repo);
   if (!listed) return evaluateMergeGate({});
   const pr = getJson(api, `repos/${repo}/pulls/${listed.number}`);
   const head = pr.head.sha;
   return evaluateMergeGate({
+    required: requiredChecks(api, repo, pr.base.ref),
+    stale: staleFiles(api, repo, head),
     pr,
     commits: getJson(api, `repos/${repo}/pulls/${pr.number}/commits?per_page=100`),
     files: getJson(api, `repos/${repo}/pulls/${pr.number}/files?per_page=100`),
@@ -203,13 +245,14 @@ function publish(api, repo, { title, bodyFile, bot }) {
   const pr = openPr(api, repo);
   const main = run("git", ["rev-parse", "HEAD"]);
   const remote = remoteBranch(api, repo, main);
-  if (!run("git", ["status", "--porcelain", "--", ...ALLOWED_FILES])) {
+  const paths = [...ALLOWED_FILES].filter((file) => existsSync(file));
+  if (!run("git", ["status", "--porcelain", "--", ...paths])) {
     if (remote) planPublish({ main, localTree: "", remote, bot });
     if (pr) run("gh", ["pr", "close", String(pr.number), "-R", repo, "--delete-branch", "--comment", "The default branch already has these pins or newer ones."]);
     return pr ? `closed #${pr.number}` : "nothing to publish";
   }
   const id = getJson(api, `users/${encodeURIComponent(bot)}`).id;
-  run("git", ["add", "--", ...ALLOWED_FILES]);
+  run("git", ["add", "--", ...paths]);
   run("git", ["-c", `user.name=${bot}`, "-c", `user.email=${id}+${bot}@users.noreply.github.com`, "commit", "--quiet", "-m", title]);
   const decision = planPublish({ main, localTree: run("git", ["rev-parse", "HEAD^{tree}"]), remote, bot });
   if (decision === "push") {
@@ -231,7 +274,7 @@ function main(argv) {
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) throw new Error("GITHUB_REPOSITORY must name this repository.");
   if (command === "update") {
-    const files = Object.fromEntries(["marketplace.json", ...ACTION_FILES].filter((file) => existsSync(file)).map((file) => [file, readFileSync(file, "utf8")]));
+    const files = readFiles();
     const plan = planUpdate({ files, actionFiles: ACTION_FILES });
     for (const [file, text] of Object.entries(plan.files)) if (text !== files[file]) writeFileSync(file, text);
     if (args["body-file"]) writeFileSync(args["body-file"], plan.body);

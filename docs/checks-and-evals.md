@@ -69,8 +69,9 @@ pins and the `github/evals-action` pins current without manual edits:
 
 - **Plugin pins:** each remote `marketplace.json` entry whose `source.ref` is a
   semantic-version tag (for example `v1.2.3` or `eval-v1.2.3`) moves to the
-  newest strictly newer release from the same repository. Stable pins move only
-  to stable releases; prerelease pins may also move to newer prereleases.
+  newest strictly newer release from the same repository. Pins on releases
+  marked stable move only to stable releases; pins on releases marked
+  prerelease may also move to newer prereleases.
   `source.sha` is set to the
   tag's commit, and `version` follows only when it matched the old tag.
 - **Action pins:** every `uses: github/evals-action@<sha>` line in
@@ -83,8 +84,9 @@ The workflow checks for releases every 30 minutes and on manual dispatch. It
 opens or updates one pull request from `automation/update-pins`, closes it when
 nothing remains to change, and squash-merges it pinned to the checked head only
 when the PR changes nothing beyond the allowlisted files, contains only bot
-commits, is mergeable and up to date, and every check (including Validate's
-`lint`) has passed. Any failure leaves the PR open for a maintainer.
+commits, matches what a fresh update would write, is mergeable and up to date,
+and every check (including Validate's `lint` and any status check your branch
+rules require) has passed. Any failure leaves the PR open for a maintainer.
 
 Manual dispatch defaults to `dry_run`, which only reports the planned update.
 To enable unattended updates:
@@ -432,7 +434,7 @@ jobs:
               git checkout "$BASE_SHA" -- "$dir"
             fi
           done <<< "$SKILL_DIRS"
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6
+      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
         continue-on-error: true
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
@@ -456,7 +458,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6
+      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
         with:
@@ -480,7 +482,7 @@ jobs:
       group: evals-${{ github.workflow_ref }}
       cancel-in-progress: false
     steps:
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6
+      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
         with:
           command: report
           report-id: evals

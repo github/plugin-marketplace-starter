@@ -24,6 +24,9 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && vars.PIN_AUTOMATION == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       changed: ${{ steps.update.outputs.changed }}
       open_pr: ${{ steps.update.outputs.open_pr }}
