@@ -62,6 +62,45 @@ The schema check downloads the Agent Plugins schema and runs
 running it. The pin check makes read-only GitHub API calls through your
 authenticated `gh` CLI. Neither starts a model.
 
+### Automatic pin updates
+
+[Update pins](../.github/workflows/update-pins.yml) keeps remote marketplace
+pins and the `github/evals-action` pins current without manual edits:
+
+- **Plugin pins:** each remote `marketplace.json` entry whose `source.ref` is a
+  semantic-version tag (for example `v1.2.3` or `eval-v1.2.3`) moves to the
+  newest strictly newer release from the same repository. Stable pins move only
+  to stable releases; prerelease pins may also move to newer prereleases.
+  `source.sha` is set to the
+  tag's commit, and `version` follows only when it matched the old tag.
+- **Action pins:** every `uses: github/evals-action@<sha>` line in
+  [skill-eval-comparison.yml](../.github/workflows/skill-eval-comparison.yml)
+  and this guide moves to the newest release commit, written as
+  `@<sha> # <tag>`. A candidate that is not ahead of the current commit is
+  skipped.
+
+The workflow checks for releases every 30 minutes and on manual dispatch. It
+opens or updates one pull request from `automation/update-pins`, closes it when
+nothing remains to change, and squash-merges it pinned to the checked head only
+when the PR changes nothing beyond the allowlisted files, contains only bot
+commits, is mergeable and up to date, and every check (including Validate's
+`lint`) has passed. Any failure leaves the PR open for a maintainer.
+
+Manual dispatch defaults to `dry_run`, which only reports the planned update.
+To enable unattended updates:
+
+1. Create a GitHub App, or reuse one, with **Contents**, **Pull requests**,
+   and **Workflows** read and write access, installed on this repository.
+2. Create an environment named `pin-automation` limited to the default branch,
+   with the variable `PIN_APP_CLIENT_ID` (the App's client ID) and the secret
+   `PIN_APP_PRIVATE_KEY`.
+3. If a branch ruleset requires approving reviews, add the App as a bypass
+   actor for pull requests. An App can't approve its own pull request.
+4. Set the repository variable `PIN_AUTOMATION` to `true`.
+
+Pull requests created with an App token trigger Validate normally; the default
+`GITHUB_TOKEN` would not.
+
 Remote checks prefer a root manifest declaring a supported Agent Plugins schema
 (1.0.0 or 1.1.0); unsupported Agent Plugins versions fail. Otherwise they use
 Copilot CLI's legacy order: `.plugin/plugin.json`, `plugin.json`,
@@ -316,13 +355,12 @@ matching `evals/<plugin>/skills/<skill>/eval.yaml` changes:
    run evidence** `<details>` section (`Outcome`, `Passed/Failed`, `Score
    delta`, `Turns delta`, `Duration delta`, and `Token in/out + %` delta).
 
-> **Action version note:** `baseline-report-id` (`evals-baseline`) is provided
-> by [github/evals-action#34](https://github.com/github/evals-action/pull/34)
-> (`3c551330898c1467b8ddf9ef7c7f6e6c6af489d6`), and the top-level **Ship /
-> No-ship** verdict table layout is added in
-> [github/evals-action#35](https://github.com/github/evals-action/pull/35). Pin
-> `github/evals-action` to that commit until published to
-> `github/evals-action@v0`.
+> **Action version note:** `baseline-report-id` (`evals-baseline`) and the
+> top-level **Ship / No-ship** verdict table need a `github/evals-action` release
+> that includes [github/evals-action#34](https://github.com/github/evals-action/pull/34)
+> and [github/evals-action#35](https://github.com/github/evals-action/pull/35).
+> The workflow pins a full commit SHA, and [Update pins](#automatic-pin-updates)
+> moves it to each newer release.
 
 ```yaml
 name: Skill eval comparison
@@ -394,7 +432,7 @@ jobs:
               git checkout "$BASE_SHA" -- "$dir"
             fi
           done <<< "$SKILL_DIRS"
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
+      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6
         continue-on-error: true
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
@@ -418,7 +456,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
+      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
         with:
@@ -442,7 +480,7 @@ jobs:
       group: evals-${{ github.workflow_ref }}
       cancel-in-progress: false
     steps:
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
+      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6
         with:
           command: report
           report-id: evals
