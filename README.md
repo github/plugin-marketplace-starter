@@ -180,7 +180,7 @@ one of the two plugins in `.github/copilot/settings.json`, remove its key there
 too. If surviving cohort evals under `evals/` list the retired plugin's skills
 in `agent_environment.skills` or `disallowed`, remove those entries as well.
 
-You can keep only remote entries by removing both bundled local plugins and
+You can keep only remote entries by removing all bundled local plugins and
 their eval folders. No empty `plugins/` or `evals/` directory is needed.
 
 ## Checks
