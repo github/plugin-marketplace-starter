@@ -16,7 +16,7 @@ grading_environment:
 stimuli:
   - name: update-remote-pins-uses-reviewed-release
     prompt: >-
-      Pin outside-notes at its latest release using the reviewed offline
+      Use the update-remote-pins skill to pin outside-notes at its latest release using the reviewed offline
       upstream-snapshot.json instead of GitHub. Its current catalog pin is the
       previous release. Review and summarize the supplied upstream changes, update
       the selected entry. Don't access the network, install
@@ -59,7 +59,7 @@ stimuli:
       - type: diff-empty
   - name: update-remote-pins-preserves-stable-channel-after-latest-404
     prompt: >-
-      Check outside-notes for the latest stable release using only the reviewed
+      Use the update-remote-pins skill to check outside-notes for the latest stable release using only the reviewed
       offline prerelease-only.json responses. Don't access the network. The
       releases/latest endpoint returned 404, but repository access and the
       complete release listing succeeded. Explain the available channel and

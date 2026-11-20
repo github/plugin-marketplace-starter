@@ -62,6 +62,87 @@ The schema check downloads the Agent Plugins schema and runs
 running it. The pin check makes read-only GitHub API calls through your
 authenticated `gh` CLI. Neither starts a model.
 
+### Automatic pin updates
+
+[Update pins](../.github/workflows/update-pins.yml) keeps remote marketplace
+pins and the `github/evals-action` pins current without manual edits:
+
+- **Plugin pins:** each remote `marketplace.json` entry whose `source.ref` is a
+  semantic-version tag (for example `v1.2.3` or `eval-v1.2.3`) moves to the
+  newest strictly newer release from the same repository. Pins on releases
+  marked stable move only to stable releases; pins on releases marked
+  prerelease may also move to newer prereleases.
+  `source.sha` is set to the
+  tag's commit, and `version` follows only when it matched the old tag.
+- **Action pins:** every `uses: github/evals-action@<sha>` line in
+  [skill-eval-comparison.yml](../.github/workflows/skill-eval-comparison.yml)
+  and this guide moves to the newest release commit, written as
+  `@<sha> # <tag>`. A candidate that is not ahead of the current commit is
+  skipped.
+
+With `PIN_AUTOMATION` set to `true`, the workflow checks for releases every
+30 minutes and rechecks after a successful Validate `pull_request` run on its
+same-repository pin branch. Fork-originated and non-PR `workflow_run` events
+cannot reach publication or enqueue. It also supports manual dispatch. It opens or updates
+one pull request from `automation/update-pins`, closes it when
+nothing remains to change, and enqueues it pinned to the checked head only
+when the PR changes nothing beyond the allowlisted files, contains only bot
+commits, matches what a fresh update would write, is mergeable and up to date,
+every check (including Validate's `lint` and any status check your branch rules
+require) has passed, GitHub records a required approval, and Copilot has
+submitted a GitHub `APPROVED` review on the exact head. A `COMMENTED` Copilot
+review, including one that says “No open issues,” is not approval. The required
+merge queue then runs `Validate` again for the combined merge-group head before
+merging. Once its ruleset is enabled, direct merges are blocked. Any failure
+leaves the PR open for a maintainer. A PR already in the queue is left unchanged:
+publication won't replace its head, close it, or request another review, and
+the gate won't enqueue it again.
+After each publish/update, the trusted job requests one Copilot review when no
+Copilot review exists for the current head. Pending or completed reviews prevent
+the 30-minute reconciliation from issuing duplicate requests; a new head gets a
+new request. Each request can consume Copilot AI credits. If a review completes
+as `COMMENTED`, it is not retried for that head and the PR remains open.
+The workflow doesn't review upstream changes: enabling it means you trust each
+pinned repository's published releases. Keep a pin you want reviewed by hand
+off a release tag, or leave the workflow disabled and follow
+[remote pin rules](../plugins/marketplace-maintainer/skills/update-remote-pins/references/remote-pins.md).
+
+Manual dispatch works even when `PIN_AUTOMATION` is disabled and defaults to
+`dry_run`, which only reports the planned update. Turning off `dry_run` permits
+publication and enqueue, subject to all the same review and check gates.
+To enable automatic pin-update proposals:
+
+1. Create a GitHub App, or reuse one, with **Contents**, **Pull requests**,
+   and **Workflows** read and write access, installed on this repository.
+   Both write jobs request only these permissions: **Contents** to update
+   branches and merge, **Pull requests** to manage the PR and queue, and
+   **Workflows** because action-pin updates change a workflow file. Checks
+   are read separately using the workflow's read-only `GITHUB_TOKEN`.
+2. Create an environment named `pin-automation` limited to the default branch,
+   with the variable `PIN_APP_CLIENT_ID` (the App's client ID) and the secret
+   `PIN_APP_PRIVATE_KEY`.
+3. Keep the required-review rule enabled, require a human approval, and do not
+   add the App as a bypass actor. The automation waits for both GitHub's
+   required approval and an explicit Copilot `APPROVED` review on the current
+   head. Copilot approvals must not count toward the human approval requirement.
+   If Copilot only submits `COMMENTED`, the PR remains open; the pin App never
+   approves its own pull request. The organization or enterprise must allow
+   Copilot to submit an approving review; otherwise this gate remains closed.
+4. Add a separate, active ruleset for the default branch with strict required
+   status check `lint` from GitHub Actions and a required squash merge queue.
+   Do not add a bypass actor to this ruleset. `Validate` must include the
+   `merge_group` event so the queue receives the check result for its combined
+   head. [Merge queues](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
+   are available for public repositories owned by organizations and private
+   repositories owned by organizations using GitHub Enterprise Cloud, not
+   personal-account repositories. Confirm availability for your repository
+   before enabling this automation. Without a queue, automatic enqueue fails
+   closed; it never falls back to a direct merge.
+5. Set the repository variable `PIN_AUTOMATION` to `true`.
+
+Pull requests created with an App token trigger Validate normally; the default
+`GITHUB_TOKEN` would not.
+
 Remote checks prefer a root manifest declaring a supported Agent Plugins schema
 (1.0.0 or 1.1.0); unsupported Agent Plugins versions fail. Otherwise they use
 Copilot CLI's legacy order: `.plugin/plugin.json`, `plugin.json`,
@@ -296,7 +377,10 @@ dispatching a run.
 automatically on same-repository pull requests
 (`github.event.pull_request.head.repo.full_name == github.repository`, excluding
 fork PRs) whenever a skill under `plugins/<plugin>/skills/<skill>/` with a
-matching `evals/<plugin>/skills/<skill>/eval.yaml` changes:
+matching `evals/<plugin>/skills/<skill>/eval.yaml` changes. A newer eligible
+push cancels the superseded selection and evaluation jobs for the same PR.
+Canceled runs do not post partial reports; report jobs use their separate
+non-canceling lock. Manual dispatches do not cancel in-progress runs.
 
 1. **Discover changed skills (`select`):** diff `plugins/<plugin>/skills/<skill>/`
    between the PR base and head, and keep every skill whose
@@ -316,13 +400,12 @@ matching `evals/<plugin>/skills/<skill>/eval.yaml` changes:
    run evidence** `<details>` section (`Outcome`, `Passed/Failed`, `Score
    delta`, `Turns delta`, `Duration delta`, and `Token in/out + %` delta).
 
-> **Action version note:** `baseline-report-id` (`evals-baseline`) is provided
-> by [github/evals-action#34](https://github.com/github/evals-action/pull/34)
-> (`3c551330898c1467b8ddf9ef7c7f6e6c6af489d6`), and the top-level **Ship /
-> No-ship** verdict table layout is added in
-> [github/evals-action#35](https://github.com/github/evals-action/pull/35). Pin
-> `github/evals-action` to that commit until published to
-> `github/evals-action@v0`.
+> **Action version note:** `baseline-report-id` (`evals-baseline`) and the
+> top-level **Ship / No-ship** verdict table need a `github/evals-action` release
+> that includes [github/evals-action#34](https://github.com/github/evals-action/pull/34)
+> and [github/evals-action#35](https://github.com/github/evals-action/pull/35).
+> The workflow pins a full commit SHA, and [Update pins](#automatic-pin-updates)
+> moves it to each newer release.
 
 ```yaml
 name: Skill eval comparison
@@ -337,6 +420,9 @@ permissions:
 jobs:
   select:
     if: github.event.pull_request.head.repo.full_name == github.repository
+    concurrency:
+      group: skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-select
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -373,6 +459,9 @@ jobs:
   run-baseline:
     needs: select
     if: needs.select.outputs.eval_paths != ''
+    concurrency:
+      group: skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-run-baseline
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -394,7 +483,7 @@ jobs:
               git checkout "$BASE_SHA" -- "$dir"
             fi
           done <<< "$SKILL_DIRS"
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
+      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
         continue-on-error: true
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
@@ -409,6 +498,9 @@ jobs:
   run:
     needs: select
     if: needs.select.outputs.eval_paths != ''
+    concurrency:
+      group: skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-run
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -418,7 +510,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
+      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
         with:
@@ -431,7 +523,7 @@ jobs:
 
   report:
     needs: [select, run-baseline, run]
-    if: always() && needs.select.outputs.eval_paths != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: always() && needs.select.outputs.eval_paths != '' && needs.run-baseline.result != 'cancelled' && needs.run.result != 'cancelled' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -442,7 +534,7 @@ jobs:
       group: evals-${{ github.workflow_ref }}
       cancel-in-progress: false
     steps:
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6 # github/evals-action#34 (use @v0 once released)
+      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
         with:
           command: report
           report-id: evals

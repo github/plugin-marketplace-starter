@@ -211,10 +211,8 @@ and per-case transitions) without calling a model. On same-repository pull
 requests (`head.repo.full_name == github.repository`, excluding fork PRs),
 [Skill eval comparison](.github/workflows/skill-eval-comparison.yml) uses
 `github/evals-action` (`report-id: evals-baseline` and
-`baseline-report-id: evals-baseline`, introduced in
-[github/evals-action#34](https://github.com/github/evals-action/pull/34) at
-commit `3c551330898c1467b8ddf9ef7c7f6e6c6af489d6` and included in `@v0` once
-released) so any changed skill under
+`baseline-report-id: evals-baseline`, pinned to a full commit SHA that
+[Update pins](docs/checks-and-evals.md#automatic-pin-updates) advances to each new release) so any changed skill under
 `plugins/<plugin>/skills/<skill>/` with a matching
 `evals/<plugin>/skills/<skill>/eval.yaml` automatically runs Baseline vs.
 Candidate and updates one sticky PR comparison comment; see

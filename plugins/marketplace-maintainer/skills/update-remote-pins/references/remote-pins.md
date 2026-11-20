@@ -76,8 +76,22 @@ pin; don't change the SHA just to make the check pass.
 
 ## Keep pins current
 
-Nothing updates remote pins automatically. On a regular cadence, or when
-upstream announces a release:
+If a maintainer enables the marketplace's opt-in Update pins workflow
+(`.github/workflows/update-pins.yml`, gated by the `PIN_AUTOMATION` variable),
+it proposes newer published releases from the same upstream repository for
+release-tagged pins. It enqueues the checked head only after CI passes,
+GitHub records a required approval, and Copilot submits an `APPROVED` review
+on that exact head; a `COMMENTED` review isn't approval. The required merge
+queue reruns checks on the combined head before merging, without bypasses or
+a direct-merge fallback. Merge queues are available for public
+organization-owned repositories and private organization-owned repositories
+on GitHub Enterprise Cloud, not personal-account repositories. Confirm queue
+availability before enabling automation; otherwise keep updates manual.
+Enabling it is the maintainer's decision to trust those upstream release
+channels; it doesn't review upstream changes. Without it, or for a pin it
+doesn't manage (a new entry, a branch or untagged ref, or a different
+channel), update pins manually on a regular cadence, or when upstream announces
+a release:
 
 1. Check each pin as described above.
 2. Review what changed upstream between the pinned SHA and the new one.

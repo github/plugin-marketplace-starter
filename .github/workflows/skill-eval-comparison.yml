@@ -13,6 +13,9 @@ permissions:
 jobs:
   select:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    concurrency:
+      group: skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-select
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -59,6 +62,9 @@ jobs:
   run-baseline:
     needs: select
     if: needs.select.outputs.eval_paths != ''
+    concurrency:
+      group: skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-run-baseline
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -86,7 +92,7 @@ jobs:
               git checkout "$BASE_SHA" -- "$dir"
             fi
           done <<< "$SKILL_DIRS"
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6
+      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
         continue-on-error: true
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
@@ -101,6 +107,9 @@ jobs:
   run:
     needs: select
     if: needs.select.outputs.eval_paths != ''
+    concurrency:
+      group: skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-run
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -110,7 +119,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6
+      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
         with:
@@ -123,7 +132,7 @@ jobs:
 
   report:
     needs: [select, run-baseline, run]
-    if: always() && needs.select.outputs.eval_paths != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: always() && needs.select.outputs.eval_paths != '' && needs.run-baseline.result != 'cancelled' && needs.run.result != 'cancelled' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -131,10 +140,11 @@ jobs:
       contents: read
       pull-requests: write
     concurrency:
+      # The pinned report action requires this exact, separate group.
       group: evals-${{ github.workflow_ref }}
       cancel-in-progress: false
     steps:
-      - uses: github/evals-action@3c551330898c1467b8ddf9ef7c7f6e6c6af489d6
+      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
         with:
           command: report
           report-id: evals

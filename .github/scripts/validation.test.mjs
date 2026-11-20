@@ -299,8 +299,9 @@ test("manifest authentication and server errors stop rather than falling through
 });
 
 test("gh transport retains HTTP statuses and raw JSON without exposing stderr", () => {
-  const run = (_command, args) => {
+  const run = (_command, args, options) => {
     assert.ok(args.includes("--include"));
+    assert.equal(options.maxBuffer, 16 * 1024 * 1024);
     return { status: 0, stdout: 'HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n{"name":"tool"}', stderr: "" };
   };
   assert.deepEqual(githubApi("repos/owner/repo", run), { status: 200, body: '{"name":"tool"}' });
@@ -309,6 +310,24 @@ test("gh transport retains HTTP statuses and raw JSON without exposing stderr", 
   })), { status: 403, body: "{}" });
   assert.throws(() => githubApi("repos/owner/repo", () => ({ status: 1, stdout: "", stderr: "sensitive diagnostic" })), /exit 1; no HTTP response/);
   assert.throws(() => githubApi("repos/owner/repo", () => ({ error: { code: "ENOENT" } })), /Couldn't run gh api \(ENOENT\)/);
+});
+
+test("gh transport supports Copilot review POSTs and retains conflict status", () => {
+  const run = (_command, args) => {
+    assert.ok(args.includes("-X"));
+    assert.equal(args[args.indexOf("-X") + 1], "POST");
+    assert.ok(args.includes("X-GitHub-Api-Version: 2026-03-10"));
+    assert.ok(args.includes("Accept: application/vnd.github+json"));
+    return { status: 0, stdout: 'HTTP/2.0 201 Created\r\nContent-Type: application/json\r\n\r\n{"state":"PENDING"}', stderr: "" };
+  };
+  assert.deepEqual(githubApi("repos/owner/repo/pulls/7/copilot-code-review", run, "POST"), {
+    status: 201,
+    body: '{"state":"PENDING"}',
+  });
+  assert.deepEqual(githubApi("repos/owner/repo/pulls/7/copilot-code-review", () => ({
+    status: 1, stdout: "HTTP/2.0 409 Conflict\nContent-Type: application/json\n\n{}", stderr: "",
+  }), "POST"), { status: 409, body: "{}" });
+  assert.throws(() => githubApi("repos/owner/repo", spawnSync, "DELETE"), /Unsupported GitHub API method DELETE/);
 });
 
 test("schema script keeps pinned AJV and draft2020, and cleans its directory on success and failures", (t) => {
