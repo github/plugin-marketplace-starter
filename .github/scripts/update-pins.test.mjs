@@ -146,6 +146,23 @@ test("planUpdate never downgrades or sidegrades the action pin", () => {
   }
 });
 
+test("planUpdate rejects unsafe release tags before building review-facing text", () => {
+  const injection = "![review](https://example.invalid/)-";
+  const data = JSON.parse(marketplace);
+  data.plugins[1].source.ref = `${injection}0.24.60`;
+  const api = fakeApi({});
+  const plan = planUpdate({
+    files: { "marketplace.json": `${JSON.stringify(data, null, 2)}\n` },
+    actionFiles: [],
+    api,
+  });
+
+  assert.equal(plan.changes.length, 0);
+  assert.deepEqual(api.calls, []);
+  assert.doesNotMatch(plan.body, /example\.invalid/);
+  assert.equal(newestRelease([release(`${injection}0.24.68`)], `${injection}`, true), undefined);
+});
+
 test("planUpdate fails closed on inconsistent action pins or unreadable releases", () => {
   const mixed = `${workflow}      - uses: github/evals-action@${sha("c")}\n`;
   const api = upstream({ evalsReleases: [], actionReleases: [] });

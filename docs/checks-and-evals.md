@@ -121,13 +121,13 @@ To enable automatic pin-update proposals:
 2. Create an environment named `pin-automation` limited to the default branch,
    with the variable `PIN_APP_CLIENT_ID` (the App's client ID) and the secret
    `PIN_APP_PRIVATE_KEY`.
-3. Keep the required-review rule enabled and do not add the App as a bypass
-   actor. The automation waits for both a GitHub-recorded approval and an
-   explicit Copilot `APPROVED` review on the current head. If Copilot only
-   submits `COMMENTED`, the PR remains open; the pin App never approves its own
-   pull request. The organization or enterprise must allow Copilot to approve
-   pull requests and allow those approvals to count toward merge requirements;
-   otherwise this gate remains closed.
+3. Keep the required-review rule enabled, require a human approval, and do not
+   add the App as a bypass actor. The automation waits for both GitHub's
+   required approval and an explicit Copilot `APPROVED` review on the current
+   head. Copilot approvals must not count toward the human approval requirement.
+   If Copilot only submits `COMMENTED`, the PR remains open; the pin App never
+   approves its own pull request. The organization or enterprise must allow
+   Copilot to submit an approving review; otherwise this gate remains closed.
 4. Add a separate, active ruleset for the default branch with strict required
    status check `lint` from GitHub Actions and a required squash merge queue.
    Do not add a bypass actor to this ruleset. `Validate` must include the

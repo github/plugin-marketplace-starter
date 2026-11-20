@@ -14,6 +14,7 @@ export const ALLOWED_FILES = new Set(["marketplace.json", ...ACTION_FILES]);
 const actionUses = /^(\s*(?:-\s+)?uses:\s*github\/evals-action@)([0-9a-f]{40})(?:[ \t]+#[ \t]*([^\n]*))?$/gm;
 const settled = new Set(["success", "neutral", "skipped"]);
 const copilotReviewer = "copilot-pull-request-reviewer[bot]";
+const safeReleaseTag = (tag) => typeof tag === "string" && /^[A-Za-z0-9._-]+$/.test(tag);
 
 function getJson(api, endpoint) {
   const response = api(endpoint);
@@ -23,6 +24,7 @@ function getJson(api, endpoint) {
 
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const semver = (tag, prefix) => {
+  if (!safeReleaseTag(tag)) return null;
   const match = new RegExp(`^${escapeRegExp(prefix)}(\\d+)\\.(\\d+)\\.(\\d+)$`).exec(tag ?? "");
   return match && match.slice(1).map(Number);
 };
@@ -72,7 +74,9 @@ function updatePlugins(text, api, changes, notes) {
   if (`${JSON.stringify(data, null, 2)}\n` !== text) throw new Error("marketplace.json isn't in canonical 2-space JSON format.");
   for (const entry of data.plugins ?? []) {
     const source = entry.source;
-    const match = typeof source === "object" ? /^(.*?)(\d+\.\d+\.\d+)$/.exec(source.ref ?? "") : null;
+    const match = typeof source === "object" && safeReleaseTag(source.ref)
+      ? /^(.*?)(\d+\.\d+\.\d+)$/.exec(source.ref)
+      : null;
     if (!match) continue;
     const next = candidate(api, source.repo, source.ref, match[1], notes);
     if (!next) continue;
