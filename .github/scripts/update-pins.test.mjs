@@ -415,7 +415,7 @@ test("merge state reads both GitHub approval and queue membership", () => {
     assert.equal(command, "gh");
     assert.deepEqual(args.slice(0, 2), ["api", "graphql"]);
     assert.match(args[3], /pullRequest\(number:\$number\)\{reviewDecision isInMergeQueue\}/);
-    assert.deepEqual(args.slice(4), ["-F", "owner=o", "-F", "name=r", "-F", "number=7", "--jq", ".data.repository.pullRequest"]);
+    assert.deepEqual(args.slice(4), ["-f", "owner=o", "-f", "name=r", "-F", "number=7", "--jq", ".data.repository.pullRequest"]);
     return JSON.stringify(state);
   }), state);
 });
@@ -470,6 +470,18 @@ test("publish CLI reports no changes without pushing or creating a PR", (t) => {
     "repos/o/r/pulls?state=open&head=o:automation%2Fupdate-pins",
     "repos/o/r/branches/automation%2Fupdate-pins",
   ]);
+});
+
+test("publish refuses a pin branch with more commits than one compare page lists", (t) => {
+  commandWorkspace(t);
+  const baseSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const api = fakeApi({
+    "repos/o/r/pulls?state=open&head=o:automation%2Fupdate-pins": [],
+    "repos/o/r/branches/automation%2Fupdate-pins": { commit: { sha: sha("9"), commit: { tree: { sha: sha("8") } }, parents: [] } },
+    [`repos/o/r/compare/${baseSha}...${sha("9")}`]: { ahead_by: 251, behind_by: 0, commits: [] },
+  });
+
+  assert.throws(() => main(["publish", "--title", "test", "--body-file", "body.md", "--bot", bot], api), /too many commits to verify/);
 });
 
 test("gate CLI reports no PR as a non-blocking result", (t) => {

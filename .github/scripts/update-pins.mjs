@@ -195,8 +195,8 @@ export function getMergeState(repo, number, execute = run) {
   return JSON.parse(execute("gh", [
     "api", "graphql",
     "-f", `query=${query}`,
-    "-F", `owner=${owner}`,
-    "-F", `name=${name}`,
+    "-f", `owner=${owner}`,
+    "-f", `name=${name}`,
     "-F", `number=${number}`,
     "--jq", ".data.repository.pullRequest",
   ]));
@@ -213,6 +213,7 @@ function remoteBranch(api, repo, main) {
   if (response.status !== 200) throw new Error(`${BRANCH}: GitHub API returned HTTP ${response.status}.`);
   const { commit } = JSON.parse(response.body);
   const compare = getJson(api, `repos/${repo}/compare/${main}...${commit.sha}`);
+  if (compare.commits.length !== compare.ahead_by) throw new Error(`${BRANCH} has too many commits to verify their authors; leaving it alone.`);
   return {
     sha: commit.sha,
     tree: commit.commit.tree.sha,
@@ -345,7 +346,7 @@ function readGate(api, repo, { bot, expectHead }) {
     commits: getJson(api, `repos/${repo}/pulls/${pr.number}/commits?per_page=100`),
     files: getJson(api, `repos/${repo}/pulls/${pr.number}/files?per_page=100`),
     checkRuns: getJson(api, `repos/${repo}/commits/${head}/check-runs?per_page=100`),
-    status: getJson(api, `repos/${repo}/commits/${head}/status`),
+    status: getJson(api, `repos/${repo}/commits/${head}/status?per_page=100`),
     compare: getJson(api, `repos/${repo}/compare/${encodeURIComponent(pr.base.ref)}...${head}`),
     bot,
     expectHead,
