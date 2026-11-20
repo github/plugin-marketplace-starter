@@ -80,8 +80,10 @@ pins and the `github/evals-action` pins current without manual edits:
   `@<sha> # <tag>`. A candidate that is not ahead of the current commit is
   skipped.
 
-The workflow checks for releases every 30 minutes, rechecks after Validate
-completes on its pin branch, and supports manual dispatch. It opens or updates
+With `PIN_AUTOMATION` set to `true`, the workflow checks for releases every
+30 minutes and rechecks after a successful Validate `pull_request` run on its
+same-repository pin branch. Fork-originated and non-PR `workflow_run` events
+cannot reach publication or enqueue. It also supports manual dispatch. It opens or updates
 one pull request from `automation/update-pins`, closes it when
 nothing remains to change, and enqueues it pinned to the checked head only
 when the PR changes nothing beyond the allowlisted files, contains only bot
@@ -92,7 +94,9 @@ submitted a GitHub `APPROVED` review on the exact head. A `COMMENTED` Copilot
 review, including one that says “No open issues,” is not approval. The required
 merge queue then runs `Validate` again for the combined merge-group head before
 merging. Once its ruleset is enabled, direct merges are blocked. Any failure
-leaves the PR open for a maintainer.
+leaves the PR open for a maintainer. A PR already in the queue is left unchanged:
+publication won't replace its head, close it, or request another review, and
+the gate won't enqueue it again.
 After each publish/update, the trusted job requests one Copilot review when no
 Copilot review exists for the current head. Pending or completed reviews prevent
 the 30-minute reconciliation from issuing duplicate requests; a new head gets a
@@ -103,11 +107,17 @@ pinned repository's published releases. Keep a pin you want reviewed by hand
 off a release tag, or leave the workflow disabled and follow
 [remote pin rules](../plugins/marketplace-maintainer/skills/update-remote-pins/references/remote-pins.md).
 
-Manual dispatch defaults to `dry_run`, which only reports the planned update.
+Manual dispatch works even when `PIN_AUTOMATION` is disabled and defaults to
+`dry_run`, which only reports the planned update. Turning off `dry_run` permits
+publication and enqueue, subject to all the same review and check gates.
 To enable automatic pin-update proposals:
 
 1. Create a GitHub App, or reuse one, with **Contents**, **Pull requests**,
    and **Workflows** read and write access, installed on this repository.
+   Both write jobs request only these permissions: **Contents** to update
+   branches and merge, **Pull requests** to manage the PR and queue, and
+   **Workflows** because action-pin updates change a workflow file. Checks
+   are read separately using the workflow's read-only `GITHUB_TOKEN`.
 2. Create an environment named `pin-automation` limited to the default branch,
    with the variable `PIN_APP_CLIENT_ID` (the App's client ID) and the secret
    `PIN_APP_PRIVATE_KEY`.
@@ -122,7 +132,12 @@ To enable automatic pin-update proposals:
    status check `lint` from GitHub Actions and a required squash merge queue.
    Do not add a bypass actor to this ruleset. `Validate` must include the
    `merge_group` event so the queue receives the check result for its combined
-   head.
+   head. [Merge queues](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
+   are available for public repositories owned by organizations and private
+   repositories owned by organizations using GitHub Enterprise Cloud, not
+   personal-account repositories. Confirm availability for your repository
+   before enabling this automation. Without a queue, automatic enqueue fails
+   closed; it never falls back to a direct merge.
 5. Set the repository variable `PIN_AUTOMATION` to `true`.
 
 Pull requests created with an App token trigger Validate normally; the default
@@ -362,7 +377,10 @@ dispatching a run.
 automatically on same-repository pull requests
 (`github.event.pull_request.head.repo.full_name == github.repository`, excluding
 fork PRs) whenever a skill under `plugins/<plugin>/skills/<skill>/` with a
-matching `evals/<plugin>/skills/<skill>/eval.yaml` changes:
+matching `evals/<plugin>/skills/<skill>/eval.yaml` changes. A newer eligible
+push cancels the superseded selection and evaluation jobs for the same PR.
+Canceled runs do not post partial reports; report jobs use their separate
+non-canceling lock. Manual dispatches do not cancel in-progress runs.
 
 1. **Discover changed skills (`select`):** diff `plugins/<plugin>/skills/<skill>/`
    between the PR base and head, and keep every skill whose
@@ -402,6 +420,9 @@ permissions:
 jobs:
   select:
     if: github.event.pull_request.head.repo.full_name == github.repository
+    concurrency:
+      group: skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-select
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -438,6 +459,9 @@ jobs:
   run-baseline:
     needs: select
     if: needs.select.outputs.eval_paths != ''
+    concurrency:
+      group: skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-run-baseline
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -474,6 +498,9 @@ jobs:
   run:
     needs: select
     if: needs.select.outputs.eval_paths != ''
+    concurrency:
+      group: skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-run
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -496,7 +523,7 @@ jobs:
 
   report:
     needs: [select, run-baseline, run]
-    if: always() && needs.select.outputs.eval_paths != '' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: always() && needs.select.outputs.eval_paths != '' && needs.run-baseline.result != 'cancelled' && needs.run.result != 'cancelled' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

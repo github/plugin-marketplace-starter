@@ -78,9 +78,16 @@ pin; don't change the SHA just to make the check pass.
 
 If a maintainer enables the marketplace's opt-in Update pins workflow
 (`.github/workflows/update-pins.yml`, gated by the `PIN_AUTOMATION` variable),
-it moves release-tagged pins to newer published releases
-from the same upstream repository and merges only after CI and its merge gates
-pass. Enabling it is the maintainer's decision to trust those upstream release
+it proposes newer published releases from the same upstream repository for
+release-tagged pins. It enqueues the checked head only after CI passes,
+GitHub records a required approval, and Copilot submits an `APPROVED` review
+on that exact head; a `COMMENTED` review isn't approval. The required merge
+queue reruns checks on the combined head before merging, without bypasses or
+a direct-merge fallback. Merge queues are available for public
+organization-owned repositories and private organization-owned repositories
+on GitHub Enterprise Cloud, not personal-account repositories. Confirm queue
+availability before enabling automation; otherwise keep updates manual.
+Enabling it is the maintainer's decision to trust those upstream release
 channels; it doesn't review upstream changes. Without it, or for a pin it
 doesn't manage (a new entry, a branch or untagged ref, or a different
 channel), update pins manually on a regular cadence, or when upstream announces

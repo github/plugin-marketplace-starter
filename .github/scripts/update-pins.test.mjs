@@ -1,17 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 import { parse } from "yaml";
 import {
   BRANCH,
   assertBotPr,
   approvedCopilotReview,
   evaluateMergeGate,
+  getMergeState,
+  main,
   newestRelease,
   planPublish,
   planUpdate,
+  publish,
   requestCopilotReview,
   requiredChecks,
   trustedValidateLint,
@@ -61,6 +67,42 @@ function upstream({ evalsReleases, actionReleases, actionCompare = "ahead" }) {
     "repos/github/evals-action/commits/v0.3.0": { sha: sha("b") },
     [`repos/github/evals-action/compare/${sha("a")}...${sha("b")}`]: { status: actionCompare },
   });
+}
+
+function commandWorkspace(t) {
+  const directory = mkdtempSync(join(tmpdir(), "update-pins-test-"));
+  const previousDirectory = process.cwd();
+  const keys = ["GITHUB_REPOSITORY", "GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY"];
+  const previousEnvironment = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.chdir(directory);
+  execFileSync("git", ["init", "--quiet"]);
+  execFileSync("git", ["config", "user.name", "test"]);
+  execFileSync("git", ["config", "user.email", "test@example.invalid"]);
+  for (const [file, contents] of Object.entries({
+    "marketplace.json": marketplace,
+    ".github/workflows/skill-eval-comparison.yml": workflow,
+    "docs/checks-and-evals.md": "",
+  })) {
+    mkdirSync(dirname(resolve(directory, file)), { recursive: true });
+    writeFileSync(file, contents);
+  }
+  execFileSync("git", ["add", "."]);
+  execFileSync("git", ["commit", "--quiet", "-m", "fixture"]);
+
+  const output = join(directory, "github-output");
+  const summary = join(directory, "step-summary");
+  process.env.GITHUB_REPOSITORY = "o/r";
+  process.env.GITHUB_OUTPUT = output;
+  process.env.GITHUB_STEP_SUMMARY = summary;
+  t.after(() => {
+    process.chdir(previousDirectory);
+    for (const key of keys) {
+      if (previousEnvironment[key] === undefined) delete process.env[key];
+      else process.env[key] = previousEnvironment[key];
+    }
+    rmSync(directory, { recursive: true, force: true });
+  });
+  return { directory, output, summary };
 }
 
 test("newestRelease picks the highest matching semver on the current channel and skips drafts", () => {
@@ -340,10 +382,165 @@ test("planPublish creates, skips identical current branches, and refuses human c
   assert.throws(() => planPublish({ ...base, remote: { ...remote, authors: [bot, "someone"] } }), /not authored by/);
 });
 
+test("merge gate leaves already-queued PRs in the queue without another enqueue", () => {
+  const queued = ready({ isInMergeQueue: true });
+  const result = evaluateMergeGate(queued);
+  assert.equal(result.decision, "wait");
+  assert.match(result.reason, /already in the merge queue/);
+  assert.equal(evaluateMergeGate(ready({ isInMergeQueue: false })).decision, "merge");
+  assert.equal(evaluateMergeGate({ ...queued, expectHead: sha("e") }).reason, "PR head changed since the gate ran.");
+  assert.equal(evaluateMergeGate({ ...queued, pr: pr({ user: { login: "someone", type: "User" } }) }).decision, "block");
+});
+
+test("merge state reads both GitHub approval and queue membership", () => {
+  const state = { reviewDecision: "APPROVED", isInMergeQueue: true };
+  assert.deepEqual(getMergeState("o/r", 7, (command, args) => {
+    assert.equal(command, "gh");
+    assert.deepEqual(args.slice(0, 2), ["api", "graphql"]);
+    assert.match(args[3], /pullRequest\(number:\$number\)\{reviewDecision isInMergeQueue\}/);
+    assert.deepEqual(args.slice(4), ["-F", "owner=o", "-F", "name=r", "-F", "number=7", "--jq", ".data.repository.pullRequest"]);
+    return JSON.stringify(state);
+  }), state);
+});
+
+test("publication leaves a queued App PR untouched before git, branch updates, or review requests", () => {
+  const endpoint = "repos/o/r/pulls?state=open&head=o:automation%2Fupdate-pins";
+  const api = fakeApi({ [endpoint]: [pr()] });
+  const result = publish(api, "o/r", {
+    bot,
+    mergeState: (repo, number) => {
+      assert.equal(repo, "o/r");
+      assert.equal(number, 7);
+      return { reviewDecision: "APPROVED", isInMergeQueue: true };
+    },
+    requestReview: () => assert.fail("queued PRs must not request another review"),
+  });
+  assert.match(result, /already in the merge queue; leaving it unchanged/);
+  assert.deepEqual(api.calls, [endpoint]);
+});
+
+test("update CLI reports the unchanged plan and writes its step outputs", (t) => {
+  const { output, summary } = commandWorkspace(t);
+  const api = fakeApi({
+    "repos/github/evals/releases?per_page=100&page=1": [],
+    "repos/github/evals-action/releases?per_page=100&page=1": [],
+    "repos/o/r/pulls?state=open&head=o:automation%2Fupdate-pins": [],
+  });
+
+  main(["update"], api);
+
+  assert.match(readFileSync(output, "utf8"), /changed=false/);
+  assert.match(readFileSync(output, "utf8"), /open_pr=/);
+  assert.match(readFileSync(summary, "utf8"), /Pins are current/);
+  assert.deepEqual(api.calls, [
+    "repos/github/evals/releases?per_page=100&page=1",
+    "repos/github/evals/releases/tags/copilot-evals-v0.24.60",
+    "repos/github/evals-action/releases?per_page=100&page=1",
+    "repos/o/r/pulls?state=open&head=o:automation%2Fupdate-pins",
+  ]);
+});
+
+test("publish CLI reports no changes without pushing or creating a PR", (t) => {
+  const { summary } = commandWorkspace(t);
+  const api = fakeApi({
+    "repos/o/r/pulls?state=open&head=o:automation%2Fupdate-pins": [],
+  });
+
+  main(["publish", "--title", "test", "--body-file", "body.md", "--bot", bot], api);
+
+  assert.match(readFileSync(summary, "utf8"), /nothing to publish/);
+  assert.deepEqual(api.calls, [
+    "repos/o/r/pulls?state=open&head=o:automation%2Fupdate-pins",
+    "repos/o/r/branches/automation%2Fupdate-pins",
+  ]);
+});
+
+test("gate CLI reports no PR as a non-blocking result", (t) => {
+  const { output, summary } = commandWorkspace(t);
+  const api = fakeApi({
+    "repos/o/r/pulls?state=open&head=o:automation%2Fupdate-pins": [],
+  });
+
+  main(["gate"], api);
+
+  assert.match(readFileSync(output, "utf8"), /decision=none/);
+  assert.match(readFileSync(summary, "utf8"), /\*\*none\*\*: No open pin update PR/);
+});
+
+test("CLI requires a repository and rejects unknown commands", (t) => {
+  commandWorkspace(t);
+  const previous = process.env.GITHUB_REPOSITORY;
+  delete process.env.GITHUB_REPOSITORY;
+  try {
+    assert.throws(() => main(["gate"], fakeApi({})), /GITHUB_REPOSITORY must name this repository/);
+  } finally {
+    if (previous === undefined) delete process.env.GITHUB_REPOSITORY;
+    else process.env.GITHUB_REPOSITORY = previous;
+  }
+  assert.throws(() => main(["unknown"], fakeApi({})), /Usage: update-pins\.mjs/);
+});
+
 test("pin publication refuses to close or edit a PR not opened by its App", () => {
   assert.doesNotThrow(() => assertBotPr({ number: 7, user: { login: bot, type: "Bot" } }, bot));
   assert.throws(() => assertBotPr({ number: 7, user: { login: "maintainer", type: "User" } }, bot), /isn't authored by/);
   assert.throws(() => assertBotPr({ number: 7, user: { login: "other-app[bot]", type: "Bot" } }, bot), /isn't authored by/);
+});
+
+test("workflow-run planning requires opt-in and a successful same-repository PR run", () => {
+  const { jobs } = parse(readFileSync(resolve(root, ".github/workflows/update-pins.yml"), "utf8"));
+  const evaluate = (eventName, enabled, run) => Boolean(runInNewContext(jobs.plan.if, {
+    github: { event_name: eventName, repository: "o/r", event: { workflow_run: run } },
+    vars: { PIN_AUTOMATION: enabled },
+  }));
+  const trusted = { conclusion: "success", event: "pull_request", head_repository: { full_name: "o/r" } };
+  assert.equal(evaluate("workflow_run", "true", trusted), true);
+  for (const enabled of ["false", "", undefined]) {
+    assert.equal(evaluate("workflow_run", enabled, trusted), false, `opt-in ${enabled}`);
+  }
+  for (const conclusion of ["failure", "cancelled", "skipped"]) {
+    assert.equal(evaluate("workflow_run", "true", { ...trusted, conclusion }), false, conclusion);
+  }
+  for (const event of ["push", "workflow_dispatch", "merge_group", undefined]) {
+    assert.equal(evaluate("workflow_run", "true", { ...trusted, event }), false, event);
+  }
+  assert.equal(evaluate("workflow_run", "true", { ...trusted, head_repository: { full_name: "fork/r" } }), false);
+  assert.equal(evaluate("workflow_run", "true", { ...trusted, head_repository: {} }), false);
+  assert.equal(evaluate("schedule", "true"), true);
+  assert.equal(evaluate("schedule", "false"), false);
+  assert.equal(evaluate("workflow_dispatch", "false"), true, "manual runs remain available while automation is paused");
+  assert.equal(jobs.publish.needs, "plan", "publication cannot run when planning is skipped");
+
+  const gateCondition = jobs.gate.if.replaceAll("needs.*.result", "[needs.plan.result, needs.publish.result]");
+  for (const result of ["skipped", "failure", "cancelled"]) {
+    assert.equal(runInNewContext(gateCondition, {
+      always: () => true,
+      contains: (values, value) => values.includes(value),
+      needs: { plan: { result }, publish: { result: "skipped" } },
+      github: { event_name: "workflow_dispatch" },
+    }), false, `gate cannot run after planning is ${result}`);
+  }
+});
+
+test("enqueue uses nested GraphQL input and narrowly scoped App permissions", () => {
+  const { jobs } = parse(readFileSync(resolve(root, ".github/workflows/update-pins.yml"), "utf8"));
+  const app = jobs.enqueue.steps.find((step) => step.id === "app");
+  assert.deepEqual(Object.fromEntries(Object.entries(app.with).filter(([key]) => key.startsWith("permission-"))), {
+    "permission-contents": "write",
+    "permission-pull-requests": "write",
+    "permission-workflows": "write",
+  });
+  const recheck = jobs.enqueue.steps.find((step) => step.id === "recheck");
+  assert.equal(recheck.env.HEAD_SHA, "${{ needs.gate.outputs.head }}");
+  assert.match(recheck.run, /gate --bot "\$BOT" --expect-head "\$HEAD_SHA"/);
+  const mutation = jobs.enqueue.steps.at(-1);
+  assert.equal(mutation.if, "steps.recheck.outputs.decision == 'merge'");
+  assert.equal(mutation.env.PR_NODE_ID, "${{ steps.recheck.outputs.pr_node_id }}");
+  assert.equal(mutation.env.HEAD_SHA, "${{ steps.recheck.outputs.head }}");
+  assert.match(mutation.run, /enqueuePullRequest\(input: \$input\)/);
+  assert.match(mutation.run, /-F "input\[pullRequestId\]=\$PR_NODE_ID"/);
+  assert.match(mutation.run, /-F "input\[expectedHeadOid\]=\$HEAD_SHA"/);
+  assert.match(mutation.run, /-F 'input\[jump\]=false'/);
+  assert.doesNotMatch(mutation.run, /-F input\./);
 });
 
 test("update-pins workflow keeps secrets out of read-only and dry-run jobs", () => {
@@ -377,4 +574,28 @@ test("update-pins workflow keeps secrets out of read-only and dry-run jobs", () 
   assert.equal(JSON.stringify(enqueue).includes("pullRequestId"), true);
   assert.equal(JSON.stringify(enqueue).includes("/pulls/$PR/merge"), false);
   assert.doesNotMatch(text, /pull_request_target|github\.event\.workflow_run\.head_sha/);
+});
+
+test("comparison cancels superseded PR runs without cancelling manual runs or the serialized report", () => {
+  const workflow = parse(readFileSync(resolve(root, ".github/workflows/skill-eval-comparison.yml"), "utf8"));
+  assert.equal(workflow.concurrency, undefined, "workflow-level cancellation would also cancel an active report");
+  const expectedGroups = {
+    select: "skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-select",
+    "run-baseline": "skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-run-baseline",
+    run: "skill-eval-comparison-${{ github.event.pull_request.number || github.ref }}-run",
+  };
+  for (const [job, group] of Object.entries(expectedGroups)) {
+    const concurrency = workflow.jobs[job].concurrency;
+    assert.equal(concurrency.group, group);
+    const cancelExpression = concurrency["cancel-in-progress"].replace(/^\$\{\{\s*|\s*\}\}$/g, "");
+    const cancels = (eventName) => Boolean(runInNewContext(cancelExpression, { github: { event_name: eventName } }));
+    assert.equal(cancels("pull_request"), true, `${job} cancels its superseded PR job`);
+    assert.equal(cancels("workflow_dispatch"), false, `${job} does not cancel manual runs`);
+  }
+  assert.match(workflow.jobs.report.if, /needs\.run-baseline\.result != 'cancelled'/);
+  assert.match(workflow.jobs.report.if, /needs\.run\.result != 'cancelled'/);
+  assert.deepEqual(workflow.jobs.report.concurrency, {
+    group: "evals-${{ github.workflow_ref }}",
+    "cancel-in-progress": false,
+  });
 });

@@ -24,7 +24,10 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'schedule' && vars.PIN_AUTOMATION == 'true') ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      (github.event_name == 'workflow_run' && vars.PIN_AUTOMATION == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -83,7 +86,8 @@ jobs:
   gate:
     needs: [plan, publish]
     if: >-
-      always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') &&
+      always() && needs.plan.result == 'success' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') &&
       (github.event_name == 'workflow_dispatch' || (vars.PIN_AUTOMATION == 'true' &&
       (github.event_name == 'schedule' || github.event.workflow_run.event == 'pull_request')))
     runs-on: ubuntu-latest
@@ -128,7 +132,9 @@ jobs:
         with:
           client-id: ${{ vars.PIN_APP_CLIENT_ID }}
           private-key: ${{ secrets.PIN_APP_PRIVATE_KEY }}
+          permission-contents: write
           permission-pull-requests: write
+          permission-workflows: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
@@ -150,6 +156,6 @@ jobs:
         run: |
           gh api graphql \
             -f query='mutation($input: EnqueuePullRequestInput!) { enqueuePullRequest(input: $input) { mergeQueueEntry { state } } }' \
-            -F input.pullRequestId="$PR_NODE_ID" \
-            -F input.expectedHeadOid="$HEAD_SHA" \
-            -F input.jump=false
+            -F "input[pullRequestId]=$PR_NODE_ID" \
+            -F "input[expectedHeadOid]=$HEAD_SHA" \
+            -F 'input[jump]=false'

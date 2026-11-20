@@ -3,6 +3,7 @@
 ## 0.2.0
 
 - Route confirmed first-release note requests through the release skill even when no files need changing.
+- Document the approval and merge-queue requirements for automated remote pin updates.
 
 ## 0.1.0
 
