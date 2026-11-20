@@ -26,7 +26,6 @@ project you agree to abide by its terms.
    versions or rewrite history, and ask if release status is unknown.
 1. Run `npm run lint` and the relevant
    [catalog, schema, pin, and script checks](docs/checks-and-evals.md#model-free-checks).
-   Lint alone doesn't validate marketplace or plugin metadata.
 1. Push to your fork and [submit a pull request][pr]. Say what changed, and for
    a plugin that runs code, what it runs, what it reads, writes, and reaches,
    and what data it keeps or sends to the model.
