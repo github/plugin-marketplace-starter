@@ -383,8 +383,9 @@ Canceled runs do not post partial reports; report jobs use their separate
 non-canceling lock. Manual dispatches do not cancel in-progress runs.
 
 1. **Discover changed skills (`select`):** diff `plugins/<plugin>/skills/<skill>/`
-   between the PR base and head, and keep every skill whose
-   `evals/<plugin>/skills/<skill>/eval.yaml` exists in both revisions.
+   between the PR base and head, and keep every skill whose `SKILL.md` exists
+   in both revisions and whose matching
+   `evals/<plugin>/skills/<skill>/eval.yaml` exists at the PR head.
 2. **Run Baseline (`run-baseline`) and Candidate (`run`):** run
    `github/evals-action` (`command: run`) once with the target skill's files
    restored from the PR base commit (`report-id: evals-baseline`, with
