@@ -9,7 +9,7 @@ const baseSha = "a".repeat(40);
 const headSha = "b".repeat(40);
 const oldPinSha = "c".repeat(40);
 const newPinSha = "d".repeat(40);
-const branch = "dependabot/github_actions/evals-action";
+const branch = "dependabot/github_actions/evals-action-a1b2c3d4e5";
 const workflowPath = ".github/workflows/validate.yml";
 const currentReleaseEndpoint = "repos/github/evals/releases/tags/copilot-evals-v0.24.60";
 const nextReleaseEndpoint = "repos/github/evals/releases/tags/copilot-evals-v0.24.68";
@@ -19,6 +19,15 @@ const actionFile = {
   additions: 1,
   deletions: 1,
   patch: `@@ -1 +1 @@\n-      - uses: github/evals-action@${oldPinSha} # v0.2.0\n+      - uses: github/evals-action@${newPinSha} # v0.2.1`,
+};
+const movedActionFile = {
+  ...actionFile,
+  patch: `@@ -1,4 +1,4 @@
+      - name: previous step
+        run: echo ok
+-      - uses: github/evals-action@${oldPinSha} # v0.2.0
+         continue-on-error: true
++      - uses: github/evals-action@${newPinSha} # v0.2.1`,
 };
 const beforeMarketplace = {
   plugins: [{
@@ -34,7 +43,7 @@ afterMarketplace.plugins[0].version = "0.24.68";
 
 function fixture({ kind = "action", change = {}, failStatus = false } = {}) {
   const isPlugin = kind === "plugin";
-  const prBranch = isPlugin ? "automation/update-plugin-pin" : branch;
+  const prBranch = isPlugin ? "automation/update-plugin-pin" : change.branch ?? branch;
   const author = isPlugin ? "github-actions[bot]" : "dependabot[bot]";
   const pr = {
     state: "open",
@@ -170,6 +179,8 @@ test("ignores unrelated, stale, and absent PR runs without mutation", () => {
     { run: { conclusion: "failure" } },
     { run: { head_sha: "malformed" } },
     { run: { head_branch: "dependabot/github_actions/github/evals-action-v0.2.1" } },
+    { run: { head_branch: "dependabot/github_actions/evals-action-a1b2c3d4e" } },
+    { run: { head_branch: "dependabot/github_actions/evals-action-a1b2c3d4e5-extra" } },
     { noPr: true },
     { pr: { ...samplePr, user: { login: "someone", type: "User" } } },
     { pr: { ...samplePr, head: { ref: branch, sha: oldPinSha, repo: { full_name: repo } } } },
@@ -223,6 +234,12 @@ test("rejects untrusted action PRs, malformed edits, invalid tags, and non-forwa
   assert.equal(grouped.calls.filter((call) => call[1] === "pr" && call[2] === "merge").length, 1);
 });
 
+test("rejects action pin replacements that move step settings", () => {
+  const f = fixture({ change: { files: [movedActionFile] } });
+  assert.throws(() => completePinValidation({ repo, runId: 99, ...f }), /in-place/);
+  assert.deepEqual(f.calls, []);
+});
+
 test("rejects plugin PRs that alter anything beyond the verified forward pin", () => {
   const badMarketplace = structuredClone(afterMarketplace);
   badMarketplace.plugins[0].description = "unexpected";
@@ -253,8 +270,11 @@ test("stops if status publication fails and does not enqueue a merge", () => {
 
 test("workflow runs trusted default-branch code with scoped permissions", () => {
   const workflow = parse(readFileSync(new URL("../workflows/complete-pin-validation.yml", import.meta.url), "utf8"));
+  const publisher = parse(readFileSync(new URL("../workflows/update-pins.yml", import.meta.url), "utf8"));
   assert.deepEqual(workflow.on.workflow_run, { workflows: ["Validate"], types: ["completed"] });
   assert.deepEqual(workflow.permissions, { actions: "read", contents: "write", "pull-requests": "write", statuses: "write" });
+  assert.deepEqual(workflow.concurrency, publisher.concurrency);
+  assert.deepEqual(workflow.concurrency, { group: "update-plugin-pin", "cancel-in-progress": false });
   assert.equal(workflow.on.pull_request_target, undefined);
   assert.match(workflow.jobs.validate.if, /github\.repository == 'github\/plugin-marketplace-starter'/);
   assert.match(workflow.jobs.validate.if, /vars\.PIN_AUTOMATION == 'true'/);

@@ -8,6 +8,9 @@ permissions:
   contents: write
   pull-requests: write
   statuses: write
+concurrency:
+  group: update-plugin-pin
+  cancel-in-progress: false
 jobs:
   validate:
     if: github.repository == 'github/plugin-marketplace-starter' && vars.PIN_AUTOMATION == 'true'

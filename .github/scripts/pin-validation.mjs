@@ -6,7 +6,7 @@ import { githubApi } from "./check-remote-pins.mjs";
 
 const canonical = "github/plugin-marketplace-starter";
 const pluginBranch = "automation/update-plugin-pin";
-const actionBranch = "dependabot/github_actions/evals-action";
+const actionBranch = /^dependabot\/github_actions\/evals-action-[0-9a-f]{10}$/;
 const actionFiles = new Set([".github/workflows/evals.yml", ".github/workflows/skill-eval-comparison.yml"]);
 const pin = /^([+-])([ \t]*- uses: github\/evals-action@)([0-9a-f]{40}) # (v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\s*$/;
 
@@ -44,14 +44,30 @@ function verifyActionPins(api, files, changedFiles) {
   const oldPins = [];
   for (const file of files) {
     if (!actionFiles.has(file.filename) || file.status !== "modified" || typeof file.patch !== "string") throw new Error("Unexpected changed file or missing patch.");
-    const removed = [], added = [];
+    const blocks = [];
+    let block = [];
     for (const line of file.patch.split("\n")) {
-      if (!line.startsWith("+") && !line.startsWith("-")) continue;
+      if (!line.startsWith("+") && !line.startsWith("-")) {
+        if (block.length) blocks.push(block);
+        block = [];
+        continue;
+      }
       const match = pin.exec(line);
       if (!match) throw new Error("PR changes more than evals-action pins.");
-      (match[1] === "-" ? removed : added).push(match);
+      block.push(match);
     }
-    if (!removed.length || removed.length !== added.length || file.additions !== added.length || file.deletions !== removed.length || removed.some((entry, index) => entry[2] !== added[index][2])) throw new Error("Incomplete or unpaired action pin changes.");
+    if (block.length) blocks.push(block);
+    const removed = [], added = [];
+    for (const changes of blocks) {
+      const blockRemoved = changes.filter((entry) => entry[1] === "-");
+      const blockAdded = changes.filter((entry) => entry[1] === "+");
+      if (!blockRemoved.length || blockRemoved.length !== blockAdded.length || blockRemoved.some((entry, index) => entry[2] !== blockAdded[index][2])) {
+        throw new Error("Action pin replacements must be in-place and paired.");
+      }
+      removed.push(...blockRemoved);
+      added.push(...blockAdded);
+    }
+    if (!removed.length || file.additions !== added.length || file.deletions !== removed.length) throw new Error("Incomplete or unpaired action pin changes.");
     oldPins.push(...removed.map((entry) => ({ sha: entry[3], tag: entry[4] })));
     for (const entry of added) {
       const next = `${entry[3]} ${entry[4]}`;
@@ -128,7 +144,7 @@ export function completePinValidation({ api = githubApi, repo, runId, execute = 
   if (runData.event === "workflow_dispatch" && runData.head_branch === pluginBranch) {
     author = "github-actions[bot]";
     kind = "plugin";
-  } else if (runData.event === "pull_request" && runData.head_branch === actionBranch) {
+  } else if (runData.event === "pull_request" && actionBranch.test(runData.head_branch ?? "")) {
     author = "dependabot[bot]";
     kind = "action";
   } else {

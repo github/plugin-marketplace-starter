@@ -23,9 +23,9 @@ const semver = (tag, prefix) => {
 };
 const compareSemver = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
-export function newestRelease(releases, prefix, allowPrerelease) {
+export function newestRelease(releases, prefix, prerelease) {
   return releases
-    .filter((release) => !release.draft && (allowPrerelease || !release.prerelease) && semver(release.tag_name, prefix))
+    .filter((release) => !release.draft && release.prerelease === prerelease && semver(release.tag_name, prefix))
     .sort((a, b) => compareSemver(semver(b.tag_name, prefix), semver(a.tag_name, prefix)))[0];
 }
 
@@ -127,6 +127,20 @@ function currentValidationRun(api, repo, head) {
   );
 }
 
+function completionHasTakenEffect(api, repo, pr, head, validation) {
+  const current = getJson(api, `repos/${repo}/pulls/${pr.number}`);
+  if (current.state !== "open" || current.head?.sha !== head) throw new Error(`Open PR #${pr.number} changed during completion verification.`);
+  if (!current.auto_merge || typeof validation.html_url !== "string" || !validation.html_url) return false;
+  const statuses = getJson(api, `repos/${repo}/commits/${head}/statuses?per_page=100`);
+  if (!Array.isArray(statuses)) throw new Error("Commit statuses response is not an array.");
+  return statuses.some((status) =>
+    status.context === "lint" &&
+    status.state === "success" &&
+    status.target_url === validation.html_url &&
+    status.creator?.login === bot,
+  );
+}
+
 export function publish(api, repo, { title, bodyFile, execute = run }) {
   if (!title || !bodyFile || !process.env.GH_TOKEN) throw new Error("Publication requires a title, body file, and GH_TOKEN.");
   const pr = openPr(api, repo);
@@ -158,8 +172,10 @@ export function publish(api, repo, { title, bodyFile, execute = run }) {
   const publishedHead = decision === "push" ? localHead : remote.sha;
   if (!current || current.head?.sha !== publishedHead) throw new Error(`No open PR found at the published ${BRANCH} head.`);
   const existingValidation = decision === "skip" && pr ? currentValidationRun(api, repo, publishedHead) : undefined;
-  if (!existingValidation) execute("gh", ["workflow", "run", "validate.yml", "-R", repo, "--ref", BRANCH]);
-  if (existingValidation) return `Plugin pin PR #${current.number} already has a current-head Validate run and is awaiting CodeOwner approval.`;
+  const validationActive = existingValidation && ["queued", "in_progress", "waiting"].includes(existingValidation.status);
+  const completionApplied = existingValidation?.status === "completed" && completionHasTakenEffect(api, repo, current, publishedHead, existingValidation);
+  if (!validationActive && !completionApplied) execute("gh", ["workflow", "run", "validate.yml", "-R", repo, "--ref", BRANCH]);
+  if (validationActive || completionApplied) return `Plugin pin PR #${current.number} already has a current-head Validate run and is awaiting CodeOwner approval.`;
   return `Plugin pin PR #${current.number} is awaiting Validate and CodeOwner approval.`;
 }
 

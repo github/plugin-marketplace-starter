@@ -49,6 +49,24 @@ test("planner updates only the plugin pin to a newer forward release", () => {
   assert.match(plan.title, /copilot-evals-v0\.24\.68/);
 });
 
+test("planner keeps prerelease pins in their current channel when a stable release is newer", () => {
+  const prereleaseTag = "copilot-evals-v0.24.68";
+  const stableTag = "copilot-evals-v1.0.0";
+  const api = fakeApi({
+    "repos/github/evals/releases?per_page=100&page=1": [
+      release(prereleaseTag),
+      release(stableTag, { prerelease: false }),
+      release("copilot-evals-v0.24.60"),
+    ],
+    [`repos/github/evals/commits/${prereleaseTag}`]: { sha: sha("2") },
+    [`repos/github/evals/commits/${stableTag}`]: { sha: sha("3") },
+    [`repos/github/evals/compare/${sha("1")}...${sha("2")}`]: { status: "ahead" },
+    [`repos/github/evals/compare/${sha("1")}...${sha("3")}`]: { status: "ahead" },
+  });
+  const plan = planUpdate({ text: marketplace, api });
+  assert.equal(JSON.parse(plan.text).plugins[1].source.ref, prereleaseTag);
+});
+
 test("release selection respects channel, numeric ordering, and drafts", () => {
   assert.equal(newestRelease([release("v0.24.9"), release("v0.24.10"), release("v1.0.0", { draft: true })], "v", true).tag_name, "v0.24.10");
   assert.equal(newestRelease([release("v1.0.0"), release("v0.9.0", { prerelease: false })], "v", false).tag_name, "v0.9.0");
@@ -230,12 +248,15 @@ test("publisher skips duplicate Validate dispatch for a successfully validated u
   process.env.GH_TOKEN = "synthetic-token";
   t.after(() => { if (savedToken === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = savedToken; });
   const mainSha = sha("3"), remoteSha = sha("4"), tree = sha("5");
-  const pr = { number: 7, user: { login: bot, type: "Bot" }, head: { sha: remoteSha, repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
+  const pr = { number: 7, state: "open", user: { login: bot, type: "Bot" }, head: { sha: remoteSha, repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
+  const validationUrl = "https://github.com/o/r/actions/runs/99";
   const api = fakeApi({
     [`repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`]: [pr],
+    "repos/o/r/pulls/7": { ...pr, auto_merge: { enabled_at: "now" } },
     [`repos/o/r/branches/${encodeURIComponent(BRANCH)}`]: { commit: { sha: remoteSha, commit: { tree: { sha: tree } }, parents: [{ sha: mainSha }] } },
     [`repos/o/r/compare/${mainSha}...${remoteSha}`]: { ahead_by: 1, behind_by: 0, commits: [{ author: { login: bot }, committer: { login: bot } }] },
-    [validationRunsEndpoint]: { workflow_runs: [{ event: "workflow_dispatch", head_branch: BRANCH, head_sha: remoteSha, status: "completed", conclusion: "success" }] },
+    [validationRunsEndpoint]: { workflow_runs: [{ event: "workflow_dispatch", head_branch: BRANCH, head_sha: remoteSha, status: "completed", conclusion: "success", html_url: validationUrl }] },
+    [`repos/o/r/commits/${remoteSha}/statuses?per_page=100`]: [{ context: "lint", state: "success", target_url: validationUrl, creator: { login: bot } }],
   });
   const calls = [];
   publish(api, "o/r", { title: "update", bodyFile: "body", execute: (command, args) => {
@@ -245,6 +266,66 @@ test("publisher skips duplicate Validate dispatch for a successfully validated u
     if (args[0] === "pr" && args[1] === "view") return JSON.stringify({ autoMergeRequest: null });
     return "";
   } });
+  assert.equal(calls.some((call) => call[1] === "workflow" && call[2] === "run"), false);
+});
+
+test("publisher retries Validate when completion did not bridge status and enable auto-merge", (t) => {
+  const savedToken = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = "synthetic-token";
+  t.after(() => { if (savedToken === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = savedToken; });
+  const mainSha = sha("3"), remoteSha = sha("4"), tree = sha("5");
+  const pr = { number: 7, state: "open", user: { login: bot, type: "Bot" }, head: { sha: remoteSha, repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
+  const validationUrl = "https://github.com/o/r/actions/runs/99";
+  const successfulRun = { event: "workflow_dispatch", head_branch: BRANCH, head_sha: remoteSha, status: "completed", conclusion: "success", html_url: validationUrl };
+  const validStatus = { context: "lint", state: "success", target_url: validationUrl, creator: { login: bot } };
+  const cases = [
+    { autoMerge: null, statuses: [] },
+    { autoMerge: { enabled_at: "now" }, statuses: [] },
+    { autoMerge: null, statuses: [validStatus] },
+    { autoMerge: { enabled_at: "now" }, statuses: [{ ...validStatus, target_url: "https://github.com/o/r/actions/runs/other" }] },
+    { autoMerge: { enabled_at: "now" }, statuses: [{ ...validStatus, creator: { login: "human" } }] },
+    { autoMerge: { enabled_at: "now" }, statuses: [{ context: "lint", state: "success", creator: { login: bot } }], run: { ...successfulRun, html_url: undefined } },
+  ];
+  for (const { autoMerge, statuses, run = successfulRun } of cases) {
+    const api = fakeApi({
+      [`repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`]: [pr],
+      "repos/o/r/pulls/7": { ...pr, auto_merge: autoMerge },
+      [`repos/o/r/branches/${encodeURIComponent(BRANCH)}`]: { commit: { sha: remoteSha, commit: { tree: { sha: tree } }, parents: [{ sha: mainSha }] } },
+      [`repos/o/r/compare/${mainSha}...${remoteSha}`]: { ahead_by: 1, behind_by: 0, commits: [{ author: { login: bot }, committer: { login: bot } }] },
+      [validationRunsEndpoint]: { workflow_runs: [run] },
+      [`repos/o/r/commits/${remoteSha}/statuses?per_page=100`]: statuses,
+    });
+    const calls = [];
+    publish(api, "o/r", { title: "update", bodyFile: "body", execute: (command, args) => {
+      calls.push([command, ...args]);
+      if (args[0] === "rev-parse") return args[1] === "HEAD" ? mainSha : tree;
+      if (args[0] === "status") return " M marketplace.json";
+      return "";
+    } });
+    assert.ok(calls.some((call) => call[1] === "workflow" && call[2] === "run"), "expected a retry when completion effects are missing");
+  }
+});
+
+test("publisher refuses completed validation reuse if the PR head changed during verification", (t) => {
+  const savedToken = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = "synthetic-token";
+  t.after(() => { if (savedToken === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = savedToken; });
+  const mainSha = sha("3"), remoteSha = sha("4"), tree = sha("5");
+  const pr = { number: 7, state: "open", user: { login: bot, type: "Bot" }, head: { sha: remoteSha, repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
+  const api = fakeApi({
+    [`repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`]: [pr],
+    "repos/o/r/pulls/7": { ...pr, head: { ...pr.head, sha: sha("a") }, auto_merge: { enabled_at: "now" } },
+    [`repos/o/r/branches/${encodeURIComponent(BRANCH)}`]: { commit: { sha: remoteSha, commit: { tree: { sha: tree } }, parents: [{ sha: mainSha }] } },
+    [`repos/o/r/compare/${mainSha}...${remoteSha}`]: { ahead_by: 1, behind_by: 0, commits: [{ author: { login: bot }, committer: { login: bot } }] },
+    [validationRunsEndpoint]: { workflow_runs: [{ event: "workflow_dispatch", head_branch: BRANCH, head_sha: remoteSha, status: "completed", conclusion: "success", html_url: "https://github.com/o/r/actions/runs/99" }] },
+  });
+  const calls = [];
+  assert.throws(() => publish(api, "o/r", { title: "update", bodyFile: "body", execute: (command, args) => {
+    calls.push([command, ...args]);
+    if (args[0] === "rev-parse") return args[1] === "HEAD" ? mainSha : tree;
+    if (args[0] === "status") return " M marketplace.json";
+    return "";
+  } }), /changed during completion verification/);
   assert.equal(calls.some((call) => call[1] === "workflow" && call[2] === "run"), false);
 });
 
