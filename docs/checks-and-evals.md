@@ -64,84 +64,45 @@ authenticated `gh` CLI. Neither starts a model.
 
 ### Automatic pin updates
 
-[Update pins](../.github/workflows/update-pins.yml) keeps remote marketplace
-pins and the `github/evals-action` pins current without manual edits:
+[Update plugin pin](../.github/workflows/update-pins.yml) proposes newer
+`github/evals` plugin releases for this repository only. It preserves the
+stable/prerelease channel, requires the candidate commit to be forward of the
+current pin, and changes only `marketplace.json`. Unknown release channels,
+unreadable upstream data, and non-forward candidates block the plan.
 
-- **Plugin pins:** each remote `marketplace.json` entry whose `source.ref` is a
-  semantic-version tag (for example `v1.2.3` or `eval-v1.2.3`) moves to the
-  newest strictly newer release from the same repository. Pins on releases
-  marked stable move only to stable releases; pins on releases marked
-  prerelease may also move to newer prereleases.
-  `source.sha` is set to the
-  tag's commit, and `version` follows only when it matched the old tag.
-- **Action pins:** every `uses: github/evals-action@<sha>` line in
-  [skill-eval-comparison.yml](../.github/workflows/skill-eval-comparison.yml)
-  and this guide moves to the newest release commit, written as
-  `@<sha> # <tag>`. A candidate that is not ahead of the current commit is
-  skipped.
+The workflow uses only `GITHUB_TOKEN`; no App key or environment is needed.
+When `PIN_AUTOMATION` is `true`, it checks every 30 minutes. Manual dispatch
+defaults to a dry run. A non-dry run opens or updates one PR from
+`automation/update-plugin-pin` and dispatches `Validate` on that branch. The
+separate [Complete pin validation](../.github/workflows/complete-pin-validation.yml)
+workflow runs trusted code from the default branch after Validate completes. It
+confirms the exact successful workflow run and PR head, publishes the required
+`lint` commit status from GitHub Actions for that SHA, and enables squash
+auto-merge. GitHub still requires the checks and one human CodeOwner approval
+before merging.
 
-With `PIN_AUTOMATION` set to `true`, the workflow checks for releases every
-30 minutes and rechecks after a successful Validate `pull_request` run on its
-same-repository pin branch. Fork-originated and non-PR `workflow_run` events
-cannot reach publication or enqueue. It also supports manual dispatch. It opens or updates
-one pull request from `automation/update-pins`, closes it when
-nothing remains to change, and enqueues it pinned to the checked head only
-when the PR changes nothing beyond the allowlisted files, contains only bot
-commits, matches what a fresh update would write, is mergeable and up to date,
-every check (including Validate's `lint` and any status check your branch rules
-require) has passed, GitHub records a required approval, and Copilot has
-submitted a GitHub `APPROVED` review on the exact head. A `COMMENTED` Copilot
-review, including one that says “No open issues,” is not approval. The required
-merge queue then runs `Validate` again for the combined merge-group head before
-merging. Once its ruleset is enabled, direct merges are blocked. Any failure
-leaves the PR open for a maintainer. A PR already in the queue is left unchanged:
-publication won't replace its head, close it, or request another review, and
-the gate won't enqueue it again.
-After each publish/update, the trusted job requests one Copilot review when no
-Copilot review exists for the current head. Pending or completed reviews prevent
-the 30-minute reconciliation from issuing duplicate requests; a new head gets a
-new request. Each request can consume Copilot AI credits. If a review completes
-as `COMMENTED`, it is not retried for that head and the PR remains open.
-The workflow doesn't review upstream changes: enabling it means you trust each
-pinned repository's published releases. Keep a pin you want reviewed by hand
-off a release tag, or leave the workflow disabled and follow
+[Dependabot](../.github/dependabot.yml) separately proposes daily grouped
+updates for `github/evals-action` references in workflow files. Dependabot's
+handling of prerelease tags has not been verified live. Each PR still requires
+one human CodeOwner approval and required checks. The same trusted
+default-branch completion workflow verifies the successful Validate run,
+Dependabot author, base and exact head, action-only file changes, release tag,
+strictly increasing stable version, and forward commit ancestry before enabling
+auto-merge. It never checks out or executes PR-head code and does not approve the
+PR. Non-stable action tags are not auto-enabled; Dependabot's prerelease-tag
+representation has not been verified live.
+
+An administrator must allow Actions to create pull requests and enable
+auto-merge, require the `lint` status check specifically from the **GitHub
+Actions** integration (App ID `15368`), require one CodeOwner approval in the
+pull-request ruleset, dismiss stale approvals on new commits, and only then set
+repository variable `PIN_AUTOMATION` to `true`. GitHub's protected-branch rules
+enforce the check and approval before merging; the workflows do not change or
+bypass those rules. Configure the rules before enabling the variable; the
+keyless workflow does not inspect or change ruleset settings. The
+workflow-dispatch status bridge has not been verified live. The automation does
+not review upstream releases for you; see
 [remote pin rules](../plugins/marketplace-maintainer/skills/update-remote-pins/references/remote-pins.md).
-
-Manual dispatch works even when `PIN_AUTOMATION` is disabled and defaults to
-`dry_run`, which only reports the planned update. Turning off `dry_run` permits
-publication and enqueue, subject to all the same review and check gates.
-To enable automatic pin-update proposals:
-
-1. Create a GitHub App, or reuse one, with **Contents**, **Pull requests**,
-   and **Workflows** read and write access, installed on this repository.
-   Both write jobs request only these permissions: **Contents** to update
-   branches and merge, **Pull requests** to manage the PR and queue, and
-   **Workflows** because action-pin updates change a workflow file. Checks
-   are read separately using the workflow's read-only `GITHUB_TOKEN`.
-2. Create an environment named `pin-automation` limited to the default branch,
-   with the variable `PIN_APP_CLIENT_ID` (the App's client ID) and the secret
-   `PIN_APP_PRIVATE_KEY`.
-3. Keep the required-review rule enabled, require a human approval, and do not
-   add the App as a bypass actor. The automation waits for both GitHub's
-   required approval and an explicit Copilot `APPROVED` review on the current
-   head. Copilot approvals must not count toward the human approval requirement.
-   If Copilot only submits `COMMENTED`, the PR remains open; the pin App never
-   approves its own pull request. The organization or enterprise must allow
-   Copilot to submit an approving review; otherwise this gate remains closed.
-4. Add a separate, active ruleset for the default branch with strict required
-   status check `lint` from GitHub Actions and a required squash merge queue.
-   Do not add a bypass actor to this ruleset. `Validate` must include the
-   `merge_group` event so the queue receives the check result for its combined
-   head. [Merge queues](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
-   are available for public repositories owned by organizations and private
-   repositories owned by organizations using GitHub Enterprise Cloud, not
-   personal-account repositories. Confirm availability for your repository
-   before enabling this automation. Without a queue, automatic enqueue fails
-   closed; it never falls back to a direct merge.
-5. Set the repository variable `PIN_AUTOMATION` to `true`.
-
-Pull requests created with an App token trigger Validate normally; the default
-`GITHUB_TOKEN` would not.
 
 Remote checks prefer a root manifest declaring a supported Agent Plugins schema
 (1.0.0 or 1.1.0); unsupported Agent Plugins versions fail. Otherwise they use
@@ -404,8 +365,8 @@ non-canceling lock. Manual dispatches do not cancel in-progress runs.
 > top-level **Ship / No-ship** verdict table need a `github/evals-action` release
 > that includes [github/evals-action#34](https://github.com/github/evals-action/pull/34)
 > and [github/evals-action#35](https://github.com/github/evals-action/pull/35).
-> The workflow pins a full commit SHA, and [Update pins](#automatic-pin-updates)
-> moves it to each newer release.
+> The workflow file is authoritative for the current full commit SHA.
+> [Dependabot](#automatic-pin-updates) updates workflow files, not this example.
 
 ```yaml
 name: Skill eval comparison
@@ -483,7 +444,7 @@ jobs:
               git checkout "$BASE_SHA" -- "$dir"
             fi
           done <<< "$SKILL_DIRS"
-      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
+      - uses: github/evals-action@cd81fcdd4c5c9155d7324ff2e4e77ad805bc8d46 # v0.2.1
         continue-on-error: true
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
@@ -510,7 +471,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
+      - uses: github/evals-action@cd81fcdd4c5c9155d7324ff2e4e77ad805bc8d46 # v0.2.1
         env:
           VALLY_TELEMETRY_OPTOUT: '1'
         with:
@@ -534,7 +495,7 @@ jobs:
       group: evals-${{ github.workflow_ref }}
       cancel-in-progress: false
     steps:
-      - uses: github/evals-action@d7b40d34236f09c8078a2b4e0008ed2ac81919cb
+      - uses: github/evals-action@cd81fcdd4c5c9155d7324ff2e4e77ad805bc8d46 # v0.2.1
         with:
           command: report
           report-id: evals

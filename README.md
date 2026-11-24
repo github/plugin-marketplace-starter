@@ -211,9 +211,9 @@ and per-case transitions) without calling a model. On same-repository pull
 requests (`head.repo.full_name == github.repository`, excluding fork PRs),
 [Skill eval comparison](.github/workflows/skill-eval-comparison.yml) uses
 `github/evals-action` (`report-id: evals-baseline` and
-`baseline-report-id: evals-baseline`, pinned to a full commit SHA that
-[Update pins](docs/checks-and-evals.md#automatic-pin-updates) advances to each new release) so any changed skill under
-`plugins/<plugin>/skills/<skill>/` with a matching
+`baseline-report-id: evals-baseline`), pinned to a full commit SHA. Daily
+[Dependabot](docs/checks-and-evals.md#automatic-pin-updates) PRs propose
+updating the workflow pin. A changed skill under `plugins/<plugin>/skills/<skill>/` with a matching
 `evals/<plugin>/skills/<skill>/eval.yaml` automatically runs Baseline vs.
 Candidate and updates one sticky PR comparison comment; see
 [automatic PR skill comparison](docs/checks-and-evals.md#automatic-pr-skill-comparison).

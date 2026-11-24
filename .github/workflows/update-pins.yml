@@ -1,161 +1,41 @@
-name: Update pins
-# Moves remote marketplace pins and github/evals-action pins to their newest releases in one bot PR,
-# then enqueues it after required checks pass. Setup: docs/checks-and-evals.md#automatic-pin-updates.
+name: Update plugin pin
 on:
   schedule:
     - cron: '7,37 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Report what would change without pushing, opening, or merging a PR.
+        description: Report the proposed update without publishing a PR.
         type: boolean
         default: true
-  workflow_run:
-    workflows: [Validate]
-    types: [completed]
-    branches: [automation/update-pins]
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+  actions: write
 concurrency:
-  group: update-pins
+  group: update-plugin-pin
   cancel-in-progress: false
 jobs:
-  plan:
+  update:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'schedule' && vars.PIN_AUTOMATION == 'true') ||
-      (github.event_name == 'workflow_run' && vars.PIN_AUTOMATION == 'true' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.head_repository.full_name == github.repository)
+      github.repository == 'github/plugin-marketplace-starter' &&
+      (github.event_name == 'workflow_dispatch' || vars.PIN_AUTOMATION == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      changed: ${{ steps.update.outputs.changed }}
-      open_pr: ${{ steps.update.outputs.open_pr }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
-      - id: update
+      - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node .github/scripts/update-pins.mjs update
-
-  publish:
-    needs: plan
-    if: (needs.plan.outputs.changed == 'true' || needs.plan.outputs.open_pr != '') && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
-    environment: pin-automation
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - id: app
-        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
-        with:
-          client-id: ${{ vars.PIN_APP_CLIENT_ID }}
-          private-key: ${{ secrets.PIN_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-          permission-workflows: write
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-      - id: update
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: node .github/scripts/update-pins.mjs update --body-file "$RUNNER_TEMP/pin-pr.md"
-      - name: Check remote pins
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: node .github/scripts/check-remote-pins.mjs
-      - env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          TITLE: ${{ steps.update.outputs.title }}
-          BOT: ${{ steps.app.outputs.app-slug }}[bot]
-        run: node .github/scripts/update-pins.mjs publish --title "$TITLE" --body-file "$RUNNER_TEMP/pin-pr.md" --bot "$BOT"
-
-  gate:
-    needs: [plan, publish]
-    if: >-
-      always() && needs.plan.result == 'success' &&
-      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') &&
-      (github.event_name == 'workflow_dispatch' || (vars.PIN_AUTOMATION == 'true' &&
-      (github.event_name == 'schedule' || github.event.workflow_run.event == 'pull_request')))
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      pull-requests: read
-      checks: read
-      statuses: read
-      actions: read
-    outputs:
-      decision: ${{ steps.gate.outputs.decision }}
-      pr_node_id: ${{ steps.gate.outputs.pr_node_id }}
-      head: ${{ steps.gate.outputs.head }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-      - id: gate
+      - if: steps.plan.outputs.changed == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node .github/scripts/update-pins.mjs gate
-
-  enqueue:
-    needs: gate
-    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.gate.outputs.decision == 'merge' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
-    environment: pin-automation
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      pull-requests: read
-      checks: read
-      statuses: read
-      actions: read
-    steps:
-      - id: app
-        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
-        with:
-          client-id: ${{ vars.PIN_APP_CLIENT_ID }}
-          private-key: ${{ secrets.PIN_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-          permission-workflows: write
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-      # Recheck with the run's own token (the app can't read checks), pinned to the head the gate approved.
-      - id: recheck
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BOT: ${{ steps.app.outputs.app-slug }}[bot]
-          HEAD_SHA: ${{ needs.gate.outputs.head }}
-        run: node .github/scripts/update-pins.mjs gate --bot "$BOT" --expect-head "$HEAD_SHA"
-      - if: steps.recheck.outputs.decision == 'merge'
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          PR_NODE_ID: ${{ steps.recheck.outputs.pr_node_id }}
-          HEAD_SHA: ${{ steps.recheck.outputs.head }}
-        run: |
-          gh api graphql \
-            -f query='mutation($input: EnqueuePullRequestInput!) { enqueuePullRequest(input: $input) { mergeQueueEntry { state } } }' \
-            -F "input[pullRequestId]=$PR_NODE_ID" \
-            -F "input[expectedHeadOid]=$HEAD_SHA" \
-            -F 'input[jump]=false'
+          TITLE: ${{ steps.plan.outputs.title }}
+        run: node .github/scripts/update-pins.mjs publish --title "$TITLE" --body-file "$RUNNER_TEMP/pin-pr.md"

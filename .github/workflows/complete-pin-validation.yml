@@ -1,0 +1,26 @@
+name: Complete pin validation
+on:
+  workflow_run:
+    workflows: [Validate]
+    types: [completed]
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+  statuses: write
+jobs:
+  validate:
+    if: github.repository == 'github/plugin-marketplace-starter' && vars.PIN_AUTOMATION == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Complete trusted pin validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: node .github/scripts/pin-validation.mjs
