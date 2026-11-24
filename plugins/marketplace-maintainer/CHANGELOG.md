@@ -3,7 +3,7 @@
 ## 0.2.0
 
 - Route confirmed first-release note requests through the release skill even when no files need changing.
-- Document keyless pin automation with a trusted Validate completion gate, required checks, and human CodeOwner review.
+- Document keyless pin automation with a trusted Validate completion gate, up-to-date checks, and required human CodeOwner approval.
 
 ## 0.1.0
 

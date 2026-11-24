@@ -11,6 +11,7 @@ import { BRANCH, main, newestRelease, planPublish, planUpdate, publish } from ".
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const sha = (digit) => digit.repeat(40);
+const validationRunsEndpoint = `repos/o/r/actions/workflows/validate.yml/runs?branch=${encodeURIComponent(BRANCH)}&event=workflow_dispatch&per_page=100`;
 const marketplace = `${JSON.stringify({
   name: "demo",
   plugins: [
@@ -127,14 +128,24 @@ test("publication dispatches Validate and leaves auto-merge to the trusted compl
   process.env.GH_TOKEN = "synthetic-token";
   t.after(() => { if (savedToken === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = savedToken; });
   const endpoint = `repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`;
-  const pr = { number: 7, user: { login: bot, type: "Bot" }, head: { repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
-  const api = fakeApi({ [endpoint]: [pr] });
+  const mainSha = sha("3"), remoteSha = sha("4"), localHead = sha("6"), localTree = sha("7");
+  const pr = { number: 7, user: { login: bot, type: "Bot" }, head: { sha: remoteSha, repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
+  let pushed = false;
+  const api = (path) => {
+    if (path === endpoint) return { status: 200, body: JSON.stringify([{ ...pr, head: { ...pr.head, sha: pushed ? localHead : remoteSha } }]) };
+    if (path === "repos/o/r/pulls/7") return { status: 200, body: JSON.stringify({ state: "open", head: { sha: remoteSha }, auto_merge: null }) };
+    if (path === `repos/o/r/branches/${encodeURIComponent(BRANCH)}`) return { status: 200, body: JSON.stringify({ commit: { sha: remoteSha, commit: { tree: { sha: sha("5") } }, parents: [{ sha: mainSha }] } }) };
+    if (path === `repos/o/r/compare/${mainSha}...${remoteSha}`) return { status: 200, body: JSON.stringify({ ahead_by: 1, behind_by: 0, commits: [{ author: { login: bot }, committer: { login: bot } }] }) };
+    return { status: 404, body: "{}" };
+  };
   const calls = [];
+  let headReads = 0;
   const execute = (command, args) => {
     calls.push([command, ...args]);
-    if (args[0] === "rev-parse") return args[1] === "HEAD" ? sha("3") : sha("4");
+    if (args[0] === "rev-parse") return args[1] === "HEAD" ? (++headReads === 1 ? mainSha : localHead) : localTree;
     if (args[0] === "status") return " M marketplace.json";
     if (args[0] === "pr" && args[1] === "view") return JSON.stringify({ autoMergeRequest: null });
+    if (args[0] === "push") pushed = true;
     return "";
   };
   assert.match(publish(api, "o/r", { title: "update", bodyFile: "body", execute }), /awaiting Validate/);
@@ -145,6 +156,8 @@ test("publication dispatches Validate and leaves auto-merge to the trusted compl
   assert.deepEqual(calls[dispatch].slice(-2), ["--ref", BRANCH]);
   assert.ok(calls.some((call) => call[1] === "api" && call[4] === "repos/o/r/pulls/7"));
   assert.ok(calls.some((call) => call[1] === "add" && call.at(-1) === "marketplace.json"));
+  pushed = false;
+  headReads = 0;
   assert.throws(() => publish(api, "o/r", { title: "update", bodyFile: "body", execute: (command, args) => {
     if (args[0] === "workflow") throw new Error("dispatch failed");
     if (args[0] === "pr" && args[1] === "merge") assert.fail("must not enable auto-merge in the publisher");
@@ -157,11 +170,12 @@ test("publisher dispatches validation without enabling auto-merge when the push 
   process.env.GH_TOKEN = "synthetic-token";
   t.after(() => { if (savedToken === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = savedToken; });
   const mainSha = sha("3"), remoteSha = sha("4"), tree = sha("5");
-  const pr = { number: 7, user: { login: bot, type: "Bot" }, head: { repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
+  const pr = { number: 7, user: { login: bot, type: "Bot" }, head: { sha: remoteSha, repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
   const api = fakeApi({
     [`repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`]: [pr],
     [`repos/o/r/branches/${encodeURIComponent(BRANCH)}`]: { commit: { sha: remoteSha, commit: { tree: { sha: tree } }, parents: [{ sha: mainSha }] } },
     [`repos/o/r/compare/${mainSha}...${remoteSha}`]: { ahead_by: 1, behind_by: 0, commits: [{ author: { login: bot }, committer: { login: bot } }] },
+    [validationRunsEndpoint]: { workflow_runs: [] },
   });
   const calls = [];
   publish(api, "o/r", { title: "update", bodyFile: "body", execute: (command, args) => {
@@ -174,6 +188,88 @@ test("publisher dispatches validation without enabling auto-merge when the push 
   assert.equal(calls.some((call) => call[1] === "push"), false);
   assert.ok(calls.some((call) => call[1] === "workflow" && call[2] === "run"));
   assert.equal(calls.some((call) => call[1] === "pr" && call[2] === "merge"), false);
+});
+
+test("publisher disables auto-merge before pushing a replacement PR head", (t) => {
+  const savedToken = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = "synthetic-token";
+  t.after(() => { if (savedToken === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = savedToken; });
+  const mainSha = sha("3"), remoteSha = sha("4"), remoteTree = sha("5"), localHead = sha("6"), localTree = sha("7");
+  const endpoint = `repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`;
+  const pr = { number: 7, user: { login: bot, type: "Bot" }, head: { sha: remoteSha, repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
+  let pushed = false;
+  const api = (path) => path === endpoint
+    ? { status: 200, body: JSON.stringify([{ ...pr, head: { ...pr.head, sha: pushed ? localHead : remoteSha } }]) }
+    : path === "repos/o/r/pulls/7"
+      ? { status: 200, body: JSON.stringify({ state: "open", head: { sha: remoteSha }, auto_merge: { enabled_at: "now" } }) }
+    : path === `repos/o/r/branches/${encodeURIComponent(BRANCH)}`
+      ? { status: 200, body: JSON.stringify({ commit: { sha: remoteSha, commit: { tree: { sha: remoteTree } }, parents: [{ sha: mainSha }] } }) }
+      : path === `repos/o/r/compare/${mainSha}...${remoteSha}`
+        ? { status: 200, body: JSON.stringify({ ahead_by: 1, behind_by: 0, commits: [{ author: { login: bot }, committer: { login: bot } }] }) }
+        : { status: 404, body: "{}" };
+  const calls = [];
+  let headReads = 0;
+  publish(api, "o/r", { title: "update", bodyFile: "body", execute: (command, args) => {
+    calls.push([command, ...args]);
+    if (args[0] === "rev-parse") return args[1] === "HEAD" ? (++headReads === 1 ? mainSha : localHead) : localTree;
+    if (args[0] === "status") return " M marketplace.json";
+    if (args[0] === "push") pushed = true;
+    return "";
+  } });
+  const disable = calls.findIndex((call) => call[1] === "pr" && call[2] === "merge" && call.at(-1) === "--disable-auto");
+  const push = calls.findIndex((call) => call[1] === "push");
+  const dispatch = calls.findIndex((call) => call[1] === "workflow");
+  assert.ok(disable >= 0);
+  assert.ok(disable < push);
+  assert.ok(push < dispatch);
+  assert.equal(calls.some((call) => call[1] === "pr" && call[2] === "merge" && call.includes("--auto")), false);
+});
+
+test("publisher skips duplicate Validate dispatch for a successfully validated unchanged PR head", (t) => {
+  const savedToken = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = "synthetic-token";
+  t.after(() => { if (savedToken === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = savedToken; });
+  const mainSha = sha("3"), remoteSha = sha("4"), tree = sha("5");
+  const pr = { number: 7, user: { login: bot, type: "Bot" }, head: { sha: remoteSha, repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
+  const api = fakeApi({
+    [`repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`]: [pr],
+    [`repos/o/r/branches/${encodeURIComponent(BRANCH)}`]: { commit: { sha: remoteSha, commit: { tree: { sha: tree } }, parents: [{ sha: mainSha }] } },
+    [`repos/o/r/compare/${mainSha}...${remoteSha}`]: { ahead_by: 1, behind_by: 0, commits: [{ author: { login: bot }, committer: { login: bot } }] },
+    [validationRunsEndpoint]: { workflow_runs: [{ event: "workflow_dispatch", head_branch: BRANCH, head_sha: remoteSha, status: "completed", conclusion: "success" }] },
+  });
+  const calls = [];
+  publish(api, "o/r", { title: "update", bodyFile: "body", execute: (command, args) => {
+    calls.push([command, ...args]);
+    if (args[0] === "rev-parse") return args[1] === "HEAD" ? mainSha : tree;
+    if (args[0] === "status") return " M marketplace.json";
+    if (args[0] === "pr" && args[1] === "view") return JSON.stringify({ autoMergeRequest: null });
+    return "";
+  } });
+  assert.equal(calls.some((call) => call[1] === "workflow" && call[2] === "run"), false);
+});
+
+test("publisher avoids duplicate Validate dispatch while the current-head run is active", (t) => {
+  const savedToken = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = "synthetic-token";
+  t.after(() => { if (savedToken === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = savedToken; });
+  const mainSha = sha("3"), remoteSha = sha("4"), tree = sha("5");
+  const pr = { number: 7, user: { login: bot, type: "Bot" }, head: { sha: remoteSha, repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
+  for (const status of ["queued", "in_progress", "waiting"]) {
+    const api = fakeApi({
+      [`repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`]: [pr],
+      [`repos/o/r/branches/${encodeURIComponent(BRANCH)}`]: { commit: { sha: remoteSha, commit: { tree: { sha: tree } }, parents: [{ sha: mainSha }] } },
+      [`repos/o/r/compare/${mainSha}...${remoteSha}`]: { ahead_by: 1, behind_by: 0, commits: [{ author: { login: bot }, committer: { login: bot } }] },
+      [validationRunsEndpoint]: { workflow_runs: [{ event: "workflow_dispatch", head_branch: BRANCH, head_sha: remoteSha, status }] },
+    });
+    const calls = [];
+    publish(api, "o/r", { title: "update", bodyFile: "body", execute: (command, args) => {
+      calls.push([command, ...args]);
+      if (args[0] === "rev-parse") return args[1] === "HEAD" ? mainSha : tree;
+      if (args[0] === "status") return " M marketplace.json";
+      return "";
+    } });
+    assert.equal(calls.some((call) => call[1] === "workflow" && call[2] === "run"), false, `unexpected dispatch for ${status} run`);
+  }
 });
 
 test("publication refuses non-bot PRs", (t) => {
@@ -239,7 +335,7 @@ test("publication creates one PR and fails closed if creation fails", (t) => {
   process.env.GH_TOKEN = "synthetic-token";
   t.after(() => { if (savedToken === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = savedToken; });
   const endpoint = `repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`;
-  const pr = { number: 7, user: { login: bot, type: "Bot" }, head: { repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
+  const pr = { number: 7, user: { login: bot, type: "Bot" }, head: { sha: sha("3"), repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
   let created = false;
   const api = (path) => path === endpoint
     ? { status: 200, body: JSON.stringify(created ? [pr] : []) }

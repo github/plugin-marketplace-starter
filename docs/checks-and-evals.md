@@ -92,14 +92,21 @@ auto-merge. It never checks out or executes PR-head code and does not approve th
 PR. Non-stable action tags are not auto-enabled; Dependabot's prerelease-tag
 representation has not been verified live.
 
+The embedded workflow example later on this page contains three
+`github/evals-action` pins. The workflow files are authoritative for current
+pins; Dependabot updates workflow files only, not this documentation example.
+
 An administrator must allow Actions to create pull requests and enable
 auto-merge, require the `lint` status check specifically from the **GitHub
 Actions** integration (App ID `15368`), require one CodeOwner approval in the
-pull-request ruleset, dismiss stale approvals on new commits, and only then set
-repository variable `PIN_AUTOMATION` to `true`. GitHub's protected-branch rules
-enforce the check and approval before merging; the workflows do not change or
-bypass those rules. Configure the rules before enabling the variable; the
-keyless workflow does not inspect or change ruleset settings. The
+pull-request ruleset, require branches to be up to date before merging, dismiss
+stale approvals on new commits, and only then set repository variable
+`PIN_AUTOMATION` to `true`. The completion workflow needs `contents: write`
+because `gh pr merge --auto` can merge immediately once every requirement is
+satisfied; it uses no admin or bypass option. GitHub's protected-branch rules
+enforce the check, freshness, and human approval before merging; the workflows
+do not change or bypass those rules. Configure the rules before enabling the
+variable; the keyless workflow does not inspect or change ruleset settings. The
 workflow-dispatch status bridge has not been verified live. The automation does
 not review upstream releases for you; see
 [remote pin rules](../plugins/marketplace-maintainer/skills/update-remote-pins/references/remote-pins.md).

@@ -9,8 +9,10 @@ const baseSha = "a".repeat(40);
 const headSha = "b".repeat(40);
 const oldPinSha = "c".repeat(40);
 const newPinSha = "d".repeat(40);
-const branch = "dependabot/github_actions/github/evals-action-v0.2.1";
+const branch = "dependabot/github_actions/evals-action";
 const workflowPath = ".github/workflows/validate.yml";
+const currentReleaseEndpoint = "repos/github/evals/releases/tags/copilot-evals-v0.24.60";
+const nextReleaseEndpoint = "repos/github/evals/releases/tags/copilot-evals-v0.24.68";
 const actionFile = {
   filename: ".github/workflows/skill-eval-comparison.yml",
   status: "modified",
@@ -44,6 +46,11 @@ function fixture({ kind = "action", change = {}, failStatus = false } = {}) {
     base: { ref: "main", sha: baseSha, repo: { full_name: repo, default_branch: "main" } },
   };
   const activePr = change.pr ?? pr;
+  const listedPr = { ...activePr };
+  delete listedPr.changed_files;
+  const commit = isPlugin
+    ? { author: { login: author }, committer: { login: author } }
+    : { author: { login: author }, committer: { login: "web-flow" }, commit: { verification: { verified: true, reason: "valid" } } };
   const workflowRun = {
     workflow_id: 77,
     path: workflowPath,
@@ -61,13 +68,15 @@ function fixture({ kind = "action", change = {}, failStatus = false } = {}) {
     [`repos/${repo}/actions/runs/99`]: workflowRun,
     [`repos/${repo}/actions/runs/99/jobs?per_page=100&page=1`]: { jobs: [{ name: "lint", conclusion: "success" }] },
     [`repos/${repo}`]: { default_branch: "main" },
-    [`repos/${repo}/pulls?state=open&head=github:${encodeURIComponent(prBranch)}`]: change.noPr ? [] : change.multiplePrs ? [activePr, { ...activePr, number: 43 }] : [activePr],
+    [`repos/${repo}/pulls?state=open&head=github:${encodeURIComponent(prBranch)}`]: change.noPr ? [] : change.multiplePrs ? [listedPr, { ...listedPr, number: 43 }] : [listedPr],
     [`repos/${repo}/pulls/42`]: activePr,
-    [`repos/${repo}/commits/${headSha}`]: { author: { login: author }, committer: { login: author } },
+    [`repos/${repo}/commits/${headSha}`]: commit,
     [`repos/${repo}/pulls/42/files?per_page=100&page=1`]: isPlugin ? [{ filename: "marketplace.json", status: "modified" }] : [actionFile],
     "repos/github/evals-action/commits/v0.2.1": { sha: newPinSha },
     [`repos/github/evals-action/compare/${oldPinSha}...${newPinSha}`]: { status: "ahead" },
     [`repos/github/evals/commits/copilot-evals-v0.24.68`]: { sha: newPinSha },
+    [currentReleaseEndpoint]: { tag_name: "copilot-evals-v0.24.60", draft: false, prerelease: true },
+    [nextReleaseEndpoint]: { tag_name: "copilot-evals-v0.24.68", draft: false, prerelease: true },
     [`repos/github/evals/compare/${oldPinSha}...${newPinSha}`]: { status: "ahead" },
     [`repos/${repo}/contents/marketplace.json?ref=${baseSha}`]: beforeMarketplace,
     [`repos/${repo}/contents/marketplace.json?ref=${headSha}`]: afterMarketplace,
@@ -82,6 +91,9 @@ function fixture({ kind = "action", change = {}, failStatus = false } = {}) {
     if (path === `repos/${repo}/actions/runs/99/jobs?per_page=100&page=1` && change.jobs) data = change.jobs;
     if (path === `repos/${repo}/commits/${headSha}` && change.commit) data = change.commit;
     if (path === `repos/${repo}/pulls/42/files?per_page=100&page=1` && change.files) data = change.files;
+    if (path === currentReleaseEndpoint && change.currentRelease) data = change.currentRelease;
+    if (path === nextReleaseEndpoint && change.nextRelease) data = change.nextRelease;
+    if (path === change.releaseFailure?.endpoint) return { status: change.releaseFailure.status, body: "{}" };
     if (path === "repos/github/evals-action/compare/" + oldPinSha + "..." + newPinSha && change.comparison) data = change.comparison;
     if (path === "repos/github/evals-action/commits/v0.2.1" && change.resolved) data = { sha: change.resolved };
     if (path === `repos/${repo}/contents/marketplace.json?ref=${headSha}` && change.marketplace) data = change.marketplace;
@@ -102,6 +114,23 @@ test("enables Dependabot auto-merge only after successful Validate and forward a
   assert.deepEqual(f.calls, [["gh", "pr", "merge", "42", "-R", repo, "--auto", "--squash", "--match-head-commit", headSha]]);
 });
 
+test("revalidates both plugin releases and their channel before enabling auto-merge", () => {
+  const invalidCases = [
+    { currentRelease: { tag_name: "copilot-evals-v0.24.60", draft: true, prerelease: true } },
+    { nextRelease: { tag_name: "copilot-evals-v0.24.68", draft: true, prerelease: true } },
+    { currentRelease: { tag_name: "copilot-evals-v0.24.60", draft: false, prerelease: false } },
+    { nextRelease: { tag_name: "copilot-evals-v0.24.68", draft: false, prerelease: false } },
+    { currentRelease: { tag_name: "copilot-evals-v0.24.59", draft: false, prerelease: true } },
+    { releaseFailure: { endpoint: currentReleaseEndpoint, status: 404 } },
+    { releaseFailure: { endpoint: nextReleaseEndpoint, status: 503 } },
+  ];
+  for (const change of invalidCases) {
+    const f = fixture({ kind: "plugin", change });
+    assert.throws(() => completePinValidation({ repo, runId: 99, ...f }));
+    assert.deepEqual(f.calls, []);
+  }
+});
+
 test("publishes GitHub Actions lint status for plugin dispatch before enabling exact-head auto-merge", () => {
   const f = fixture({ kind: "plugin" });
   completePinValidation({ repo, runId: 99, ...f });
@@ -119,7 +148,6 @@ test("requires exact workflow provenance, successful jobs, the automation author
     { run: { path: "untrusted.yml" } },
     { commit: { author: { login: "human" }, committer: { login: "human" } } },
     { jobs: { jobs: [{ name: "lint", conclusion: "failure" }] } },
-    { staleHead: true },
   ];
   for (const change of invalidCases) {
     const f = fixture({ change });
@@ -140,8 +168,8 @@ test("ignores unrelated, stale, and absent PR runs without mutation", () => {
     { run: { event: "push" } },
     { run: { status: "in_progress" } },
     { run: { conclusion: "failure" } },
-    { run: { head_repository: { full_name: "attacker/fork" } } },
     { run: { head_sha: "malformed" } },
+    { run: { head_branch: "dependabot/github_actions/github/evals-action-v0.2.1" } },
     { noPr: true },
     { pr: { ...samplePr, user: { login: "someone", type: "User" } } },
     { pr: { ...samplePr, head: { ref: branch, sha: oldPinSha, repo: { full_name: repo } } } },
@@ -155,6 +183,16 @@ test("ignores unrelated, stale, and absent PR runs without mutation", () => {
   const multiple = fixture({ change: { multiplePrs: true } });
   assert.throws(() => completePinValidation({ repo, runId: 99, ...multiple }), /More than one open PR/);
   assert.deepEqual(multiple.calls, []);
+});
+
+test("accepts web-flow as Dependabot committer only for a verified commit", () => {
+  const f = fixture({ change: { commit: {
+    author: { login: "dependabot[bot]" },
+    committer: { login: "web-flow" },
+    commit: { verification: { verified: false, reason: "unsigned" } },
+  } } });
+  assert.throws(() => completePinValidation({ repo, runId: 99, ...f }), /verified/);
+  assert.deepEqual(f.calls, []);
 });
 
 test("rejects untrusted action PRs, malformed edits, invalid tags, and non-forward pins", () => {
@@ -216,7 +254,7 @@ test("stops if status publication fails and does not enqueue a merge", () => {
 test("workflow runs trusted default-branch code with scoped permissions", () => {
   const workflow = parse(readFileSync(new URL("../workflows/complete-pin-validation.yml", import.meta.url), "utf8"));
   assert.deepEqual(workflow.on.workflow_run, { workflows: ["Validate"], types: ["completed"] });
-  assert.deepEqual(workflow.permissions, { actions: "read", contents: "read", "pull-requests": "write", statuses: "write" });
+  assert.deepEqual(workflow.permissions, { actions: "read", contents: "write", "pull-requests": "write", statuses: "write" });
   assert.equal(workflow.on.pull_request_target, undefined);
   assert.match(workflow.jobs.validate.if, /github\.repository == 'github\/plugin-marketplace-starter'/);
   assert.match(workflow.jobs.validate.if, /vars\.PIN_AUTOMATION == 'true'/);

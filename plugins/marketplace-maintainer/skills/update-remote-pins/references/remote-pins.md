@@ -92,11 +92,14 @@ aren't auto-enabled; Dependabot's prerelease-tag representation has not been
 verified live. Neither path checks out PR-head code, approves a pull request,
 or bypasses branch protection. Before setting `PIN_AUTOMATION`, an
 administrator must require `lint` from the GitHub Actions integration and one
-CodeOwner approval on the default branch, dismiss stale approvals on new
-commits, allow Actions to create pull requests, and enable auto-merge. The
-workflow-dispatch status bridge has not been verified live, and the keyless
-workflow doesn't inspect or change ruleset settings. These automations do not
-review upstream changes for you.
+CodeOwner approval on the default branch, require branches to be up to date
+before merging, dismiss stale approvals on new commits, allow Actions to create
+pull requests, and enable auto-merge. The completion workflow needs
+`contents: write` because `gh pr merge --auto` can merge immediately once every
+requirement is satisfied; it uses no admin or bypass option. The workflow-
+dispatch status bridge has not been verified live, and the keyless workflow
+doesn't inspect or change ruleset settings. These automations do not review
+upstream changes for you.
 
 The starter's automation is specific to its own catalog and workflow files.
 Other marketplaces, new remote entries, branch or untagged refs, and different

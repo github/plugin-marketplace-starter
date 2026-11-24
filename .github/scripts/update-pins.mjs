@@ -116,18 +116,36 @@ function remoteBranch(api, repo, main) {
   return { sha: commit.sha, tree: commit.commit.tree.sha, parents: commit.parents.map((parent) => parent.sha), aheadBy: comparison.ahead_by, behindBy: comparison.behind_by, authors: comparison.commits.flatMap((entry) => [entry.author?.login, entry.committer?.login]) };
 }
 
+function currentValidationRun(api, repo, head) {
+  const result = getJson(api, `repos/${repo}/actions/workflows/validate.yml/runs?branch=${encodeURIComponent(BRANCH)}&event=workflow_dispatch&per_page=100`);
+  if (!Array.isArray(result.workflow_runs)) throw new Error("Validate workflow-runs response is not an array.");
+  return result.workflow_runs.find((run) =>
+    run.event === "workflow_dispatch" &&
+    run.head_branch === BRANCH &&
+    run.head_sha === head &&
+    (["queued", "in_progress", "waiting"].includes(run.status) || (run.status === "completed" && run.conclusion === "success")),
+  );
+}
+
 export function publish(api, repo, { title, bodyFile, execute = run }) {
   if (!title || !bodyFile || !process.env.GH_TOKEN) throw new Error("Publication requires a title, body file, and GH_TOKEN.");
   const pr = openPr(api, repo);
   const base = pr?.base.ref ?? getJson(api, `repos/${repo}`).default_branch;
   const main = execute("git", ["rev-parse", "HEAD"]);
   const remote = remoteBranch(api, repo, main);
+  if (pr && (!remote || pr.head?.sha !== remote.sha)) throw new Error(`Open PR #${pr.number} does not match the current ${BRANCH} head.`);
   if (!execute("git", ["status", "--porcelain", "--", "marketplace.json"])) throw new Error("No plugin pin change to publish.");
   if (remote) planPublish({ main, localTree: "", remote });
   execute("git", ["add", "--", "marketplace.json"]);
   execute("git", ["-c", `user.name=${bot}`, "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com", "commit", "--quiet", "--only", "-m", title, "--", "marketplace.json"]);
+  const localHead = execute("git", ["rev-parse", "HEAD"]);
   const decision = planPublish({ main, localTree: execute("git", ["rev-parse", "HEAD^{tree}"]), remote });
   if (decision === "push") {
+    if (pr) {
+      const currentPr = getJson(api, `repos/${repo}/pulls/${pr.number}`);
+      if (currentPr.state !== "open" || currentPr.head?.sha !== remote.sha) throw new Error(`Open PR #${pr.number} changed during publication.`);
+      if (currentPr.auto_merge) execute("gh", ["pr", "merge", String(pr.number), "-R", repo, "--disable-auto"]);
+    }
     const auth = Buffer.from(`x-access-token:${process.env.GH_TOKEN}`).toString("base64");
     console.log(`::add-mask::${auth}`);
     execute("git", ["push", "--quiet", `--force-with-lease=refs/heads/${BRANCH}:${remote?.sha ?? ""}`, "origin", `HEAD:refs/heads/${BRANCH}`], {
@@ -137,8 +155,11 @@ export function publish(api, repo, { title, bodyFile, execute = run }) {
   if (pr) execute("gh", ["api", "--method", "PATCH", `repos/${repo}/pulls/${pr.number}`, "-f", `title=${title}`, "-F", `body=@${bodyFile}`]);
   else execute("gh", ["pr", "create", "-R", repo, "--base", base, "--head", BRANCH, "--title", title, "--body-file", bodyFile]);
   const current = openPr(api, repo);
-  if (!current) throw new Error(`No open PR found for ${BRANCH} after publication.`);
-  execute("gh", ["workflow", "run", "validate.yml", "-R", repo, "--ref", BRANCH]);
+  const publishedHead = decision === "push" ? localHead : remote.sha;
+  if (!current || current.head?.sha !== publishedHead) throw new Error(`No open PR found at the published ${BRANCH} head.`);
+  const existingValidation = decision === "skip" && pr ? currentValidationRun(api, repo, publishedHead) : undefined;
+  if (!existingValidation) execute("gh", ["workflow", "run", "validate.yml", "-R", repo, "--ref", BRANCH]);
+  if (existingValidation) return `Plugin pin PR #${current.number} already has a current-head Validate run and is awaiting CodeOwner approval.`;
   return `Plugin pin PR #${current.number} is awaiting Validate and CodeOwner approval.`;
 }
 

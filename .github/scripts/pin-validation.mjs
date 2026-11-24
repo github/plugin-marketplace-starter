@@ -6,7 +6,7 @@ import { githubApi } from "./check-remote-pins.mjs";
 
 const canonical = "github/plugin-marketplace-starter";
 const pluginBranch = "automation/update-plugin-pin";
-const actionBranchPrefix = "dependabot/github_actions/github/evals-action-";
+const actionBranch = "dependabot/github_actions/evals-action";
 const actionFiles = new Set([".github/workflows/evals.yml", ".github/workflows/skill-eval-comparison.yml"]);
 const pin = /^([+-])([ \t]*- uses: github\/evals-action@)([0-9a-f]{40}) # (v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\s*$/;
 
@@ -89,6 +89,16 @@ function verifyPluginPin(api, repo, pr, head, files) {
   };
   const old = parsePin(oldPin), next = parsePin(newPin);
   if (compareVersions(next.version, old.version) <= 0 || old.tag === next.tag || old.sha === next.sha) throw new Error("Plugin pin did not advance.");
+  const release = (tag) => {
+    const result = getJson(api, `repos/github/evals/releases/tags/${encodeURIComponent(tag)}`);
+    if (result.tag_name !== tag || result.draft !== false || typeof result.prerelease !== "boolean") {
+      throw new Error(`Plugin pin release ${tag} is missing, unpublished, or has an unknown channel.`);
+    }
+    return result;
+  };
+  const oldRelease = release(old.tag);
+  const nextRelease = release(next.tag);
+  if (oldRelease.prerelease !== nextRelease.prerelease) throw new Error("Plugin pin release changed channels.");
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const expected = clone(before);
   const expectedPin = findPin(expected);
@@ -103,8 +113,9 @@ function verifyPluginPin(api, repo, pr, head, files) {
 function getPullRequest(api, repo, branch) {
   const owner = repo.split("/")[0];
   const matches = getJson(api, `repos/${repo}/pulls?state=open&head=${owner}:${encodeURIComponent(branch)}`);
+  if (!Array.isArray(matches)) throw new Error("Pull request list response is not an array.");
   if (matches.length > 1) throw new Error("More than one open PR uses the automation branch.");
-  return matches[0];
+  return matches.length ? getJson(api, `repos/${repo}/pulls/${matches[0].number}`) : undefined;
 }
 
 export function completePinValidation({ api = githubApi, repo, runId, execute = run }) {
@@ -117,7 +128,7 @@ export function completePinValidation({ api = githubApi, repo, runId, execute = 
   if (runData.event === "workflow_dispatch" && runData.head_branch === pluginBranch) {
     author = "github-actions[bot]";
     kind = "plugin";
-  } else if (runData.event === "pull_request" && typeof runData.head_branch === "string" && runData.head_branch.startsWith(actionBranchPrefix)) {
+  } else if (runData.event === "pull_request" && runData.head_branch === actionBranch) {
     author = "dependabot[bot]";
     kind = "action";
   } else {
@@ -134,7 +145,11 @@ export function completePinValidation({ api = githubApi, repo, runId, execute = 
   if (!pr || !validPr(pr, repo, defaultBranch, author)) return "Skipped because no matching open automation PR exists.";
   if (pr.head?.ref !== runData.head_branch || pr.head?.sha !== runData.head_sha) return "Skipped a stale Validate run for an older PR head.";
   const commit = getJson(api, `repos/${repo}/commits/${runData.head_sha}`);
-  if (commit.author?.login !== author || commit.committer?.login !== author) throw new Error("PR head commit was not authored and committed by the expected automation bot.");
+  const expectedCommitter = commit.committer?.login === author ||
+    (kind === "action" && commit.committer?.login === "web-flow" && commit.commit?.verification?.verified === true);
+  if (commit.author?.login !== author || !expectedCommitter) {
+    throw new Error("PR head commit was not authored and committed by the expected verified automation identity.");
+  }
   const number = pr.number;
   const endpoint = `repos/${repo}/pulls/${number}`;
   const files = getJson(api, `${endpoint}/files?per_page=100&page=1`);
