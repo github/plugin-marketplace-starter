@@ -216,7 +216,7 @@ test("stops if status publication fails and does not enqueue a merge", () => {
 test("workflow runs trusted default-branch code with scoped permissions", () => {
   const workflow = parse(readFileSync(new URL("../workflows/complete-pin-validation.yml", import.meta.url), "utf8"));
   assert.deepEqual(workflow.on.workflow_run, { workflows: ["Validate"], types: ["completed"] });
-  assert.deepEqual(workflow.permissions, { actions: "read", contents: "write", "pull-requests": "write", statuses: "write" });
+  assert.deepEqual(workflow.permissions, { actions: "read", contents: "read", "pull-requests": "write", statuses: "write" });
   assert.equal(workflow.on.pull_request_target, undefined);
   assert.match(workflow.jobs.validate.if, /github\.repository == 'github\/plugin-marketplace-starter'/);
   assert.match(workflow.jobs.validate.if, /vars\.PIN_AUTOMATION == 'true'/);
