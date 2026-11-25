@@ -10,6 +10,9 @@ const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|are
 const historical = /\b(?:before|previously|formerly|earlier|originally|v1\.0(?:\.0)?(?!\.?\d))/i;
 // "weren't supported before; v1.1.0 supports them" needs an undenied pronoun affirmation to report the change.
 const affirmsPronoun = /\b(?:(?:support|handle|accept|allow)s?|support\s+for)\s+(?:them|it)\b|\b(?:they\s+are|they're|it\s+is|it's)\s+(?:now\s+)?(?:supported|handled|accepted|allowed)\b/i;
+// "Adds support for empty note lists (previously not supported)" affirms the change outside its historical denial.
+const affirmsChange = /\b(?:add(?:s|ed|ing)?|support(?:s|ed|ing)?|accept(?:s|ed|ing)?|handl(?:e|es|ed|ing)|allow(?:s|ed|ing)?|now)\b/i;
+const withoutDenials = (clause) => clause.replace(new RegExp(negated.source, "gi"), " ");
 // Besides denials naming empty note lists, only subjectless denials ("but are not supported now") refer back to them.
 const aboutLists = /^(?:(?:they|it)\s+)?(?:are|is|were|was|aren't|isn't|weren't|wasn't|which|that)\b/i;
 const emptyNoteLists = [
@@ -33,7 +36,8 @@ function reportsInSentence(sentence) {
   const mentions = (clause) => emptyNoteLists.some((pattern) => pattern.test(clause));
   const denies = (clause) => negated.test(clause) && !historical.test(clause);
   if (clauses.some((clause) => denies(clause) && (mentions(clause) || aboutLists.test(clause)))) return false;
-  return clauses.some((clause) => mentions(clause) && !negated.test(clause))
+  // Denials left here are historical, since current denials of the lists already returned false.
+  return clauses.some((clause) => mentions(clause) && (!negated.test(clause) || affirmsChange.test(withoutDenials(clause))))
     || (clauses.some((clause) => mentions(clause) && negated.test(clause))
       && clauses.some((clause) => affirmsPronoun.test(clause) && !negated.test(clause)));
 }
