@@ -3,7 +3,15 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const real = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
-export const check = (label, passed) => ({ label, passed: Boolean(passed) });
+// An optional detail explains a failure in the grader evidence; keep it short and pass output through excerpt().
+export const check = (label, passed, detail) => ({ label, passed: Boolean(passed), ...(detail ? { detail } : {}) });
+export const excerpt = (value, max = 160) => {
+  const flat = String(value ?? "")
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[redacted]")
+    .replace(/\b(bearer|token|password|secret)(["']?\s*[:=]?\s*)["']?[^\s"',}]+["']?/gi, "$1$2[redacted]")
+    .replace(/\s+/g, " ").trim();
+  return JSON.stringify(flat.length > max ? `${flat.slice(0, max)}…` : flat);
+};
 // Real paths, because Node resolves import.meta.url through symlinks but not argv.
 export const isMain = (url) => Boolean(process.argv[1]) && real(resolve(process.argv[1])) === real(fileURLToPath(url));
 export const normalize = (text) => text.replaceAll("\r\n", "\n");
@@ -36,7 +44,7 @@ export function score(name, checks) {
   return {
     name, kind: "code", passed: failures.length === 0,
     score: (checks.length - failures.length) / checks.length,
-    evidence: failures.length ? failures.map((item) => item.label).join("; ") : "All contract assertions passed.",
+    evidence: failures.length ? failures.map((item) => item.detail ? `${item.label} (${item.detail})` : item.label).join("; ") : "All contract assertions passed.",
   };
 }
 
