@@ -10,9 +10,9 @@ const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|are
 const historical = /\b(?:before|previously|formerly|earlier|originally|v1\.0(?:\.0)?(?!\.?\d))/i;
 // "weren't supported before; v1.1.0 supports them" needs an undenied pronoun affirmation to report the change.
 const affirmsPronoun = /\b(?:(?:support|handle|accept|allow)s?|support\s+for)\s+(?:them|it)\b|\b(?:they\s+are|they're|it\s+is|it's)\s+(?:now\s+)?(?:supported|handled|accepted|allowed)\b/i;
-// "Adds support for empty note lists (previously not supported)" affirms the change outside its historical denial.
-const affirmsChange = /\b(?:add(?:s|ed|ing)?|support(?:s|ed|ing)?|accept(?:s|ed|ing)?|handl(?:e|es|ed|ing)|allow(?:s|ed|ing)?|now)\b/i;
-const withoutDenials = (clause) => clause.replace(new RegExp(negated.source, "gi"), " ");
+// "Adds support for empty note lists (previously not supported)" passes only when every denial in the clause is bound
+// to an earlier release and the remaining text directly affirms the empty-note-list change.
+const historicalDenial = new RegExp(String.raw`(\b(?:previously|formerly|originally|earlier)\s+)?(?:${negated.source})(\s+(?:in\s+)?(?:before|previously|formerly|earlier|originally|v1\.0(?:\.0)?(?!\.?\d))\b)?`, "gi");
 // Besides denials naming empty note lists, only subjectless denials ("but are not supported now") refer back to them.
 const aboutLists = /^(?:(?:they|it)\s+)?(?:are|is|were|was|aren't|isn't|weren't|wasn't|which|that)\b/i;
 const emptyNoteLists = [
@@ -21,6 +21,17 @@ const emptyNoteLists = [
   String.raw`\bempty\s+lists?\s+of\s+${note}\b`,
   String.raw`\blists?\s+(?:with|containing)\s+(?:no|zero)\s+${note}\b`,
 ].map((pattern) => new RegExp(pattern, "i"));
+const mention = emptyNoteLists.map((pattern) => `(?:${pattern.source})`).join("|");
+const affirmsMention = new RegExp(String.raw`\b(?:now\s+)?(?:add(?:s|ed)?\s+support\s+for|supports?|supported|accepts?|accepted|handles?|handled|allows?|allowed)\s+(?:${mention})|(?:${mention})\s*(?:\(\s*\)\s*)?(?:are|is)\s+now\s+(?:supported|accepted|handled|allowed)\b`, "i");
+
+function affirmsDespiteHistoricalDenial(clause) {
+  let historicalOnly = true;
+  const rest = clause.replace(historicalDenial, (match, before, after) => {
+    if ((!before && !after) || /^no\s+longer/i.test(match.slice(before?.length ?? 0))) historicalOnly = false;
+    return "";
+  });
+  return historicalOnly && affirmsMention.test(rest);
+}
 
 export function reportsUpstreamChange(output) {
   // Drop Markdown emphasis, straighten curly apostrophes and join compound words so "**empty** note lists",
@@ -36,8 +47,7 @@ function reportsInSentence(sentence) {
   const mentions = (clause) => emptyNoteLists.some((pattern) => pattern.test(clause));
   const denies = (clause) => negated.test(clause) && !historical.test(clause);
   if (clauses.some((clause) => denies(clause) && (mentions(clause) || aboutLists.test(clause)))) return false;
-  // Denials left here are historical, since current denials of the lists already returned false.
-  return clauses.some((clause) => mentions(clause) && (!negated.test(clause) || affirmsChange.test(withoutDenials(clause))))
+  return clauses.some((clause) => mentions(clause) && (!negated.test(clause) || affirmsDespiteHistoricalDenial(clause)))
     || (clauses.some((clause) => mentions(clause) && negated.test(clause))
       && clauses.some((clause) => affirmsPronoun.test(clause) && !negated.test(clause)));
 }
