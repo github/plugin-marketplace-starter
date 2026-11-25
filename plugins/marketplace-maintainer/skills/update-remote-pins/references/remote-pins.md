@@ -86,11 +86,14 @@ the `lint` status from GitHub Actions for that SHA, and enables squash
 auto-merge. Dependabot separately proposes daily grouped
 `github/evals-action` workflow-pin updates. The same completion workflow
 verifies the Dependabot author, base and head, action-only file changes, release
-tag, strictly increasing stable version, forward commit ancestry, and
-successful Validate run before enabling auto-merge. Non-stable action tags
-aren't auto-enabled; Dependabot's prerelease-tag representation has not been
-verified live. Neither path checks out PR-head code, approves a pull request,
-or bypasses branch protection. Before setting `PIN_AUTOMATION`, an
+tag, known release channel, strictly increasing version, forward commit
+ancestry, and successful Validate run. Published prerelease pins pass required
+validation so they can be merged after CodeOwner approval, but aren't
+auto-enabled; an existing auto-merge request from this workflow is withdrawn
+for a successfully validated prerelease candidate. Dependabot's prerelease-tag
+representation has not been verified live. Neither path checks out PR-head
+code, approves a pull request, or bypasses branch protection. Before setting
+`PIN_AUTOMATION`, an
 administrator must require `lint` from the GitHub Actions integration and one
 CodeOwner approval on the default branch, require branches to be up to date
 before merging, dismiss stale approvals on new commits, allow Actions to create

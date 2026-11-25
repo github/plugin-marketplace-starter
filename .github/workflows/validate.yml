@@ -44,7 +44,7 @@ jobs:
         run: node .github/scripts/pin-validation.mjs verify-current-pr
   lint:
     needs: validate-pin
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

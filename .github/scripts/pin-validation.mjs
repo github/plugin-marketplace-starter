@@ -79,12 +79,13 @@ function verifyActionPins(api, files, changedFiles) {
   if (oldPins.some((old) => compareVersions(tag.slice(1), old.tag.slice(1)) <= 0)) throw new Error("Action tag must advance to a newer stable semantic version.");
   if (getJson(api, `repos/github/evals-action/commits/${encodeURIComponent(tag)}`).sha !== sha) throw new Error("Action tag does not resolve to the proposed pin.");
   const release = getJson(api, `repos/github/evals-action/releases/tags/${encodeURIComponent(tag)}`);
-  if (release.tag_name !== tag || release.draft !== false || release.prerelease !== false) {
-    throw new Error("Action pin must target a published stable release.");
+  if (release.tag_name !== tag || release.draft !== false || typeof release.prerelease !== "boolean") {
+    throw new Error("Action pin must target a published release with a known channel.");
   }
   for (const old of oldPins) {
     if (getJson(api, `repos/github/evals-action/compare/${old.sha}...${sha}`).status !== "ahead") throw new Error("Action pin is not a forward update.");
   }
+  return release.prerelease === false;
 }
 
 function marketplaceContent(api, endpoint) {
@@ -160,13 +161,14 @@ function verifyPinPr(api, repo, pr, headBranch, headSha, kind, defaultBranch) {
   }
   const endpoint = `repos/${repo}/pulls/${pr.number}`;
   const files = getJson(api, `${endpoint}/files?per_page=100&page=1`);
+  let autoMergeEligible = true;
   if (kind === "plugin") verifyPluginPin(api, repo, pr, headSha, files);
-  else verifyActionPins(api, files, pr.changed_files);
+  else autoMergeEligible = verifyActionPins(api, files, pr.changed_files);
   const current = getJson(api, endpoint);
   if (!validPr(current, repo, defaultBranch, author) || current.head?.sha !== headSha || current.head?.ref !== headBranch) {
     throw new Error("PR head changed during inspection.");
   }
-  return current;
+  return { pr: current, autoMergeEligible };
 }
 
 export function verifyCurrentPinPr({ api = githubApi, repo, event, prNumber, branch, headSha }) {
@@ -211,13 +213,19 @@ export function completePinValidation({ api = githubApi, repo, runId, execute = 
   }
   if (runData.status !== "completed" || runData.conclusion !== "success") return "Skipped an unsuccessful Validate run.";
   const defaultBranch = getJson(api, `repos/${repo}`).default_branch;
-  const jobs = getJson(api, `repos/${repo}/actions/runs/${runId}/jobs?per_page=100&page=1`).jobs;
-  if (!Array.isArray(jobs) || !jobs.some((job) => job.name === "lint" && job.conclusion === "success") || jobs.some((job) => job.conclusion !== "success")) throw new Error("Validate did not finish with every job, including lint, successful.");
   const pr = getPullRequest(api, repo, runData.head_branch);
   if (!pr || !validPr(pr, repo, defaultBranch, author)) return "Skipped because no matching open automation PR exists.";
   if (pr.head?.ref !== runData.head_branch || pr.head?.sha !== runData.head_sha) return "Skipped a stale Validate run for an older PR head.";
-  const current = verifyPinPr(api, repo, pr, runData.head_branch, runData.head_sha, kind, defaultBranch);
+  const jobs = getJson(api, `repos/${repo}/actions/runs/${runId}/jobs?per_page=100&page=1`).jobs;
+  if (!Array.isArray(jobs) || !jobs.some((job) => job.name === "lint" && job.conclusion === "success") || jobs.some((job) => job.conclusion !== "success")) throw new Error("Validate did not finish with every job, including lint, successful.");
+  const { pr: current, autoMergeEligible } = verifyPinPr(api, repo, pr, runData.head_branch, runData.head_sha, kind, defaultBranch);
   const number = current.number;
+  if (!autoMergeEligible) {
+    if (current.auto_merge?.enabled_by?.login === "github-actions[bot]") {
+      execute("gh", ["pr", "merge", String(number), "-R", repo, "--disable-auto"]);
+    }
+    return `Validated action pin PR #${number} at ${runData.head_sha}; prerelease release is not eligible for auto-merge.`;
+  }
   if (kind === "plugin") {
     execute("gh", [
       "api", "--method", "POST", `repos/${repo}/statuses/${runData.head_sha}`,

@@ -92,11 +92,13 @@ handling of prerelease tags has not been verified live. Each PR still requires
 one human CodeOwner approval and required checks. The same trusted
 default-branch completion workflow verifies the successful Validate run,
 Dependabot author, base and exact head, action-only file changes, release tag,
-that the tag resolves to a published stable release, strictly increasing
-version, and forward commit ancestry before enabling auto-merge. It never checks
-out or executes PR-head code and does not approve the PR. Non-stable action tags
-are not auto-enabled; Dependabot's prerelease-tag representation has not been
-verified live.
+that the tag resolves to a published release with a known channel, a strictly
+increasing version, and forward commit ancestry. Published prerelease pins pass
+required validation so they can be merged after CodeOwner approval, but aren't
+auto-enabled; an existing auto-merge request from this workflow is withdrawn
+when a successfully validated candidate is a prerelease. Dependabot's
+prerelease-tag representation has not been verified live. The workflow never
+checks out or executes PR-head code and does not approve the PR.
 
 The embedded workflow example later on this page contains three
 `github/evals-action` pins. The workflow files are authoritative for current

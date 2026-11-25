@@ -99,6 +99,9 @@ function fixture({ kind = "action", change = {}, failStatus = false } = {}) {
     if (path === `repos/${repo}/pulls/42` && change.staleHead) {
       data = { ...pr, head: { ...pr.head, sha: oldPinSha } };
     }
+    if (path === `repos/${repo}/pulls/42` && change.autoMerge !== undefined) {
+      data = { ...data, auto_merge: change.autoMerge };
+    }
     if (path === `repos/${repo}/actions/runs/99` && change.run) data = { ...workflowRun, ...change.run };
     if (path === `repos/${repo}/actions/runs/99/jobs?per_page=100&page=1` && change.jobs) data = change.jobs;
     if (path === `repos/${repo}/commits/${headSha}` && change.commit) data = change.commit;
@@ -162,6 +165,32 @@ test("Validate verifies current action and plugin heads before the required lint
     ...unavailable,
   }), /HTTP 503/);
   assert.deepEqual(unavailable.calls, []);
+});
+
+test("allows published action prereleases through required validation without enabling auto-merge", () => {
+  const prerelease = {
+    actionRelease: { tag_name: "v0.2.1", draft: false, prerelease: true },
+  };
+  const f = fixture({ change: prerelease });
+  assert.match(verifyCurrentPinPr({
+    repo,
+    event: "pull_request",
+    prNumber: 42,
+    branch,
+    headSha,
+    ...f,
+  }), /Validated action pin PR #42/);
+  assert.match(completePinValidation({ repo, runId: 99, ...f }), /not eligible for auto-merge/);
+  assert.deepEqual(f.calls, []);
+
+  const previouslyEnabled = fixture({ change: {
+    ...prerelease,
+    autoMerge: { enabled_by: { login: "github-actions[bot]" } },
+  } });
+  assert.match(completePinValidation({ repo, runId: 99, ...previouslyEnabled }), /not eligible for auto-merge/);
+  assert.deepEqual(previouslyEnabled.calls, [
+    ["gh", "pr", "merge", "42", "-R", repo, "--disable-auto"],
+  ]);
 });
 
 test("read-only pin validation rejects stale, malformed, or untrusted PR inputs", () => {
@@ -325,10 +354,11 @@ test("rejects action pin replacements that move step settings", () => {
   assert.deepEqual(f.calls, []);
 });
 
-test("rejects missing, draft, or prerelease action releases", () => {
+test("rejects draft, unknown-channel, or mismatched action releases", () => {
   const invalidCases = [
     { actionRelease: { tag_name: "v0.2.1", draft: true, prerelease: false } },
-    { actionRelease: { tag_name: "v0.2.1", draft: false, prerelease: true } },
+    { actionRelease: { tag_name: "v0.2.1", draft: false } },
+    { actionRelease: { tag_name: "v0.2.1", draft: false, prerelease: "true" } },
     { actionRelease: { tag_name: "v0.2.0", draft: false, prerelease: false } },
     { releaseFailure: { endpoint: actionReleaseEndpoint, status: 404 } },
   ];
@@ -406,6 +436,6 @@ test("workflow runs trusted default-branch code with scoped permissions", () => 
   assert.equal(pinCheckout.with["persist-credentials"], false);
   assert.equal(pinJob.steps.at(-1).run, "node .github/scripts/pin-validation.mjs verify-current-pr");
   assert.equal(validate.jobs.lint.needs, "validate-pin");
-  assert.equal(validate.jobs.lint.if, "always()");
+  assert.equal(validate.jobs.lint.if, "${{ !cancelled() }}");
   assert.match(validate.jobs.lint.steps[0].if, /needs\.validate-pin\.result/);
 });
