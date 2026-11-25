@@ -9,7 +9,7 @@ const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|are
 // A denial about an earlier release ("which were not supported in v1.0.0") describes the change instead of denying it.
 const historical = /\b(?:before|previously|formerly|earlier|originally|v1\.0(?:\.0)?(?!\.?\d))/i;
 // "weren't supported before; v1.1.0 supports them" needs an undenied pronoun affirmation to report the change.
-const affirmsPronoun = /\b(?:(?:support|handle|accept|allow)s?|support\s+for)\s+(?:them|it)\b/i;
+const affirmsPronoun = /\b(?:(?:support|handle|accept|allow)s?|support\s+for)\s+(?:them|it)\b|\b(?:they\s+are|they're|it\s+is|it's)\s+(?:now\s+)?(?:supported|handled|accepted|allowed)\b/i;
 // Besides denials naming empty note lists, only subjectless denials ("but are not supported now") refer back to them.
 const aboutLists = /^(?:(?:they|it)\s+)?(?:are|is|were|was|aren't|isn't|weren't|wasn't|which|that)\b/i;
 const emptyNoteLists = [
@@ -22,8 +22,8 @@ const emptyNoteLists = [
 export function reportsUpstreamChange(output) {
   // Drop Markdown emphasis, straighten curly apostrophes and join compound words so "**empty** note lists",
   // "aren’t" and "empty-note-list" match their plain forms;
-  // fold "release notes" (even across spaces or a soft wrap) into one word before splitting so it never matches.
-  const plain = output.replace(/[*_`]/g, "").replace(/[\u2018\u2019]/g, "'").replace(/(?<=\w)-(?=\w)/g, " ")
+  // join soft-wrapped lines (but not list items, headings or paragraphs) and fold "release notes" (even across spaces or a soft wrap) into one word before splitting so it never matches.
+  const plain = output.replace(/\r?\n(?![ \t]*(?:[-*+][ \t]|\d+[.)][ \t]|#|\r?\n|$))/g, " ").replace(/[*_`]/g, "").replace(/[\u2018\u2019]/g, "'").replace(/(?<=\w)-(?=\w)/g, " ")
     .replace(/\brelease\s+notes?\b/gi, "releasenotes");
   return plain.split(/(?<=[.!?])\s+|\n+/).some(reportsInSentence);
 }
