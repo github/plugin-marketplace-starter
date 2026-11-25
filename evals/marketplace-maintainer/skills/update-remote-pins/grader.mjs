@@ -5,11 +5,11 @@ import { check, isMain, json, runGrade } from "./common.mjs";
 const note = String.raw`\bnotes?`;
 // Only a negation that denies the change counts ("not supported", "must not be empty"), not "no longer cause errors",
 // "previously unsupported" or "callers don't need to handle them".
-const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|aren't|wasn't|weren't|won't)\s+(?:\w+\s+){0,2}?(?:support(?:ed|s)?|allow(?:ed|s)?|accept(?:ed|s)?|handled|(?:be\s+)?empty)\b|(?<!\b(?:previously|formerly)\s)\bunsupported\b/i;
+const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|aren't|wasn't|weren't|won't)\s+(?:(?!(?:reject|fail|error|break|crash|throw)\w*\s)\w+\s+){0,2}?(?:support(?:ed|s)?|allow(?:ed|s)?|accept(?:ed|s)?|handled|(?:be\s+)?empty)\b|(?<!\b(?:previously|formerly)\s)\bunsupported\b/i;
 // A denial about an earlier release ("which were not supported in v1.0.0") describes the change instead of denying it.
 const historical = /\b(?:before|previously|formerly|earlier|originally|v1\.0(?:\.0)?(?!\.?\d))/i;
-// "weren't supported before; v1.1.0 now supports them" needs the pronoun affirmation to report the change.
-const affirmsPronoun = /\bnow\s+(?:\w+\s+){0,2}?(?:support|handle|accept|allow)s?\s+(?:them|it)\b/i;
+// "weren't supported before; v1.1.0 supports them" needs an undenied pronoun affirmation to report the change.
+const affirmsPronoun = /\b(?:(?:support|handle|accept|allow)s?|support\s+for)\s+(?:them|it)\b/i;
 // Besides denials naming empty note lists, only subjectless denials ("but are not supported now") refer back to them.
 const aboutLists = /^(?:(?:they|it)\s+)?(?:are|is|were|was|aren't|isn't|weren't|wasn't|which|that)\b/i;
 const emptyNoteLists = [
@@ -34,7 +34,8 @@ function reportsInSentence(sentence) {
   const denies = (clause) => negated.test(clause) && !historical.test(clause);
   if (clauses.some((clause) => denies(clause) && (mentions(clause) || aboutLists.test(clause)))) return false;
   return clauses.some((clause) => mentions(clause) && !negated.test(clause))
-    || (clauses.some((clause) => mentions(clause) && negated.test(clause)) && affirmsPronoun.test(sentence));
+    || (clauses.some((clause) => mentions(clause) && negated.test(clause))
+      && clauses.some((clause) => affirmsPronoun.test(clause) && !negated.test(clause)));
 }
 
 export function evaluate(trajectory, workspace) {

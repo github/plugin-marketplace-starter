@@ -59,6 +59,8 @@ pinsTest("update-remote-pins accepts the fixture's upstream change in exact and 
     "Added support for empty note lists, but nested lists are not supported.",
     "Added support for empty note lists, but it does not support nested lists.",
     "Added support for empty note lists, but notes with attachments are not supported.",
+    "v1.1.0 no longer rejects empty note lists.",
+    "Empty note lists weren't supported in v1.0.0; v1.1.0 supports them.",
   ]) {
     const result = grade(`${summary} No new hooks or dependencies. ${offline}`);
     assert.equal(result.passed, true, `${summary}: ${result.evidence}`);
@@ -82,6 +84,7 @@ pinsTest("update-remote-pins rejects missing or unrelated upstream changes and a
     [`v1.1.0 now does not support empty note lists. ${offline}`, /no empty-note-list change/],
     [`Empty note lists are not supported; v1.1.0 now supports headings. ${offline}`, /no empty-note-list change/],
     [`Empty note lists weren't supported before; v1.1.0 now supports headings. ${offline}`, /no empty-note-list change/],
+    [`Empty note lists weren't supported in v1.0.0; v1.1.0 still doesn't support them. ${offline}`, /no empty-note-list change/],
     [`The release  notes list is empty. ${offline}`, /no empty-note-list change/],
     [`The release\nnotes list is empty. ${offline}`, /no empty-note-list change/],
     ["Upstream change: Add support for empty note lists. Verified on GitHub.", /no offline limit/],
