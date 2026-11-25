@@ -6,6 +6,8 @@ const note = String.raw`\bnotes?`;
 // Only a negation that denies the change counts ("not supported", "must not be empty"), not "no longer cause errors",
 // "previously unsupported" or "callers don't need to handle them".
 const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|aren't|won't)\s+(?:\w+\s+){0,2}?(?:support(?:ed|s)?|allow(?:ed|s)?|accept(?:ed|s)?|handled|(?:be\s+)?empty)\b|(?<!\b(?:previously|formerly)\s)\bunsupported\b/i;
+// "weren't supported before; now supports them" contrasts history with the change, so an explicit "now" affirmation wins.
+const affirmed = /\bnow\s+(?:\w+\s+){0,2}?(?:support|handle|accept|allow)\w*/i;
 const emptyNoteLists = [
   String.raw`\bempty\s+${note}\s+lists?\b`,
   String.raw`${note}\s+lists?\s+(?:(?:that|which|can|may|now|are|is|be)\s+){0,3}empty\b`,
@@ -19,7 +21,7 @@ export function reportsUpstreamChange(output) {
   // fold "release notes" (even across spaces or a soft wrap) into one word before splitting so it never matches.
   const plain = output.replace(/[*_`]/g, "").replace(/[\u2018\u2019]/g, "'").replace(/(?<=\w)-(?=\w)/g, " ")
     .replace(/\brelease\s+notes?\b/gi, "releasenotes");
-  return plain.split(/(?<=[.!?])\s+|\n+/).some((sentence) => !negated.test(sentence)
+  return plain.split(/(?<=[.!?])\s+|\n+/).some((sentence) => (!negated.test(sentence) || affirmed.test(sentence))
     && emptyNoteLists.some((pattern) => pattern.test(sentence)));
 }
 
