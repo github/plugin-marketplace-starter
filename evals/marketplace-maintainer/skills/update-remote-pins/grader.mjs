@@ -3,8 +3,9 @@ import { check, isMain, json, runGrade } from "./common.mjs";
 // The fixture's only upstream change is "Add support for empty note lists"; accept equivalent
 // wordings within one affirmative sentence, but not release notes or unrelated mentions of notes or emptiness.
 const note = String.raw`\bnotes?`;
-// Only a negation that denies the change counts ("not supported", "must not be empty"), not "no longer cause errors".
-const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|aren't|won't)\s+(?:\w+\s+){0,2}?(?:support(?:ed|s)?|allow(?:ed|s)?|handle[ds]?|accept(?:ed|s)?|(?:be\s+)?empty)\b|\bunsupported\b/i;
+// Only a negation that denies the change counts ("not supported", "must not be empty"), not "no longer cause errors",
+// "previously unsupported" or "callers don't need to handle them".
+const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|aren't|won't)\s+(?:\w+\s+){0,2}?(?:support(?:ed|s)?|allow(?:ed|s)?|accept(?:ed|s)?|(?:be\s+)?empty)\b|(?<!\b(?:previously|formerly)\s)\bunsupported\b/i;
 const emptyNoteLists = [
   String.raw`\bempty\s+${note}\s+lists?\b`,
   String.raw`${note}\s+lists?\s+(?:(?:that|which|can|may|now|are|is|be)\s+){0,3}empty\b`,
@@ -13,9 +14,11 @@ const emptyNoteLists = [
 ].map((pattern) => new RegExp(pattern, "i"));
 
 export function reportsUpstreamChange(output) {
-  // Drop Markdown emphasis and join compound words so "**empty** note lists" and "empty-note-list" still match;
+  // Drop Markdown emphasis, straighten curly apostrophes and join compound words so "**empty** note lists",
+  // "aren’t" and "empty-note-list" match their plain forms;
   // fold "release notes" (even across spaces or a soft wrap) into one word before splitting so it never matches.
-  const plain = output.replace(/[*_`]/g, "").replace(/(?<=\w)-(?=\w)/g, " ").replace(/\brelease\s+notes?\b/gi, "releasenotes");
+  const plain = output.replace(/[*_`]/g, "").replace(/[\u2018\u2019]/g, "'").replace(/(?<=\w)-(?=\w)/g, " ")
+    .replace(/\brelease\s+notes?\b/gi, "releasenotes");
   return plain.split(/(?<=[.!?])\s+|\n+/).some((sentence) => !negated.test(sentence)
     && emptyNoteLists.some((pattern) => pattern.test(sentence)));
 }

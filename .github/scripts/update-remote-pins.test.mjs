@@ -51,6 +51,8 @@ pinsTest("update-remote-pins accepts the fixture's upstream change in exact and 
     "v1.1.0 adds empty-note-list support.",
     "Empty note lists no longer cause errors.",
     "Added support for empty note lists; verified offline, not against live GitHub.",
+    "Added support for previously unsupported empty note lists.",
+    "Empty note lists are now supported, so callers don't need to handle them specially.",
   ]) {
     const result = grade(`${summary} No new hooks or dependencies. ${offline}`);
     assert.equal(result.passed, true, `${summary}: ${result.evidence}`);
@@ -67,6 +69,7 @@ pinsTest("update-remote-pins rejects missing or unrelated upstream changes and a
     [`Note lists must not be empty. ${offline}`, /no empty-note-list change/],
     [`Lists with no notes are not supported. ${offline}`, /no empty-note-list change/],
     [`v1.1.0 doesn't support empty note lists. ${offline}`, /no empty-note-list change/],
+    [`Lists with no notes aren\u2019t supported. ${offline}`, /no empty-note-list change/],
     [`Note lists that are empty are no longer supported. ${offline}`, /no empty-note-list change/],
     [`The release  notes list is empty. ${offline}`, /no empty-note-list change/],
     [`The release\nnotes list is empty. ${offline}`, /no empty-note-list change/],
@@ -88,7 +91,7 @@ pinsTest("update-remote-pins failure evidence names missing conditions without e
   assert.ok(!result.evidence.includes(token) && !result.evidence.includes("synthetic-opaque-value"), result.evidence);
 });
 
-test("shared check() drops failure details that aren't short condition labels", async () => {
+pinsTest("shared check() drops failure details that aren't short condition labels", async () => {
   const { check, score } = await import(pathToFileURL(resolve(root, "evals/_shared/graders/common.mjs")).href);
   const token = `ghp_${"A".repeat(36)}`;
   const evidence = score("synthetic", [check("Kept", false, `saw ${token}`), check("Named", false, "no offline limit")]).evidence;
