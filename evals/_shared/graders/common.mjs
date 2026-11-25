@@ -3,8 +3,12 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const real = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
-// An optional detail explains a failure in the grader evidence; never include raw model output.
-export const check = (label, passed, detail) => ({ label, passed: Boolean(passed), ...(detail ? { detail } : {}) });
+// An optional detail names why a check failed. Only short lowercase condition labels pass, so model output,
+// tokens or paths never reach evidence.
+const safeDetail = /^[a-z][a-z ,-]{0,99}$/;
+export const check = (label, passed, detail) => ({
+  label, passed: Boolean(passed), ...(typeof detail === "string" && safeDetail.test(detail) ? { detail } : {}),
+});
 // Real paths, because Node resolves import.meta.url through symlinks but not argv.
 export const isMain = (url) => Boolean(process.argv[1]) && real(resolve(process.argv[1])) === real(fileURLToPath(url));
 export const normalize = (text) => text.replaceAll("\r\n", "\n");

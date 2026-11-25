@@ -84,3 +84,10 @@ pinsTest("update-remote-pins failure evidence names missing conditions without e
   assert.match(result.evidence, /\(no empty-note-list change, no offline limit\)/);
   assert.ok(!result.evidence.includes(token) && !result.evidence.includes("synthetic-opaque-value"), result.evidence);
 });
+
+test("shared check() drops failure details that aren't short condition labels", async () => {
+  const { check, score } = await import(pathToFileURL(resolve(root, "evals/_shared/graders/common.mjs")).href);
+  const token = `ghp_${"A".repeat(36)}`;
+  const evidence = score("synthetic", [check("Kept", false, `saw ${token}`), check("Named", false, "no offline limit")]).evidence;
+  assert.equal(evidence, "Kept; Named (no offline limit)");
+});
