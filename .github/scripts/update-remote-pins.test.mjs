@@ -70,6 +70,7 @@ pinsTest("update-remote-pins rejects missing or unrelated upstream changes and a
     [`Lists with no notes are not supported. ${offline}`, /no empty-note-list change/],
     [`v1.1.0 doesn't support empty note lists. ${offline}`, /no empty-note-list change/],
     [`Lists with no notes aren\u2019t supported. ${offline}`, /no empty-note-list change/],
+    [`Lists with no notes aren't handled. ${offline}`, /no empty-note-list change/],
     [`Note lists that are empty are no longer supported. ${offline}`, /no empty-note-list change/],
     [`The release  notes list is empty. ${offline}`, /no empty-note-list change/],
     [`The release\nnotes list is empty. ${offline}`, /no empty-note-list change/],

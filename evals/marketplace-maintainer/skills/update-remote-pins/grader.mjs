@@ -5,7 +5,7 @@ import { check, isMain, json, runGrade } from "./common.mjs";
 const note = String.raw`\bnotes?`;
 // Only a negation that denies the change counts ("not supported", "must not be empty"), not "no longer cause errors",
 // "previously unsupported" or "callers don't need to handle them".
-const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|aren't|won't)\s+(?:\w+\s+){0,2}?(?:support(?:ed|s)?|allow(?:ed|s)?|accept(?:ed|s)?|(?:be\s+)?empty)\b|(?<!\b(?:previously|formerly)\s)\bunsupported\b/i;
+const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|aren't|won't)\s+(?:\w+\s+){0,2}?(?:support(?:ed|s)?|allow(?:ed|s)?|accept(?:ed|s)?|handled|(?:be\s+)?empty)\b|(?<!\b(?:previously|formerly)\s)\bunsupported\b/i;
 const emptyNoteLists = [
   String.raw`\bempty\s+${note}\s+lists?\b`,
   String.raw`${note}\s+lists?\s+(?:(?:that|which|can|may|now|are|is|be)\s+){0,3}empty\b`,
