@@ -3,7 +3,8 @@ import { check, isMain, json, runGrade } from "./common.mjs";
 // The fixture's only upstream change is "Add support for empty note lists"; accept equivalent
 // wordings within one affirmative sentence, but not release notes or unrelated mentions of notes or emptiness.
 const note = String.raw`\bnotes?`;
-const negated = /\b(?:not|never|no\s+longer|cannot|unsupported)\b|n't\b/i;
+// Only a negation that denies the change counts ("not supported", "must not be empty"), not "no longer cause errors".
+const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|aren't|won't)\s+(?:\w+\s+){0,2}?(?:support(?:ed|s)?|allow(?:ed|s)?|handle[ds]?|accept(?:ed|s)?|(?:be\s+)?empty)\b|\bunsupported\b/i;
 const emptyNoteLists = [
   String.raw`\bempty\s+${note}\s+lists?\b`,
   String.raw`${note}\s+lists?\s+(?:(?:that|which|can|may|now|are|is|be)\s+){0,3}empty\b`,
