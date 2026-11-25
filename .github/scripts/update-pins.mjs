@@ -106,6 +106,21 @@ function openPr(api, repo) {
   return pr;
 }
 
+function reconcileOpenPr(api, repo, execute, { blocked, dryRun }) {
+  if (dryRun) return;
+  const pr = openPr(api, repo);
+  if (!pr) return;
+  const endpoint = `repos/${repo}/pulls/${pr.number}`;
+  const current = getJson(api, endpoint);
+  if (current.state !== "open" || current.head?.sha !== pr.head?.sha) throw new Error(`Open PR #${pr.number} changed during pin-plan reconciliation.`);
+  if (current.auto_merge) execute("gh", ["pr", "merge", String(pr.number), "-R", repo, "--disable-auto"]);
+  if (blocked) return `Disabled auto-merge for plugin pin PR #${pr.number} because the release plan is blocked.`;
+  const beforeClose = getJson(api, endpoint);
+  if (beforeClose.state !== "open" || beforeClose.head?.sha !== pr.head?.sha) throw new Error(`Open PR #${pr.number} changed before stale pin-plan cleanup.`);
+  execute("gh", ["pr", "close", String(pr.number), "-R", repo, "--comment", "Closing obsolete plugin pin PR because the current release plan has no update."]);
+  return `Closed obsolete plugin pin PR #${pr.number}.`;
+}
+
 function remoteBranch(api, repo, main) {
   const response = api(`repos/${repo}/branches/${encodeURIComponent(BRANCH)}`);
   if (response.status === 404) return undefined;
@@ -119,12 +134,17 @@ function remoteBranch(api, repo, main) {
 function currentValidationRun(api, repo, head) {
   const result = getJson(api, `repos/${repo}/actions/workflows/validate.yml/runs?branch=${encodeURIComponent(BRANCH)}&event=workflow_dispatch&per_page=100`);
   if (!Array.isArray(result.workflow_runs)) throw new Error("Validate workflow-runs response is not an array.");
-  return result.workflow_runs.find((run) =>
+  const matching = result.workflow_runs.filter((run) =>
     run.event === "workflow_dispatch" &&
     run.head_branch === BRANCH &&
-    run.head_sha === head &&
-    (["queued", "in_progress", "waiting"].includes(run.status) || (run.status === "completed" && run.conclusion === "success")),
+    run.head_sha === head,
   );
+  if (matching.length < 2) return matching[0];
+  const timestamps = matching.map((run) => Date.parse(run.created_at ?? ""));
+  if (timestamps.some((timestamp) => !Number.isFinite(timestamp))) throw new Error("Matching Validate runs are missing valid creation timestamps.");
+  return matching
+    .map((run, index) => ({ run, timestamp: timestamps[index] }))
+    .sort((a, b) => b.timestamp - a.timestamp || Number(b.run.run_number ?? b.run.id) - Number(a.run.run_number ?? a.run.id))[0].run;
 }
 
 function completionHasTakenEffect(api, repo, pr, head, validation) {
@@ -185,7 +205,7 @@ function output(values) {
   console.log(lines.join("\n"));
 }
 
-export function main(argv, api = githubApi) {
+export function main(argv, api = githubApi, execute = run) {
   const [command, ...rest] = argv;
   const args = {};
   for (let index = 0; index < rest.length; index += 2) args[rest[index].replace(/^--/, "")] = rest[index + 1];
@@ -194,15 +214,19 @@ export function main(argv, api = githubApi) {
   if (command === "update") {
     const text = readFileSync("marketplace.json", "utf8");
     const plan = planUpdate({ text, api });
+    const dryRun = process.env.PIN_AUTOMATION_DRY_RUN === "true";
     if (plan.blocked) {
       output({ blocked: true, reason: plan.blocked.replace(/[\r\n]+/g, " ") });
       if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Pin update blocked\n\n${plan.blocked}\n`);
+      const reconciliation = reconcileOpenPr(api, repo, execute, { blocked: true, dryRun });
+      if (reconciliation) console.log(reconciliation);
       throw new Error(`Pin update blocked: ${plan.blocked}`);
     }
     if (plan.text !== text) writeFileSync("marketplace.json", plan.text);
+    const reconciliation = plan.changes.length ? undefined : reconcileOpenPr(api, repo, execute, { blocked: false, dryRun });
     if (args["body-file"]) writeFileSync(args["body-file"], plan.body);
     output({ blocked: false, changed: plan.changes.length > 0, title: plan.title });
-    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, plan.changes.length ? `### Pin update\n\n${plan.body}` : "### Pin update\n\nPin is current.\n");
+    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, plan.changes.length ? `### Pin update\n\n${plan.body}` : `### Pin update\n\nPin is current.${reconciliation ? ` ${reconciliation}` : ""}\n`);
   } else if (command === "publish") {
     console.log(publish(api, repo, { title: args.title, bodyFile: args["body-file"] }));
   } else {

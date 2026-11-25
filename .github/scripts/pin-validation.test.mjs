@@ -11,8 +11,11 @@ const oldPinSha = "c".repeat(40);
 const newPinSha = "d".repeat(40);
 const branch = "dependabot/github_actions/evals-action-a1b2c3d4e5";
 const workflowPath = ".github/workflows/validate.yml";
+const actionReleaseEndpoint = "repos/github/evals-action/releases/tags/v0.2.1";
 const currentReleaseEndpoint = "repos/github/evals/releases/tags/copilot-evals-v0.24.60";
 const nextReleaseEndpoint = "repos/github/evals/releases/tags/copilot-evals-v0.24.68";
+const contentFile = (text) => ({ encoding: "base64", content: Buffer.from(text).toString("base64") });
+const marketplaceFile = (value) => contentFile(`${JSON.stringify(value, null, 2)}\n`);
 const actionFile = {
   filename: ".github/workflows/skill-eval-comparison.yml",
   status: "modified",
@@ -82,13 +85,14 @@ function fixture({ kind = "action", change = {}, failStatus = false } = {}) {
     [`repos/${repo}/commits/${headSha}`]: commit,
     [`repos/${repo}/pulls/42/files?per_page=100&page=1`]: isPlugin ? [{ filename: "marketplace.json", status: "modified" }] : [actionFile],
     "repos/github/evals-action/commits/v0.2.1": { sha: newPinSha },
+    [actionReleaseEndpoint]: { tag_name: "v0.2.1", draft: false, prerelease: false },
     [`repos/github/evals-action/compare/${oldPinSha}...${newPinSha}`]: { status: "ahead" },
     [`repos/github/evals/commits/copilot-evals-v0.24.68`]: { sha: newPinSha },
     [currentReleaseEndpoint]: { tag_name: "copilot-evals-v0.24.60", draft: false, prerelease: true },
     [nextReleaseEndpoint]: { tag_name: "copilot-evals-v0.24.68", draft: false, prerelease: true },
     [`repos/github/evals/compare/${oldPinSha}...${newPinSha}`]: { status: "ahead" },
-    [`repos/${repo}/contents/marketplace.json?ref=${baseSha}`]: beforeMarketplace,
-    [`repos/${repo}/contents/marketplace.json?ref=${headSha}`]: afterMarketplace,
+    [`repos/${repo}/contents/marketplace.json?ref=${baseSha}`]: marketplaceFile(beforeMarketplace),
+    [`repos/${repo}/contents/marketplace.json?ref=${headSha}`]: marketplaceFile(afterMarketplace),
   };
   const calls = [];
   const api = (path) => {
@@ -100,12 +104,14 @@ function fixture({ kind = "action", change = {}, failStatus = false } = {}) {
     if (path === `repos/${repo}/actions/runs/99/jobs?per_page=100&page=1` && change.jobs) data = change.jobs;
     if (path === `repos/${repo}/commits/${headSha}` && change.commit) data = change.commit;
     if (path === `repos/${repo}/pulls/42/files?per_page=100&page=1` && change.files) data = change.files;
+    if (path === actionReleaseEndpoint && change.actionRelease) data = change.actionRelease;
     if (path === currentReleaseEndpoint && change.currentRelease) data = change.currentRelease;
     if (path === nextReleaseEndpoint && change.nextRelease) data = change.nextRelease;
     if (path === change.releaseFailure?.endpoint) return { status: change.releaseFailure.status, body: "{}" };
     if (path === "repos/github/evals-action/compare/" + oldPinSha + "..." + newPinSha && change.comparison) data = change.comparison;
     if (path === "repos/github/evals-action/commits/v0.2.1" && change.resolved) data = { sha: change.resolved };
-    if (path === `repos/${repo}/contents/marketplace.json?ref=${headSha}` && change.marketplace) data = change.marketplace;
+    if (path === `repos/${repo}/contents/marketplace.json?ref=${headSha}` && change.marketplace) data = marketplaceFile(change.marketplace);
+    if (path === `repos/${repo}/contents/marketplace.json?ref=${headSha}` && change.marketplaceText) data = contentFile(change.marketplaceText);
     if (data === undefined) return { status: 404, body: "{}" };
     return { status: 200, body: JSON.stringify(data) };
   };
@@ -240,6 +246,20 @@ test("rejects action pin replacements that move step settings", () => {
   assert.deepEqual(f.calls, []);
 });
 
+test("rejects missing, draft, or prerelease action releases", () => {
+  const invalidCases = [
+    { actionRelease: { tag_name: "v0.2.1", draft: true, prerelease: false } },
+    { actionRelease: { tag_name: "v0.2.1", draft: false, prerelease: true } },
+    { actionRelease: { tag_name: "v0.2.0", draft: false, prerelease: false } },
+    { releaseFailure: { endpoint: actionReleaseEndpoint, status: 404 } },
+  ];
+  for (const change of invalidCases) {
+    const f = fixture({ change });
+    assert.throws(() => completePinValidation({ repo, runId: 99, ...f }), /release|HTTP 404/i);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
 test("rejects plugin PRs that alter anything beyond the verified forward pin", () => {
   const badMarketplace = structuredClone(afterMarketplace);
   badMarketplace.plugins[0].description = "unexpected";
@@ -262,6 +282,19 @@ test("rejects plugin PRs that alter anything beyond the verified forward pin", (
   }
 });
 
+test("rejects noncanonical marketplace JSON with duplicate properties", () => {
+  const canonical = `${JSON.stringify(afterMarketplace, null, 2)}\n`;
+  const duplicate = canonical.replace(
+    '      "version": "0.24.68"\n',
+    '      "version": "0.24.68",\n      "version": "0.24.68"\n',
+  );
+  assert.notEqual(duplicate, canonical);
+  assert.deepEqual(JSON.parse(duplicate), afterMarketplace);
+  const f = fixture({ kind: "plugin", change: { marketplaceText: duplicate } });
+  assert.throws(() => completePinValidation({ repo, runId: 99, ...f }), /canonical/i);
+  assert.deepEqual(f.calls, []);
+});
+
 test("stops if status publication fails and does not enqueue a merge", () => {
   const f = fixture({ kind: "plugin", failStatus: true });
   assert.throws(() => completePinValidation({ repo, runId: 99, ...f }), /status write denied/);
@@ -273,8 +306,10 @@ test("workflow runs trusted default-branch code with scoped permissions", () => 
   const publisher = parse(readFileSync(new URL("../workflows/update-pins.yml", import.meta.url), "utf8"));
   assert.deepEqual(workflow.on.workflow_run, { workflows: ["Validate"], types: ["completed"] });
   assert.deepEqual(workflow.permissions, { actions: "read", contents: "write", "pull-requests": "write", statuses: "write" });
-  assert.deepEqual(workflow.concurrency, publisher.concurrency);
-  assert.deepEqual(workflow.concurrency, { group: "update-plugin-pin", "cancel-in-progress": false });
+  assert.match(workflow.concurrency.group, /github\.event\.workflow_run\.head_branch == 'automation\/update-plugin-pin'/);
+  assert.match(workflow.concurrency.group, /format\('complete-pin-validation-\{0\}', github\.event\.workflow_run\.id\)/);
+  assert.equal(workflow.concurrency["cancel-in-progress"], false);
+  assert.deepEqual(publisher.concurrency, { group: "update-plugin-pin", "cancel-in-progress": false });
   assert.equal(workflow.on.pull_request_target, undefined);
   assert.match(workflow.jobs.validate.if, /github\.repository == 'github\/plugin-marketplace-starter'/);
   assert.match(workflow.jobs.validate.if, /vars\.PIN_AUTOMATION == 'true'/);

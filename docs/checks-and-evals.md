@@ -78,8 +78,10 @@ separate [Complete pin validation](../.github/workflows/complete-pin-validation.
 workflow runs trusted code from the default branch after Validate completes. It
 confirms the exact successful workflow run and PR head, publishes the required
 `lint` commit status from GitHub Actions for that SHA, and enables squash
-auto-merge. GitHub still requires the checks and one human CodeOwner approval
-before merging.
+auto-merge. A blocked plan disables auto-merge on an existing plugin-pin PR; an
+empty plan disables auto-merge and closes the obsolete PR. Manual dry runs do
+not reconcile existing PRs. GitHub still requires the checks and one human
+CodeOwner approval before merging.
 
 [Dependabot](../.github/dependabot.yml) separately proposes daily grouped
 updates for `github/evals-action` references in workflow files. Dependabot's
@@ -87,10 +89,11 @@ handling of prerelease tags has not been verified live. Each PR still requires
 one human CodeOwner approval and required checks. The same trusted
 default-branch completion workflow verifies the successful Validate run,
 Dependabot author, base and exact head, action-only file changes, release tag,
-strictly increasing stable version, and forward commit ancestry before enabling
-auto-merge. It never checks out or executes PR-head code and does not approve the
-PR. Non-stable action tags are not auto-enabled; Dependabot's prerelease-tag
-representation has not been verified live.
+that the tag resolves to a published stable release, strictly increasing
+version, and forward commit ancestry before enabling auto-merge. It never checks
+out or executes PR-head code and does not approve the PR. Non-stable action tags
+are not auto-enabled; Dependabot's prerelease-tag representation has not been
+verified live.
 
 The embedded workflow example later on this page contains three
 `github/evals-action` pins. The workflow files are authoritative for current

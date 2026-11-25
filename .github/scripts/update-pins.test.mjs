@@ -119,7 +119,9 @@ test("blocked update reports its reason without modifying the marketplace", (t) 
   process.env.GITHUB_OUTPUT = join(directory, "output");
   process.env.GITHUB_STEP_SUMMARY = join(directory, "summary");
   writeFileSync("marketplace.json", marketplace);
-  for (const [api, reason] of [[fakeApi({ "repos/github/evals/releases?per_page=100&page=1": [] }), /channel is unknown/], [() => ({ status: 403, body: "{}" }), /HTTP 403/], [upstream("diverged"), /diverged/]]) {
+  const noPrEndpoint = `repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`;
+  for (const [sourceApi, reason] of [[fakeApi({ "repos/github/evals/releases?per_page=100&page=1": [] }), /channel is unknown/], [() => ({ status: 403, body: "{}" }), /HTTP 403/], [upstream("diverged"), /diverged/]]) {
+    const api = (endpoint) => endpoint === noPrEndpoint ? { status: 200, body: "[]" } : sourceApi(endpoint);
     assert.throws(() => main(["update"], api), reason);
     assert.match(readFileSync(process.env.GITHUB_OUTPUT, "utf8"), /blocked=true/);
     assert.match(readFileSync(process.env.GITHUB_OUTPUT, "utf8"), reason);
@@ -306,6 +308,34 @@ test("publisher retries Validate when completion did not bridge status and enabl
   }
 });
 
+test("publisher selects the newest matching Validate run before inspecting its status", (t) => {
+  const savedToken = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = "synthetic-token";
+  t.after(() => { if (savedToken === undefined) delete process.env.GH_TOKEN; else process.env.GH_TOKEN = savedToken; });
+  const mainSha = sha("3"), remoteSha = sha("4"), tree = sha("5");
+  const pr = { number: 7, state: "open", user: { login: bot, type: "Bot" }, head: { sha: remoteSha, repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
+  const validationUrl = "https://github.com/o/r/actions/runs/99";
+  const api = fakeApi({
+    [`repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`]: [pr],
+    "repos/o/r/pulls/7": { ...pr, auto_merge: { enabled_at: "now" } },
+    [`repos/o/r/branches/${encodeURIComponent(BRANCH)}`]: { commit: { sha: remoteSha, commit: { tree: { sha: tree } }, parents: [{ sha: mainSha }] } },
+    [`repos/o/r/compare/${mainSha}...${remoteSha}`]: { ahead_by: 1, behind_by: 0, commits: [{ author: { login: bot }, committer: { login: bot } }] },
+    [validationRunsEndpoint]: { workflow_runs: [
+      { event: "workflow_dispatch", head_branch: BRANCH, head_sha: remoteSha, status: "completed", conclusion: "failure", html_url: "https://github.com/o/r/actions/runs/100", created_at: "2026-02-02T00:00:00Z" },
+      { event: "workflow_dispatch", head_branch: BRANCH, head_sha: remoteSha, status: "completed", conclusion: "success", html_url: validationUrl, created_at: "2026-02-01T00:00:00Z" },
+    ] },
+    [`repos/o/r/commits/${remoteSha}/statuses?per_page=100`]: [{ context: "lint", state: "success", target_url: validationUrl, creator: { login: bot } }],
+  });
+  const calls = [];
+  publish(api, "o/r", { title: "update", bodyFile: "body", execute: (command, args) => {
+    calls.push([command, ...args]);
+    if (args[0] === "rev-parse") return args[1] === "HEAD" ? mainSha : tree;
+    if (args[0] === "status") return " M marketplace.json";
+    return "";
+  } });
+  assert.ok(calls.some((call) => call[1] === "workflow" && call[2] === "run"), "a newer failed run must not be masked by an older successful run");
+});
+
 test("publisher refuses completed validation reuse if the PR head changed during verification", (t) => {
   const savedToken = process.env.GH_TOKEN;
   process.env.GH_TOKEN = "synthetic-token";
@@ -372,6 +402,85 @@ test("publication refuses duplicate automation PRs", (t) => {
     bodyFile: "body",
     execute: () => assert.fail("must not execute with duplicate PRs"),
   }), /More than one open PR/);
+});
+
+test("plan reconciles existing plugin PRs unless workflow_dispatch is a dry run", (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "pin-test-"));
+  const previous = process.cwd();
+  const env = ["GITHUB_REPOSITORY", "GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY", "PIN_AUTOMATION_DRY_RUN"];
+  const saved = Object.fromEntries(env.map((key) => [key, process.env[key]]));
+  t.after(() => {
+    process.chdir(previous);
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    rmSync(directory, { recursive: true, force: true });
+  });
+  process.chdir(directory);
+  process.env.GITHUB_REPOSITORY = "o/r";
+  process.env.GITHUB_OUTPUT = join(directory, "output");
+  process.env.GITHUB_STEP_SUMMARY = join(directory, "summary");
+  const prListEndpoint = `repos/o/r/pulls?state=open&head=o:${encodeURIComponent(BRANCH)}`;
+  const pr = {
+    number: 7,
+    state: "open",
+    user: { login: bot, type: "Bot" },
+    head: { ref: BRANCH, sha: sha("2"), repo: { full_name: "o/r" } },
+    base: { ref: "main", repo: { full_name: "o/r", default_branch: "main" } },
+  };
+  const currentPr = { ...pr, auto_merge: { enabled_at: "now" } };
+  const releasesEndpoint = "repos/github/evals/releases?per_page=100&page=1";
+  const runScenario = ({ blocked = false, dryRun = false, headChange } = {}) => {
+    writeFileSync("marketplace.json", marketplace);
+    writeFileSync(process.env.GITHUB_OUTPUT, "");
+    writeFileSync(process.env.GITHUB_STEP_SUMMARY, "");
+    process.env.PIN_AUTOMATION_DRY_RUN = String(dryRun);
+    const calls = [];
+    const requests = [];
+    let prReads = 0;
+    const api = (endpoint) => {
+      requests.push(endpoint);
+      if (endpoint === releasesEndpoint) {
+        return blocked ? { status: 503, body: "{}" } : { status: 200, body: JSON.stringify([release("copilot-evals-v0.24.60")]) };
+      }
+      if (endpoint === prListEndpoint) return { status: 200, body: JSON.stringify([pr]) };
+      if (endpoint === "repos/o/r/pulls/7") {
+        prReads += 1;
+        const changed = headChange === "before-disable" || (headChange === "before-close" && prReads > 1);
+        const value = changed ? { ...currentPr, head: { ...currentPr.head, sha: sha("a") } } : currentPr;
+        return { status: 200, body: JSON.stringify(value) };
+      }
+      return { status: 404, body: "{}" };
+    };
+    const execute = (command, args) => { calls.push([command, ...args]); return ""; };
+    if (headChange === "before-disable") assert.throws(() => main(["update"], api, execute), /changed during pin-plan reconciliation/);
+    else if (headChange === "before-close") assert.throws(() => main(["update"], api, execute), /changed before stale pin-plan cleanup/);
+    else if (blocked) assert.throws(() => main(["update"], api, execute), /Pin update blocked/);
+    else main(["update"], api, execute);
+    return { calls, requests, output: readFileSync(process.env.GITHUB_OUTPUT, "utf8") };
+  };
+
+  const unchanged = runScenario();
+  assert.ok(unchanged.requests.includes(prListEndpoint));
+  assert.ok(unchanged.calls.some((call) => call[1] === "pr" && call[2] === "merge" && call.at(-1) === "--disable-auto"));
+  assert.ok(unchanged.calls.some((call) => call[1] === "pr" && call[2] === "close"));
+
+  const blocked = runScenario({ blocked: true });
+  assert.match(blocked.output, /blocked=true/);
+  assert.ok(blocked.requests.includes(prListEndpoint));
+  assert.ok(blocked.calls.some((call) => call[1] === "pr" && call[2] === "merge" && call.at(-1) === "--disable-auto"));
+  assert.equal(blocked.calls.some((call) => call[1] === "pr" && call[2] === "close"), false);
+
+  const changedBeforeDisable = runScenario({ headChange: "before-disable" });
+  assert.deepEqual(changedBeforeDisable.calls, []);
+  const changedBeforeClose = runScenario({ headChange: "before-close" });
+  assert.ok(changedBeforeClose.calls.some((call) => call[1] === "pr" && call[2] === "merge" && call.at(-1) === "--disable-auto"));
+  assert.equal(changedBeforeClose.calls.some((call) => call[1] === "pr" && call[2] === "close"), false);
+
+  const dryRun = runScenario({ dryRun: true });
+  assert.match(dryRun.output, /changed=false/);
+  assert.equal(dryRun.requests.includes(prListEndpoint), false);
+  assert.deepEqual(dryRun.calls, []);
 });
 
 test("publisher rejects missing credentials and does not continue after an upstream API denial", (t) => {
@@ -454,6 +563,8 @@ test("workflow is canonical-only, keyless, and dry-run by default", () => {
   assert.equal(allowed("github/plugin-marketplace-starter", "schedule", "false"), false);
   assert.equal(allowed("github/plugin-marketplace-starter", "workflow_dispatch", "false"), true);
   assert.equal(allowed("other/template", "workflow_dispatch", "true"), false);
+  const planStep = workflow.jobs.update.steps.find((step) => step.id === "plan");
+  assert.equal(planStep.env.PIN_AUTOMATION_DRY_RUN, "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}");
   const text = JSON.stringify(workflow);
   assert.doesNotMatch(text, /secrets\.|create-github-app-token|environment|enqueue/);
   assert.match(text, /inputs\.dry_run/);

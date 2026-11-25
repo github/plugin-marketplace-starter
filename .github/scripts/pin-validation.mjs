@@ -78,9 +78,22 @@ function verifyActionPins(api, files, changedFiles) {
   const [sha, tag] = candidate.split(" ");
   if (oldPins.some((old) => compareVersions(tag.slice(1), old.tag.slice(1)) <= 0)) throw new Error("Action tag must advance to a newer stable semantic version.");
   if (getJson(api, `repos/github/evals-action/commits/${encodeURIComponent(tag)}`).sha !== sha) throw new Error("Action tag does not resolve to the proposed pin.");
+  const release = getJson(api, `repos/github/evals-action/releases/tags/${encodeURIComponent(tag)}`);
+  if (release.tag_name !== tag || release.draft !== false || release.prerelease !== false) {
+    throw new Error("Action pin must target a published stable release.");
+  }
   for (const old of oldPins) {
     if (getJson(api, `repos/github/evals-action/compare/${old.sha}...${sha}`).status !== "ahead") throw new Error("Action pin is not a forward update.");
   }
+}
+
+function marketplaceContent(api, endpoint) {
+  const file = getJson(api, endpoint);
+  if (file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`${endpoint}: marketplace content is not base64 encoded.`);
+  const text = Buffer.from(file.content.replace(/\s/g, ""), "base64").toString("utf8");
+  const data = JSON.parse(text);
+  if (`${JSON.stringify(data, null, 2)}\n` !== text) throw new Error("marketplace.json isn't in canonical 2-space JSON format.");
+  return data;
 }
 
 function verifyPluginPin(api, repo, pr, head, files) {
@@ -89,8 +102,8 @@ function verifyPluginPin(api, repo, pr, head, files) {
   }
   const baseEndpoint = `repos/${repo}/contents/marketplace.json?ref=${pr.base.sha}`;
   const headEndpoint = `repos/${repo}/contents/marketplace.json?ref=${head}`;
-  const before = getJson(api, baseEndpoint);
-  const after = getJson(api, headEndpoint);
+  const before = marketplaceContent(api, baseEndpoint);
+  const after = marketplaceContent(api, headEndpoint);
   const findPin = (data) => {
     const matches = data.plugins?.filter((plugin) => plugin.name === "eval" && plugin.source?.repo === "github/evals");
     if (matches?.length !== 1) throw new Error("marketplace.json must contain exactly one github/evals eval plugin.");

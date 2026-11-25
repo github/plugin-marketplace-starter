@@ -9,7 +9,7 @@ permissions:
   pull-requests: write
   statuses: write
 concurrency:
-  group: update-plugin-pin
+  group: ${{ github.event.workflow_run.head_branch == 'automation/update-plugin-pin' && 'update-plugin-pin' || format('complete-pin-validation-{0}', github.event.workflow_run.id) }}
   cancel-in-progress: false
 jobs:
   validate:
