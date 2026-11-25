@@ -88,9 +88,10 @@ function verifyActionPins(api, files, changedFiles) {
 }
 
 function marketplaceContent(api, endpoint) {
-  const file = getJson(api, endpoint);
-  if (file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`${endpoint}: marketplace content is not base64 encoded.`);
-  const text = Buffer.from(file.content.replace(/\s/g, ""), "base64").toString("utf8");
+  const response = api(endpoint);
+  if (response.status !== 200) throw new Error(`${endpoint}: GitHub API returned HTTP ${response.status}.`);
+  if (typeof response.body !== "string") throw new Error(`${endpoint}: marketplace content isn't text.`);
+  const text = response.body;
   const data = JSON.parse(text);
   if (`${JSON.stringify(data, null, 2)}\n` !== text) throw new Error("marketplace.json isn't in canonical 2-space JSON format.");
   return data;
@@ -147,6 +148,48 @@ function getPullRequest(api, repo, branch) {
   return matches.length ? getJson(api, `repos/${repo}/pulls/${matches[0].number}`) : undefined;
 }
 
+function verifyPinPr(api, repo, pr, headBranch, headSha, kind, defaultBranch) {
+  const author = kind === "plugin" ? "github-actions[bot]" : "dependabot[bot]";
+  if (!validPr(pr, repo, defaultBranch, author)) throw new Error("Pin PR isn't open from the expected automation identity and base.");
+  if (pr.head?.ref !== headBranch || pr.head?.sha !== headSha) throw new Error("Pin PR head doesn't match the inspected head.");
+  const commit = getJson(api, `repos/${repo}/commits/${headSha}`);
+  const expectedCommitter = commit.committer?.login === author ||
+    (kind === "action" && commit.committer?.login === "web-flow" && commit.commit?.verification?.verified === true);
+  if (commit.author?.login !== author || !expectedCommitter) {
+    throw new Error("PR head commit was not authored and committed by the expected verified automation identity.");
+  }
+  const endpoint = `repos/${repo}/pulls/${pr.number}`;
+  const files = getJson(api, `${endpoint}/files?per_page=100&page=1`);
+  if (kind === "plugin") verifyPluginPin(api, repo, pr, headSha, files);
+  else verifyActionPins(api, files, pr.changed_files);
+  const current = getJson(api, endpoint);
+  if (!validPr(current, repo, defaultBranch, author) || current.head?.sha !== headSha || current.head?.ref !== headBranch) {
+    throw new Error("PR head changed during inspection.");
+  }
+  return current;
+}
+
+export function verifyCurrentPinPr({ api = githubApi, repo, event, prNumber, branch, headSha }) {
+  if (repo !== canonical) throw new Error("Invalid repository.");
+  let kind, pr;
+  if (event === "pull_request" && branch?.startsWith("dependabot/github_actions/evals-action-")) {
+    if (!actionBranch.test(branch)) throw new Error("Unexpected Dependabot action-pin branch.");
+    if (!/^\d+$/.test(String(prNumber ?? ""))) throw new Error("Invalid pull request number.");
+    kind = "action";
+    pr = getJson(api, `repos/${repo}/pulls/${prNumber}`);
+  } else if (event === "workflow_dispatch" && branch === pluginBranch) {
+    kind = "plugin";
+    pr = getPullRequest(api, repo, branch);
+  } else {
+    return "Skipped a Validate run unrelated to pin automation.";
+  }
+  if (!/^[0-9a-f]{40}$/.test(headSha ?? "")) throw new Error("Invalid pin PR head SHA.");
+  if (!pr) throw new Error("No open pin PR exists for the validated head.");
+  const defaultBranch = getJson(api, `repos/${repo}`).default_branch;
+  verifyPinPr(api, repo, pr, branch, headSha, kind, defaultBranch);
+  return `Validated ${kind} pin PR #${pr.number} at ${headSha}.`;
+}
+
 export function completePinValidation({ api = githubApi, repo, runId, execute = run }) {
   if (repo !== canonical || !/^\d+$/.test(String(runId ?? ""))) throw new Error("Invalid repository or workflow run ID.");
   const workflow = getJson(api, `repos/${repo}/actions/workflows/validate.yml`);
@@ -173,19 +216,8 @@ export function completePinValidation({ api = githubApi, repo, runId, execute = 
   const pr = getPullRequest(api, repo, runData.head_branch);
   if (!pr || !validPr(pr, repo, defaultBranch, author)) return "Skipped because no matching open automation PR exists.";
   if (pr.head?.ref !== runData.head_branch || pr.head?.sha !== runData.head_sha) return "Skipped a stale Validate run for an older PR head.";
-  const commit = getJson(api, `repos/${repo}/commits/${runData.head_sha}`);
-  const expectedCommitter = commit.committer?.login === author ||
-    (kind === "action" && commit.committer?.login === "web-flow" && commit.commit?.verification?.verified === true);
-  if (commit.author?.login !== author || !expectedCommitter) {
-    throw new Error("PR head commit was not authored and committed by the expected verified automation identity.");
-  }
-  const number = pr.number;
-  const endpoint = `repos/${repo}/pulls/${number}`;
-  const files = getJson(api, `${endpoint}/files?per_page=100&page=1`);
-  if (kind === "plugin") verifyPluginPin(api, repo, pr, runData.head_sha, files);
-  else verifyActionPins(api, files, pr.changed_files);
-  const current = getJson(api, endpoint);
-  if (!validPr(current, repo, defaultBranch, author) || current.head?.sha !== runData.head_sha || current.head?.ref !== runData.head_branch) throw new Error("PR head changed during inspection.");
+  const current = verifyPinPr(api, repo, pr, runData.head_branch, runData.head_sha, kind, defaultBranch);
+  const number = current.number;
   if (kind === "plugin") {
     execute("gh", [
       "api", "--method", "POST", `repos/${repo}/statuses/${runData.head_sha}`,
@@ -204,7 +236,16 @@ function run(command, args) {
 
 if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]))) {
   try {
-    console.log(completePinValidation({ repo: process.env.GITHUB_REPOSITORY, runId: process.env.WORKFLOW_RUN_ID }));
+    const result = process.argv[2] === "verify-current-pr"
+      ? verifyCurrentPinPr({
+        repo: process.env.GITHUB_REPOSITORY,
+        event: process.env.PIN_VALIDATION_EVENT,
+        prNumber: process.env.PIN_PR_NUMBER,
+        branch: process.env.PIN_PR_BRANCH,
+        headSha: process.env.PIN_PR_HEAD_SHA,
+      })
+      : completePinValidation({ repo: process.env.GITHUB_REPOSITORY, runId: process.env.WORKFLOW_RUN_ID });
+    console.log(result);
   } catch (error) {
     console.error(`::error::${error.message}`);
     process.exitCode = 1;

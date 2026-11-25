@@ -81,7 +81,10 @@ confirms the exact successful workflow run and PR head, publishes the required
 auto-merge. A blocked plan disables auto-merge on an existing plugin-pin PR; an
 empty plan disables auto-merge and closes the obsolete PR. Manual dry runs do
 not reconcile existing PRs. GitHub still requires the checks and one human
-CodeOwner approval before merging.
+CodeOwner approval before merging. Validate's required `lint` check waits for a
+trusted, read-only pin-validation job that rechecks the exact plugin or
+Dependabot head, release, and forward ancestry. This prevents a previously
+enabled auto-merge request from merging a new head before its pin is verified.
 
 [Dependabot](../.github/dependabot.yml) separately proposes daily grouped
 updates for `github/evals-action` references in workflow files. Dependabot's

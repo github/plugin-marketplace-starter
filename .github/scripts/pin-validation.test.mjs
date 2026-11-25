@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
-import { completePinValidation } from "./pin-validation.mjs";
+import { completePinValidation, verifyCurrentPinPr } from "./pin-validation.mjs";
 
 const repo = "github/plugin-marketplace-starter";
 const baseSha = "a".repeat(40);
@@ -14,8 +14,7 @@ const workflowPath = ".github/workflows/validate.yml";
 const actionReleaseEndpoint = "repos/github/evals-action/releases/tags/v0.2.1";
 const currentReleaseEndpoint = "repos/github/evals/releases/tags/copilot-evals-v0.24.60";
 const nextReleaseEndpoint = "repos/github/evals/releases/tags/copilot-evals-v0.24.68";
-const contentFile = (text) => ({ encoding: "base64", content: Buffer.from(text).toString("base64") });
-const marketplaceFile = (value) => contentFile(`${JSON.stringify(value, null, 2)}\n`);
+const marketplaceFile = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const actionFile = {
   filename: ".github/workflows/skill-eval-comparison.yml",
   status: "modified",
@@ -111,9 +110,12 @@ function fixture({ kind = "action", change = {}, failStatus = false } = {}) {
     if (path === "repos/github/evals-action/compare/" + oldPinSha + "..." + newPinSha && change.comparison) data = change.comparison;
     if (path === "repos/github/evals-action/commits/v0.2.1" && change.resolved) data = { sha: change.resolved };
     if (path === `repos/${repo}/contents/marketplace.json?ref=${headSha}` && change.marketplace) data = marketplaceFile(change.marketplace);
-    if (path === `repos/${repo}/contents/marketplace.json?ref=${headSha}` && change.marketplaceText) data = contentFile(change.marketplaceText);
+    if (path === `repos/${repo}/contents/marketplace.json?ref=${headSha}` && change.marketplaceText) data = change.marketplaceText;
+    if (path === `repos/${repo}/contents/marketplace.json?ref=${headSha}` && change.marketplaceFailure) {
+      return { status: change.marketplaceFailure, body: "unavailable" };
+    }
     if (data === undefined) return { status: 404, body: "{}" };
-    return { status: 200, body: JSON.stringify(data) };
+    return { status: 200, body: typeof data === "string" ? data : JSON.stringify(data) };
   };
   const execute = (command, args) => {
     calls.push([command, ...args]);
@@ -127,6 +129,83 @@ test("enables Dependabot auto-merge only after successful Validate and forward a
   const f = fixture();
   completePinValidation({ repo, runId: 99, ...f });
   assert.deepEqual(f.calls, [["gh", "pr", "merge", "42", "-R", repo, "--auto", "--squash", "--match-head-commit", headSha]]);
+});
+
+test("Validate verifies current action and plugin heads before the required lint job can pass", () => {
+  const action = fixture();
+  assert.match(verifyCurrentPinPr({
+    repo,
+    event: "pull_request",
+    prNumber: 42,
+    branch,
+    headSha,
+    ...action,
+  }), /Validated action pin PR #42/);
+  assert.deepEqual(action.calls, []);
+
+  const plugin = fixture({ kind: "plugin" });
+  assert.match(verifyCurrentPinPr({
+    repo,
+    event: "workflow_dispatch",
+    branch: "automation/update-plugin-pin",
+    headSha,
+    ...plugin,
+  }), /Validated plugin pin PR #42/);
+  assert.deepEqual(plugin.calls, []);
+
+  const unavailable = fixture({ kind: "plugin", change: { marketplaceFailure: 503 } });
+  assert.throws(() => verifyCurrentPinPr({
+    repo,
+    event: "workflow_dispatch",
+    branch: "automation/update-plugin-pin",
+    headSha,
+    ...unavailable,
+  }), /HTTP 503/);
+  assert.deepEqual(unavailable.calls, []);
+});
+
+test("read-only pin validation rejects stale, malformed, or untrusted PR inputs", () => {
+  const stale = fixture({ change: { staleHead: true } });
+  assert.throws(() => verifyCurrentPinPr({
+    repo,
+    event: "pull_request",
+    prNumber: 42,
+    branch,
+    headSha,
+    ...stale,
+  }), /head doesn't match/);
+  assert.deepEqual(stale.calls, []);
+
+  const untrusted = fixture({ change: { pr: {
+    ...JSON.parse(fixture().api(`repos/${repo}/pulls/42`).body),
+    user: { login: "someone", type: "User" },
+  } } });
+  assert.throws(() => verifyCurrentPinPr({
+    repo,
+    event: "pull_request",
+    prNumber: 42,
+    branch,
+    headSha,
+    ...untrusted,
+  }), /expected automation identity/);
+  assert.deepEqual(untrusted.calls, []);
+
+  assert.throws(() => verifyCurrentPinPr({
+    repo,
+    event: "pull_request",
+    prNumber: 42,
+    branch: "dependabot/github_actions/evals-action-a1b2c3d4e",
+    headSha,
+    ...fixture(),
+  }), /Unexpected Dependabot action-pin branch/);
+  assert.match(verifyCurrentPinPr({
+    repo,
+    event: "pull_request",
+    prNumber: 42,
+    branch: "dependabot/github_actions/setup-node-1a2b3c4d5e",
+    headSha,
+    ...fixture(),
+  }), /Skipped/);
 });
 
 test("revalidates both plugin releases and their channel before enabling auto-merge", () => {
@@ -304,6 +383,7 @@ test("stops if status publication fails and does not enqueue a merge", () => {
 test("workflow runs trusted default-branch code with scoped permissions", () => {
   const workflow = parse(readFileSync(new URL("../workflows/complete-pin-validation.yml", import.meta.url), "utf8"));
   const publisher = parse(readFileSync(new URL("../workflows/update-pins.yml", import.meta.url), "utf8"));
+  const validate = parse(readFileSync(new URL("../workflows/validate.yml", import.meta.url), "utf8"));
   assert.deepEqual(workflow.on.workflow_run, { workflows: ["Validate"], types: ["completed"] });
   assert.deepEqual(workflow.permissions, { actions: "read", contents: "write", "pull-requests": "write", statuses: "write" });
   assert.match(workflow.concurrency.group, /github\.event\.workflow_run\.head_branch == 'automation\/update-plugin-pin'/);
@@ -317,4 +397,15 @@ test("workflow runs trusted default-branch code with scoped permissions", () => 
   assert.equal(checkout.with.ref, "${{ github.event.repository.default_branch }}");
   assert.equal(checkout.with["persist-credentials"], false);
   assert.equal(workflow.jobs.validate.steps.at(-1).run, "node .github/scripts/pin-validation.mjs");
+
+  const pinJob = validate.jobs["validate-pin"];
+  assert.match(pinJob.if, /github\.repository == 'github\/plugin-marketplace-starter'/);
+  assert.deepEqual(pinJob.permissions, { contents: "read", "pull-requests": "read" });
+  const pinCheckout = pinJob.steps.find((step) => step.uses?.startsWith("actions/checkout@"));
+  assert.equal(pinCheckout.with.ref, "${{ github.event.repository.default_branch }}");
+  assert.equal(pinCheckout.with["persist-credentials"], false);
+  assert.equal(pinJob.steps.at(-1).run, "node .github/scripts/pin-validation.mjs verify-current-pr");
+  assert.equal(validate.jobs.lint.needs, "validate-pin");
+  assert.equal(validate.jobs.lint.if, "always()");
+  assert.match(validate.jobs.lint.steps[0].if, /needs\.validate-pin\.result/);
 });
