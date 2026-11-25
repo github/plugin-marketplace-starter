@@ -57,6 +57,8 @@ pinsTest("update-remote-pins accepts the fixture's upstream change in exact and 
     "Previously not supported, empty note lists are now supported.",
     "Added support for empty note lists, which were not supported in v1.0.0.",
     "Added support for empty note lists, but nested lists are not supported.",
+    "Added support for empty note lists, but it does not support nested lists.",
+    "Added support for empty note lists, but notes with attachments are not supported.",
   ]) {
     const result = grade(`${summary} No new hooks or dependencies. ${offline}`);
     assert.equal(result.passed, true, `${summary}: ${result.evidence}`);

@@ -10,8 +10,8 @@ const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|are
 const historical = /\b(?:before|previously|formerly|earlier|originally|v1\.0(?:\.0)?(?!\.?\d))/i;
 // "weren't supported before; v1.1.0 now supports them" needs the pronoun affirmation to report the change.
 const affirmsPronoun = /\bnow\s+(?:\w+\s+){0,2}?(?:support|handle|accept|allow)s?\s+(?:them|it)\b/i;
-// A denial only blocks the sentence when it is about the lists, not another subject ("nested lists" aside).
-const aboutLists = /\b(?:notes?|they|them|it)\b|^(?:are|is|were|was|aren't|isn't|weren't|wasn't|which|that)\b/i;
+// Besides denials naming empty note lists, only subjectless denials ("but are not supported now") refer back to them.
+const aboutLists = /^(?:(?:they|it)\s+)?(?:are|is|were|was|aren't|isn't|weren't|wasn't|which|that)\b/i;
 const emptyNoteLists = [
   String.raw`\bempty\s+${note}\s+lists?\b`,
   String.raw`${note}\s+lists?\s+(?:(?:that|which|can|may|now|are|is|be)\s+){0,3}empty\b`,
@@ -29,7 +29,7 @@ export function reportsUpstreamChange(output) {
 }
 
 function reportsInSentence(sentence) {
-  const clauses = sentence.split(/\s*[;,:]\s*|\s+(?:but|while|whereas)\s+/i).filter(Boolean);
+  const clauses = sentence.split(/[;,:]|(?<=\s)(?:but|while|whereas)(?=\s)/i).map((clause) => clause.trim()).filter(Boolean);
   const mentions = (clause) => emptyNoteLists.some((pattern) => pattern.test(clause));
   const denies = (clause) => negated.test(clause) && !historical.test(clause);
   if (clauses.some((clause) => denies(clause) && (mentions(clause) || aboutLists.test(clause)))) return false;
