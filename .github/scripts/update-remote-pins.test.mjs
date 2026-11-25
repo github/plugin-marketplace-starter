@@ -63,6 +63,10 @@ pinsTest("update-remote-pins rejects missing or unrelated upstream changes and a
     [`The release notes list is empty. ${offline}`, /no empty-note-list change/],
     [`The release-notes list is empty. ${offline}`, /no empty-note-list change/],
     [`Note lists must not be empty. ${offline}`, /no empty-note-list change/],
+    [`Lists with no notes are not supported. ${offline}`, /no empty-note-list change/],
+    [`Note lists that are empty are no longer supported. ${offline}`, /no empty-note-list change/],
+    [`The release  notes list is empty. ${offline}`, /no empty-note-list change/],
+    [`The release\nnotes list is empty. ${offline}`, /no empty-note-list change/],
     ["Upstream change: Add support for empty note lists. Verified on GitHub.", /no offline limit/],
   ]) {
     const result = grade(output);
