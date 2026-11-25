@@ -3,15 +3,8 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const real = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
-// An optional detail explains a failure in the grader evidence; keep it short and pass output through excerpt().
+// An optional detail explains a failure in the grader evidence; never include raw model output.
 export const check = (label, passed, detail) => ({ label, passed: Boolean(passed), ...(detail ? { detail } : {}) });
-export const excerpt = (value, max = 160) => {
-  const flat = String(value ?? "")
-    .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[redacted]")
-    .replace(/\b(bearer|token|password|secret)(["']?\s*[:=]?\s*)["']?[^\s"',}]+["']?/gi, "$1$2[redacted]")
-    .replace(/\s+/g, " ").trim();
-  return JSON.stringify(flat.length > max ? `${flat.slice(0, max)}…` : flat);
-};
 // Real paths, because Node resolves import.meta.url through symlinks but not argv.
 export const isMain = (url) => Boolean(process.argv[1]) && real(resolve(process.argv[1])) === real(fileURLToPath(url));
 export const normalize = (text) => text.replaceAll("\r\n", "\n");

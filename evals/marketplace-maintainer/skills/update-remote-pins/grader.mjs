@@ -1,4 +1,4 @@
-import { check, excerpt, isMain, json, runGrade } from "./common.mjs";
+import { check, isMain, json, runGrade } from "./common.mjs";
 
 // The fixture's only upstream change is "Add support for empty note lists"; accept equivalent
 // wordings within one sentence, but not release notes or unrelated mentions of notes or emptiness.
@@ -28,8 +28,7 @@ export function evaluate(trajectory, workspace) {
       && entry?.source?.ref === "v1.1.0" && entry?.version === "1.1.0"
       && entry?.source?.repo === "fixture-org/outside-notes"),
     check("Preserved the unrelated local entry", catalog.plugins.some((item) => item.name === "sample-notes" && item.version === "1.0.0")),
-    check("Reported the upstream change and offline limit", change && offline,
-      `${missing.join(", ")}; output: ${excerpt(trajectory.output)}`),
+    check("Reported the upstream change and offline limit", change && offline, missing.join(", ")),
   ];
 }
 

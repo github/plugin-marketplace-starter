@@ -72,13 +72,11 @@ pinsTest("update-remote-pins rejects missing or unrelated upstream changes and a
   }
 });
 
-pinsTest("update-remote-pins failure evidence is bounded and redacts token-like text", async (t) => {
+pinsTest("update-remote-pins failure evidence names missing conditions without echoing model output", async (t) => {
   const grade = await fixture(t);
   const token = `ghp_${"A".repeat(36)}`;
-  const result = grade(`Pinned it with ${token}. {"token": "synthetic-opaque-value"} ${"filler ".repeat(200)}`);
+  const result = grade(`Pinned it with ${token}. {"token": "synthetic-opaque-value"}`);
   assert.equal(result.passed, false);
-  assert.match(result.evidence, /Pinned it with \[redacted\]/);
-  assert.ok(!result.evidence.includes("synthetic-opaque-value"), result.evidence);
-  assert.ok(!result.evidence.includes(token), result.evidence);
-  assert.ok(result.evidence.length < 600, `evidence length ${result.evidence.length}`);
+  assert.match(result.evidence, /\(no empty-note-list change, no offline limit\)/);
+  assert.ok(!result.evidence.includes(token) && !result.evidence.includes("synthetic-opaque-value"), result.evidence);
 });
