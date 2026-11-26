@@ -27,7 +27,9 @@ const affirmsMention = new RegExp(String.raw`\b(?:now\s+)?(?:add(?:s|ed)?\s+supp
 function affirmsDespiteHistoricalDenial(clause) {
   let historicalOnly = true;
   const rest = clause.replace(historicalDenial, (match, before, after) => {
-    if ((!before && !after) || /^no\s+longer/i.test(match.slice(before?.length ?? 0))) historicalOnly = false;
+    const denial = match.slice(before?.length ?? 0);
+    const past = before || after || /\b(?:previously|formerly|originally|earlier)\b/i.test(denial);
+    if (!past || /^no\s+longer/i.test(denial)) historicalOnly = false;
     return "";
   });
   return historicalOnly && affirmsMention.test(rest);
