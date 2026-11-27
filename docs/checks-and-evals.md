@@ -377,6 +377,16 @@ non-canceling lock. Manual dispatches do not cancel in-progress runs.
    run evidence** `<details>` section (`Outcome`, `Passed/Failed`, `Score
    delta`, `Turns delta`, `Duration delta`, and `Token in/out + %` delta).
 
+When a Baseline or Candidate run fails, a following step runs
+[`eval-diagnostics.mjs`](../.github/scripts/eval-diagnostics.mjs) on the
+action's `native-diagnostics-path`. It prints only eval and stimulus names,
+grader types, verdicts, scores, and the check names reported by repository
+program graders to the job log and step summary. It doesn't print prompts,
+model or tool output, grader evidence, or native logs, and `upload-transcripts`
+stays off. The shared [`score()`](../evals/_shared/graders/common.mjs) helper
+reports each check as a nested grader detail for this purpose; Vally scores
+only the grader's top-level result, so the details don't change verdicts.
+
 > **Action version note:** `baseline-report-id` (`evals-baseline`) and the
 > top-level **Ship / No-ship** verdict table need a `github/evals-action` release
 > that includes [github/evals-action#34](https://github.com/github/evals-action/pull/34)
