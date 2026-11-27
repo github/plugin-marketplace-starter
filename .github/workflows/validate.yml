@@ -13,10 +13,45 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  validate-pin:
+    if: >-
+      github.repository == 'github/plugin-marketplace-starter' &&
+      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') &&
+      (
+        (github.event_name == 'pull_request' && github.head_ref || github.ref_name) == 'automation/update-plugin-pin' ||
+        startsWith(github.event_name == 'pull_request' && github.head_ref || github.ref_name, 'dependabot/github_actions/evals-action-')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+      - name: Validate exact pin PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PIN_VALIDATION_EVENT: ${{ github.event_name }}
+          PIN_PR_NUMBER: ${{ github.event.pull_request.number }}
+          PIN_PR_BRANCH: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          PIN_PR_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: node .github/scripts/pin-validation.mjs verify-current-pr
   lint:
+    needs: validate-pin
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Require pin validation
+        if: needs.validate-pin.result != 'success' && needs.validate-pin.result != 'skipped'
+        run: exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false

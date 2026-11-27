@@ -264,10 +264,13 @@ guidanceTest("local program grader reports outcome checks independently of invoc
   });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), {
+  const { details, ...graded } = JSON.parse(result.stdout);
+  assert.deepEqual(graded, {
     name: "plugin-authoring-try", kind: "code", passed: true, score: 1,
     evidence: "All contract assertions passed.",
   });
+  assert.ok(details.length > 0);
+  assert.ok(details.every((item) => item.passed === true && item.score === 1 && item.evidence === ""));
 });
 
 guidanceTest("local guidance doesn't count an echoed command as verified host discovery or behavior", async (t) => {

@@ -42,6 +42,12 @@ export function score(name, checks) {
     name, kind: "code", passed: failures.length === 0,
     score: (checks.length - failures.length) / checks.length,
     evidence: failures.length ? failures.map((item) => item.detail ? `${item.label} (${item.detail})` : item.label).join("; ") : "All contract assertions passed.",
+    // One structured result per check lets CI name a failed check without reading evidence.
+    // Vally scores only the top-level result, so these don't change the verdict.
+    details: checks.map((item) => ({
+      name: item.detail ? `${item.label} (${item.detail})` : String(item.label),
+      kind: "code", passed: Boolean(item.passed), score: item.passed ? 1 : 0, evidence: "",
+    })),
   };
 }
 
