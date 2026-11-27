@@ -12,7 +12,7 @@
     "eval:compare": "node .github/scripts/eval-report.mjs"
   },
   "devDependencies": {
-    "@github/copilot": "1.0.107",
+    "@github/copilot": "1.0.109",
     "@microsoft/vally-cli": "0.21.0"
   }
 }
