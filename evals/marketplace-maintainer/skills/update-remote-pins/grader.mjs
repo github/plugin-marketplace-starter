@@ -1,16 +1,72 @@
 import { check, isMain, json, runGrade } from "./common.mjs";
 
+// The fixture's only upstream change is "Add support for empty note lists"; accept equivalent
+// wordings within one affirmative sentence, but not release notes or unrelated mentions of notes or emptiness.
+const note = String.raw`\bnotes?`;
+// Only a negation that denies the change counts ("not supported", "must not be empty"), not "no longer cause errors",
+// "previously unsupported" or "callers don't need to handle them".
+const negated = /\b(?:not|never|no\s+longer|cannot|can't|don't|doesn't|isn't|aren't|wasn't|weren't|won't)\s+(?:(?!(?:reject|fail|error|break|crash|throw)\w*\s)\w+\s+){0,2}?(?:support(?:ed|s)?|allow(?:ed|s)?|accept(?:ed|s)?|handled|(?:be\s+)?empty)\b|(?<!\b(?:previously|formerly)\s)\bunsupported\b/i;
+// A denial about an earlier release ("which were not supported in v1.0.0") describes the change instead of denying it.
+const historical = /\b(?:before|previously|formerly|earlier|originally|v1\.0(?:\.0)?(?!\.?\d))/i;
+// "weren't supported before; v1.1.0 supports them" needs an undenied pronoun affirmation to report the change.
+const affirmsPronoun = /\b(?:(?:support|handle|accept|allow)s?|support\s+for)\s+(?:them|it)\b|\b(?:they\s+are|they're|it\s+is|it's)\s+(?:now\s+)?(?:supported|handled|accepted|allowed)\b/i;
+// "Adds support for empty note lists (previously not supported)" passes only when every denial in the clause is bound
+// to an earlier release and the remaining text directly affirms the empty-note-list change.
+const historicalDenial = new RegExp(String.raw`(\b(?:previously|formerly|originally|earlier)\s+)?(?:${negated.source})(\s+(?:in\s+)?(?:before|previously|formerly|earlier|originally|v1\.0(?:\.0)?(?!\.?\d))\b)?`, "gi");
+// Besides denials naming empty note lists, only subjectless denials ("but are not supported now") refer back to them.
+const aboutLists = /^(?:(?:they|it)\s+)?(?:are|is|were|was|aren't|isn't|weren't|wasn't|which|that)\b/i;
+const emptyNoteLists = [
+  String.raw`\bempty\s+${note}\s+lists?\b`,
+  String.raw`${note}\s+lists?\s+(?:(?:that|which|can|may|now|are|is|be)\s+){0,3}empty\b`,
+  String.raw`\bempty\s+lists?\s+of\s+${note}\b`,
+  String.raw`\blists?\s+(?:with|containing)\s+(?:no|zero)\s+${note}\b`,
+].map((pattern) => new RegExp(pattern, "i"));
+const mention = emptyNoteLists.map((pattern) => `(?:${pattern.source})`).join("|");
+const affirmsMention = new RegExp(String.raw`\b(?:now\s+)?(?:add(?:s|ed)?\s+support\s+for|supports?|supported|accepts?|accepted|handles?|handled|allows?|allowed)\s+(?:${mention})|(?:${mention})\s*(?:\(\s*\)\s*)?(?:are|is)\s+now\s+(?:supported|accepted|handled|allowed)\b`, "i");
+
+function affirmsDespiteHistoricalDenial(clause) {
+  let historicalOnly = true;
+  const rest = clause.replace(historicalDenial, (match, before, after) => {
+    const denial = match.slice(before?.length ?? 0);
+    const past = before || after || /\b(?:previously|formerly|originally|earlier)\b/i.test(denial);
+    if (!past || /^no\s+longer/i.test(denial)) historicalOnly = false;
+    return "";
+  });
+  return historicalOnly && affirmsMention.test(rest);
+}
+
+export function reportsUpstreamChange(output) {
+  // Drop Markdown emphasis, straighten curly apostrophes and join compound words so "**empty** note lists",
+  // "aren’t" and "empty-note-list" match their plain forms;
+  // join soft-wrapped lines (but not list items, headings or paragraphs) and fold "release notes" (even across spaces or a soft wrap) into one word before splitting so it never matches.
+  const plain = output.replace(/\r?\n(?![ \t]*(?:[-*+][ \t]|\d+[.)][ \t]|#|\r?\n|$))/g, " ").replace(/[*_`]/g, "").replace(/[\u2018\u2019]/g, "'").replace(/(?<=\w)-(?=\w)/g, " ")
+    .replace(/\brelease\s+notes?\b/gi, "releasenotes");
+  return plain.split(/(?<=[.!?])\s+|\n+/).some(reportsInSentence);
+}
+
+function reportsInSentence(sentence) {
+  const clauses = sentence.split(/[;,:]|(?<=\s)(?:but|while|whereas)(?=\s)/i).map((clause) => clause.trim()).filter(Boolean);
+  const mentions = (clause) => emptyNoteLists.some((pattern) => pattern.test(clause));
+  const denies = (clause) => negated.test(clause) && !historical.test(clause);
+  if (clauses.some((clause) => denies(clause) && (mentions(clause) || aboutLists.test(clause)))) return false;
+  return clauses.some((clause) => mentions(clause) && (!negated.test(clause) || affirmsDespiteHistoricalDenial(clause)))
+    || (clauses.some((clause) => mentions(clause) && negated.test(clause))
+      && clauses.some((clause) => affirmsPronoun.test(clause) && !negated.test(clause)));
+}
+
 export function evaluate(trajectory, workspace) {
   const catalog = json(workspace, "marketplace.json");
   if (!Array.isArray(catalog?.plugins)) return [check("Preserved a valid catalog", false)];
   const entry = catalog.plugins.find((item) => item.name === "outside-notes");
+  const change = reportsUpstreamChange(trajectory.output);
+  const offline = /offline|recorded/i.test(trajectory.output);
+  const missing = [!change && "no empty-note-list change", !offline && "no offline limit"].filter(Boolean);
   return [
     check("Updated the exact reviewed SHA, ref and version", entry?.source?.sha === "b".repeat(40)
       && entry?.source?.ref === "v1.1.0" && entry?.version === "1.1.0"
       && entry?.source?.repo === "fixture-org/outside-notes"),
     check("Preserved the unrelated local entry", catalog.plugins.some((item) => item.name === "sample-notes" && item.version === "1.0.0")),
-    check("Reported the upstream change and offline limit", /empty note lists/i.test(trajectory.output)
-      && /offline|recorded/i.test(trajectory.output)),
+    check("Reported the upstream change and offline limit", change && offline, missing.join(", ")),
   ];
 }
 
