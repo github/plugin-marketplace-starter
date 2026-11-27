@@ -3,7 +3,12 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const real = (path) => { try { return realpathSync(path); } catch { return resolve(path); } };
-export const check = (label, passed) => ({ label, passed: Boolean(passed) });
+// An optional detail names why a check failed. Only short lowercase condition labels pass, so model output,
+// tokens or paths never reach evidence.
+const safeDetail = /^[a-z][a-z ,-]{0,99}$/;
+export const check = (label, passed, detail) => ({
+  label, passed: Boolean(passed), ...(typeof detail === "string" && safeDetail.test(detail) ? { detail } : {}),
+});
 // Real paths, because Node resolves import.meta.url through symlinks but not argv.
 export const isMain = (url) => Boolean(process.argv[1]) && real(resolve(process.argv[1])) === real(fileURLToPath(url));
 export const normalize = (text) => text.replaceAll("\r\n", "\n");
@@ -36,7 +41,7 @@ export function score(name, checks) {
   return {
     name, kind: "code", passed: failures.length === 0,
     score: (checks.length - failures.length) / checks.length,
-    evidence: failures.length ? failures.map((item) => item.label).join("; ") : "All contract assertions passed.",
+    evidence: failures.length ? failures.map((item) => item.detail ? `${item.label} (${item.detail})` : item.label).join("; ") : "All contract assertions passed.",
   };
 }
 
