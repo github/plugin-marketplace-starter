@@ -87,16 +87,17 @@ Dependabot head, release, and forward ancestry. This prevents a previously
 enabled auto-merge request from merging a new head before its pin is verified.
 
 [Dependabot](../.github/dependabot.yml) separately proposes daily grouped
-updates for `github/evals-action` references in workflow files. Dependabot's
-handling of prerelease tags has not been verified live. Each PR still requires
+updates for `github/evals-action` references in workflow files. Each PR still requires
 one human CodeOwner approval and required checks. The same trusted
 default-branch completion workflow verifies the successful Validate run,
 Dependabot author, base and exact head, action-only file changes, release tag,
 that the tag resolves to a published release with a known channel, a strictly
-increasing version, and forward commit ancestry. Published prerelease pins pass
-required validation so they can be merged after CodeOwner approval, but aren't
+increasing version, and forward commit ancestry. Published releases marked as
+prereleases with `vX.Y.Z` tags pass required validation so they can be merged
+after CodeOwner approval, but aren't
 auto-enabled; an existing auto-merge request from this workflow is withdrawn
-when a successfully validated candidate is a prerelease. Dependabot's
+when a successfully validated candidate is a prerelease. Hyphenated prerelease
+tags such as `v0.3.0-rc.1` do not pass validation. Dependabot's
 prerelease-tag representation has not been verified live. The workflow never
 checks out or executes PR-head code and does not approve the PR.
 

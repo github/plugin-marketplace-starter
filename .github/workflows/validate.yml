@@ -16,9 +16,10 @@ jobs:
   validate-pin:
     if: >-
       github.repository == 'github/plugin-marketplace-starter' &&
+      (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') &&
       (
-        (github.event_name == 'pull_request' && startsWith(github.head_ref, 'dependabot/github_actions/evals-action-')) ||
-        (github.event_name == 'workflow_dispatch' && github.ref_name == 'automation/update-plugin-pin')
+        (github.event_name == 'pull_request' && github.head_ref || github.ref_name) == 'automation/update-plugin-pin' ||
+        startsWith(github.event_name == 'pull_request' && github.head_ref || github.ref_name, 'dependabot/github_actions/evals-action-')
       )
     runs-on: ubuntu-latest
     timeout-minutes: 5

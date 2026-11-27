@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
+import { runInNewContext } from "node:vm";
 import { completePinValidation, verifyCurrentPinPr } from "./pin-validation.mjs";
 
 const repo = "github/plugin-marketplace-starter";
@@ -191,6 +192,41 @@ test("allows published action prereleases through required validation without en
   assert.deepEqual(previouslyEnabled.calls, [
     ["gh", "pr", "merge", "42", "-R", repo, "--disable-auto"],
   ]);
+});
+
+test("Validate verifies both pin branches under either PR or dispatch events", () => {
+  const workflow = parse(readFileSync(new URL("../workflows/validate.yml", import.meta.url), "utf8"));
+  for (const event of ["pull_request", "workflow_dispatch"]) {
+    for (const kind of ["action", "plugin"]) {
+      const prBranch = kind === "plugin" ? "automation/update-plugin-pin" : branch;
+      const github = { repository: repo, event_name: event, head_ref: event === "pull_request" ? prBranch : "", ref_name: event === "pull_request" ? "42/merge" : prBranch };
+      const allowed = (values) => Boolean(runInNewContext(workflow.jobs["validate-pin"].if, {
+        github: values, startsWith: (text, prefix) => text.startsWith(prefix),
+      }));
+      assert.equal(allowed(github), true, `${event} on ${kind}`);
+      assert.equal(allowed({ ...github, repository: "other/template" }), false);
+      assert.equal(allowed({ ...github, event_name: "push" }), false);
+      assert.equal(allowed({ ...github, head_ref: "feature", ref_name: "feature" }), false);
+      assert.match(verifyCurrentPinPr({
+        repo, event, branch: prBranch, headSha, prNumber: event === "pull_request" ? 42 : undefined,
+        ...fixture({ kind }),
+      }), new RegExp(`Validated ${kind} pin PR #42`));
+      assert.throws(() => verifyCurrentPinPr({
+        repo, event, branch: prBranch, headSha, prNumber: event === "pull_request" ? 42 : undefined,
+        ...fixture({ kind, change: { staleHead: true } }),
+      }), /head doesn't match/);
+      // Cross-event runs (for example a UI branch update or a manual dispatch) must not pass lint on an unverified head.
+      assert.throws(() => verifyCurrentPinPr({
+        repo, event, branch: prBranch, headSha, prNumber: event === "pull_request" ? 42 : undefined,
+        ...fixture({ kind, change: { commit: { author: { login: "human" }, committer: { login: "web-flow" }, commit: { verification: { verified: true } } } } }),
+      }), /expected verified automation identity/);
+      const otherBranch = kind === "plugin" ? branch : "automation/update-plugin-pin";
+      assert.throws(() => verifyCurrentPinPr({
+        repo, event, branch: otherBranch, headSha, prNumber: event === "pull_request" ? 42 : undefined,
+        ...fixture({ kind }),
+      }));
+    }
+  }
 });
 
 test("read-only pin validation rejects stale, malformed, or untrusted PR inputs", () => {

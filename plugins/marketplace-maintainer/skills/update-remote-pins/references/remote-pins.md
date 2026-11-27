@@ -87,10 +87,12 @@ auto-merge. Dependabot separately proposes daily grouped
 `github/evals-action` workflow-pin updates. The same completion workflow
 verifies the Dependabot author, base and head, action-only file changes, release
 tag, known release channel, strictly increasing version, forward commit
-ancestry, and successful Validate run. Published prerelease pins pass required
-validation so they can be merged after CodeOwner approval, but aren't
+ancestry, and successful Validate run. Published releases marked as prereleases
+with `vX.Y.Z` tags pass required validation so they can be merged after
+CodeOwner approval, but aren't
 auto-enabled; an existing auto-merge request from this workflow is withdrawn
-for a successfully validated prerelease candidate. Dependabot's prerelease-tag
+for a successfully validated prerelease candidate. Hyphenated prerelease tags
+such as `v0.3.0-rc.1` do not pass validation. Dependabot's prerelease-tag
 representation has not been verified live. Neither path checks out PR-head
 code, approves a pull request, or bypasses branch protection. Before setting
 `PIN_AUTOMATION`, an

@@ -174,16 +174,20 @@ function verifyPinPr(api, repo, pr, headBranch, headSha, kind, defaultBranch) {
 export function verifyCurrentPinPr({ api = githubApi, repo, event, prNumber, branch, headSha }) {
   if (repo !== canonical) throw new Error("Invalid repository.");
   let kind, pr;
-  if (event === "pull_request" && branch?.startsWith("dependabot/github_actions/evals-action-")) {
+  if (!["pull_request", "workflow_dispatch"].includes(event)) return "Skipped a Validate run unrelated to pin automation.";
+  if (branch?.startsWith("dependabot/github_actions/evals-action-")) {
     if (!actionBranch.test(branch)) throw new Error("Unexpected Dependabot action-pin branch.");
-    if (!/^\d+$/.test(String(prNumber ?? ""))) throw new Error("Invalid pull request number.");
     kind = "action";
-    pr = getJson(api, `repos/${repo}/pulls/${prNumber}`);
-  } else if (event === "workflow_dispatch" && branch === pluginBranch) {
+  } else if (branch === pluginBranch) {
     kind = "plugin";
-    pr = getPullRequest(api, repo, branch);
   } else {
     return "Skipped a Validate run unrelated to pin automation.";
+  }
+  if (event === "pull_request") {
+    if (!/^\d+$/.test(String(prNumber ?? ""))) throw new Error("Invalid pull request number.");
+    pr = getJson(api, `repos/${repo}/pulls/${prNumber}`);
+  } else {
+    pr = getPullRequest(api, repo, branch);
   }
   if (!/^[0-9a-f]{40}$/.test(headSha ?? "")) throw new Error("Invalid pin PR head SHA.");
   if (!pr) throw new Error("No open pin PR exists for the validated head.");

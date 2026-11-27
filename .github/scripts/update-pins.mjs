@@ -161,7 +161,7 @@ function completionHasTakenEffect(api, repo, pr, head, validation) {
   );
 }
 
-export function publish(api, repo, { title, bodyFile, execute = run }) {
+export function publish(api, repo, { title, bodyFile, execute = run, wait = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) }) {
   if (!title || !bodyFile || !process.env.GH_TOKEN) throw new Error("Publication requires a title, body file, and GH_TOKEN.");
   const pr = openPr(api, repo);
   const base = pr?.base.ref ?? getJson(api, `repos/${repo}`).default_branch;
@@ -188,8 +188,12 @@ export function publish(api, repo, { title, bodyFile, execute = run }) {
   }
   if (pr) execute("gh", ["api", "--method", "PATCH", `repos/${repo}/pulls/${pr.number}`, "-f", `title=${title}`, "-F", `body=@${bodyFile}`]);
   else execute("gh", ["pr", "create", "-R", repo, "--base", base, "--head", BRANCH, "--title", title, "--body-file", bodyFile]);
-  const current = openPr(api, repo);
   const publishedHead = decision === "push" ? localHead : remote.sha;
+  let current = openPr(api, repo);
+  for (let attempt = 1; decision === "push" && current?.head?.sha !== publishedHead && attempt <= 5; attempt++) {
+    wait(attempt * 1000);
+    current = openPr(api, repo);
+  }
   if (!current || current.head?.sha !== publishedHead) throw new Error(`No open PR found at the published ${BRANCH} head.`);
   const existingValidation = decision === "skip" && pr ? currentValidationRun(api, repo, publishedHead) : undefined;
   const validationActive = existingValidation && ["queued", "in_progress", "waiting"].includes(existingValidation.status);

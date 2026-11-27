@@ -151,8 +151,12 @@ test("publication dispatches Validate and leaves auto-merge to the trusted compl
   const mainSha = sha("3"), remoteSha = sha("4"), localHead = sha("6"), localTree = sha("7");
   const pr = { number: 7, user: { login: bot, type: "Bot" }, head: { sha: remoteSha, repo: { full_name: "o/r" } }, base: { ref: "main", repo: { default_branch: "main" } } };
   let pushed = false;
+  let staleReads = 0;
   const api = (path) => {
-    if (path === endpoint) return { status: 200, body: JSON.stringify([{ ...pr, head: { ...pr.head, sha: pushed ? localHead : remoteSha } }]) };
+    if (path === endpoint) {
+      const currentHead = pushed && staleReads-- <= 0 ? localHead : remoteSha;
+      return { status: 200, body: JSON.stringify([{ ...pr, head: { ...pr.head, sha: currentHead } }]) };
+    }
     if (path === "repos/o/r/pulls/7") return { status: 200, body: JSON.stringify({ state: "open", head: { sha: remoteSha }, auto_merge: null }) };
     if (path === `repos/o/r/branches/${encodeURIComponent(BRANCH)}`) return { status: 200, body: JSON.stringify({ commit: { sha: remoteSha, commit: { tree: { sha: sha("5") } }, parents: [{ sha: mainSha }] } }) };
     if (path === `repos/o/r/compare/${mainSha}...${remoteSha}`) return { status: 200, body: JSON.stringify({ ahead_by: 1, behind_by: 0, commits: [{ author: { login: bot }, committer: { login: bot } }] }) };
@@ -183,6 +187,22 @@ test("publication dispatches Validate and leaves auto-merge to the trusted compl
     if (args[0] === "pr" && args[1] === "merge") assert.fail("must not enable auto-merge in the publisher");
     return execute(command, args);
   } }), /dispatch failed/);
+  pushed = false;
+  headReads = 0;
+  staleReads = 2;
+  calls.length = 0;
+  const waits = [];
+  assert.match(publish(api, "o/r", { title: "update", bodyFile: "body", execute, wait: (ms) => waits.push(ms) }), /awaiting Validate/);
+  assert.deepEqual(waits, [1000, 2000]);
+  assert.equal(calls.filter((call) => call[1] === "workflow").length, 1);
+  pushed = false;
+  headReads = 0;
+  staleReads = 100;
+  calls.length = 0;
+  waits.length = 0;
+  assert.throws(() => publish(api, "o/r", { title: "update", bodyFile: "body", execute, wait: (ms) => waits.push(ms) }), /No open PR found at the published/);
+  assert.deepEqual(waits, [1000, 2000, 3000, 4000, 5000]);
+  assert.equal(calls.some((call) => call[1] === "workflow"), false);
 });
 
 test("publisher dispatches validation without enabling auto-merge when the push is skipped", (t) => {
